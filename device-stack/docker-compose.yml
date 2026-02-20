@@ -66,9 +66,11 @@ services:
     networks:
       - device-net
 
-  # ── Telegraf (high-frequency metrics → InfluxDB) ─────────────────────────
-  # Sends cpu/mem/disk metrics and any MQTT-forwarded sensor data directly to
-  # InfluxDB, bypassing ThingsBoard for high-volume time-series data.
+  # ── Telegraf (optional MQTT sensor data → InfluxDB) ──────────────────────
+  # Subscribes to the tenant-scoped MQTT topic for additional sensor readings.
+  # Primary device metrics (CPU, RAM, OTA status) are sourced from ThingsBoard
+  # and hawkBit via the cloud-side Telegraf and iot-bridge-api telemetry
+  # webhook.  Direct OS metric collection is intentionally disabled.
   telegraf:
     image: telegraf:1.30-alpine
     container_name: cdm-device-telegraf
@@ -81,6 +83,8 @@ services:
       INFLUX_ORG: ${INFLUX_ORG:-cdm-org}
       INFLUX_BUCKET: ${INFLUX_BUCKET:-iot-metrics}
       DEVICE_ID: ${DEVICE_ID:-sim-device-001}
+      HAWKBIT_TENANT: ${HAWKBIT_TENANT:-DEFAULT}
+      THINGSBOARD_HOST: ${THINGSBOARD_HOST:-host.docker.internal}
     restart: unless-stopped
     depends_on:
       bootstrap:

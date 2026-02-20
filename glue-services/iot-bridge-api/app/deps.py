@@ -9,6 +9,7 @@ from functools import lru_cache
 from fastapi import Depends
 
 from app.clients.hawkbit import HawkBitClient
+from app.clients.influxdb import InfluxDBClient
 from app.clients.step_ca import StepCAClient
 from app.clients.wireguard import WireGuardConfig
 from app.config import Settings
@@ -44,4 +45,13 @@ def get_wg_config(settings: Settings = Depends(get_settings)) -> WireGuardConfig
         server_ip=settings.wg_server_ip,
         server_url=settings.wg_server_url,
         server_port=settings.wg_port,
+    )
+
+
+def get_influxdb_client(settings: Settings = Depends(get_settings)) -> InfluxDBClient:
+    return InfluxDBClient(
+        url=settings.influx_url,
+        token=settings.influx_token,
+        org=settings.influx_org,
+        bucket=settings.influx_bucket,
     )

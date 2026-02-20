@@ -1,4 +1,4 @@
-"""Unit tests for POST /webhooks/thingsboard."""
+"""Unit tests for POST /webhooks/thingsboard and /webhooks/thingsboard/telemetry."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.clients.hawkbit import HawkBitClient, HawkBitError
+from app.clients.influxdb import InfluxDBClient, InfluxDBError
 
 # ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -140,3 +141,146 @@ def test_webhook_device_id_extraction(
     )
     assert resp.status_code == 200
     assert resp.json()["device_id"] == expected_id
+
+
+# ── Telemetry webhook tests ───────────────────────────────────────────────────
+
+
+def _get_written_line(mock: InfluxDBClient) -> str:
+    """Return the first InfluxDB line protocol string written in the last call."""
+    return mock.write_lines.call_args[0][0][0]  # type: ignore[attr-defined]
+
+
+def test_telemetry_writes_to_influxdb(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """Telemetry with numeric fields must be written to InfluxDB."""
+    resp = test_client.post(
+        "/webhooks/thingsboard/telemetry",
+        json={
+            "msgType": "POST_TELEMETRY_REQUEST",
+            "metadata": {
+                "deviceId": "dev-tel-001",
+                "deviceName": "Telemetry Device 001",
+                "tenantId": "tenant-abc",
+            },
+            "data": {"cpu_percent": 42, "ram_percent": 68, "temperature_c": 55},
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "written"
+    assert body["device_id"] == "dev-tel-001"
+    assert body["tenant_id"] == "tenant-abc"
+    assert body["points_written"] == 1
+    mock_influxdb.write_lines.assert_called_once()  # type: ignore[attr-defined]
+    assert len(mock_influxdb.write_lines.call_args[0][0]) == 1  # type: ignore[attr-defined]
+    line = _get_written_line(mock_influxdb)
+    assert "device_telemetry" in line
+    assert "tenant_id=tenant-abc" in line
+    assert "device_id=dev-tel-001" in line
+    assert "cpu_percent=42i" in line
+
+
+def test_telemetry_includes_string_fields(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """String fields (e.g. ota_status) must be quoted in line protocol."""
+    resp = test_client.post(
+        "/webhooks/thingsboard/telemetry",
+        json={
+            "msgType": "POST_TELEMETRY_REQUEST",
+            "metadata": {"deviceId": "dev-str-001", "tenantId": "t1"},
+            "data": {"ota_status": "idle", "cpu_percent": 10},
+        },
+    )
+    assert resp.status_code == 200
+    line = _get_written_line(mock_influxdb)
+    assert 'ota_status="idle"' in line
+
+
+def test_telemetry_escapes_special_chars_in_strings(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """Backslashes and double-quotes in string fields must be properly escaped."""
+    resp = test_client.post(
+        "/webhooks/thingsboard/telemetry",
+        json={
+            "msgType": "POST_TELEMETRY_REQUEST",
+            "metadata": {"deviceId": "dev-esc-001", "tenantId": "t1"},
+            "data": {"msg": 'say "hello" \\world'},
+        },
+    )
+    assert resp.status_code == 200
+    line = _get_written_line(mock_influxdb)
+    # Backslash and double-quote must be escaped in InfluxDB line protocol
+    assert r'say \"hello\" \\world' in line
+
+
+def test_telemetry_ignores_empty_data(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """Telemetry with no numeric/string fields must be silently ignored."""
+    resp = test_client.post(
+        "/webhooks/thingsboard/telemetry",
+        json={
+            "msgType": "POST_TELEMETRY_REQUEST",
+            "metadata": {"deviceId": "dev-empty", "tenantId": "t1"},
+            "data": {},
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ignored"
+    mock_influxdb.write_lines.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_telemetry_ignores_event_without_device_id(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """Events with no identifiable device ID are acknowledged but not written."""
+    resp = test_client.post(
+        "/webhooks/thingsboard/telemetry",
+        json={"msgType": "POST_TELEMETRY_REQUEST", "metadata": {}, "data": {"v": 1}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ignored"
+    mock_influxdb.write_lines.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_telemetry_influxdb_error_returns_503(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """InfluxDB write failures must result in a 503 response."""
+    mock_influxdb.write_lines = AsyncMock(  # type: ignore[method-assign]
+        side_effect=InfluxDBError("connection refused")
+    )
+    resp = test_client.post(
+        "/webhooks/thingsboard/telemetry",
+        json={
+            "msgType": "POST_TELEMETRY_REQUEST",
+            "metadata": {"deviceId": "dev-503", "tenantId": "t1"},
+            "data": {"cpu_percent": 50},
+        },
+    )
+    assert resp.status_code == 503
+    assert "InfluxDB write failed" in resp.json()["detail"]
+
+
+def test_telemetry_tenant_isolation_tags(
+    test_client: TestClient, mock_influxdb: InfluxDBClient
+) -> None:
+    """Two devices from different tenants produce lines with distinct tenant tags."""
+    for tenant, device in [("tenant-A", "dev-A"), ("tenant-B", "dev-B")]:
+        mock_influxdb.write_lines.reset_mock()  # type: ignore[attr-defined]
+        resp = test_client.post(
+            "/webhooks/thingsboard/telemetry",
+            json={
+                "msgType": "POST_TELEMETRY_REQUEST",
+                "metadata": {"deviceId": device, "tenantId": tenant},
+                "data": {"cpu_percent": 20},
+            },
+        )
+        assert resp.status_code == 200
+        line = _get_written_line(mock_influxdb)
+        assert f"tenant_id={tenant}" in line
+        assert f"device_id={device}" in line
