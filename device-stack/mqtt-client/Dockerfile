@@ -1,6 +1,8 @@
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache mosquitto-clients
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    mosquitto-clients \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY mqtt-client/publish-telemetry.sh /usr/local/bin/publish-telemetry.sh
 RUN chmod +x /usr/local/bin/publish-telemetry.sh

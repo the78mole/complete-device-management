@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.clients.hawkbit import HawkBitClient, HawkBitError
@@ -68,6 +69,10 @@ async def thingsboard_webhook(
     # ── Idempotency check ────────────────────────────────────────────────────
     try:
         existing = await hawkbit.get_target(device_id)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"hawkBit unreachable: {exc}"
+        ) from exc
     except HawkBitError as exc:
         raise HTTPException(
             status_code=502, detail=f"hawkBit query failed: {exc}"
@@ -89,6 +94,10 @@ async def thingsboard_webhook(
             name=device_name,
             attributes={"device_type": device_type, "source": "thingsboard_webhook"},
         )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"hawkBit unreachable: {exc}"
+        ) from exc
     except HawkBitError as exc:
         raise HTTPException(
             status_code=502, detail=f"hawkBit provisioning failed: {exc}"

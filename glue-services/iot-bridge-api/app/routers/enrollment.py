@@ -11,6 +11,7 @@ Flow
 
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.clients.hawkbit import HawkBitClient, HawkBitError
@@ -62,6 +63,10 @@ async def enroll_device(
             subject=device_id,
             sans=[device_id],
         )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"step-ca unreachable: {exc}"
+        ) from exc
     except StepCAError as exc:
         raise HTTPException(
             status_code=502, detail=f"PKI signing failed: {exc}"
@@ -76,6 +81,10 @@ async def enroll_device(
                 name=body.device_name,
                 attributes={"device_type": body.device_type},
             )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"hawkBit unreachable: {exc}"
+        ) from exc
     except HawkBitError as exc:
         raise HTTPException(
             status_code=502, detail=f"hawkBit provisioning failed: {exc}"
