@@ -1,0 +1,293 @@
+---
+# Master Docker Compose – Cloud Infrastructure (local evaluation)
+# Bring up: docker compose up -d
+# Prerequisites: copy .env.example to .env and fill in secrets
+
+version: "3.9"
+
+networks:
+  cdm-internal:
+    driver: bridge
+  cdm-vpn:
+    driver: bridge
+
+volumes:
+  keycloak-db-data:
+  thingsboard-data:
+  thingsboard-logs:
+  thingsboard-db-data:
+  hawkbit-db-data:
+  hawkbit-data:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
+  wg-data:
+
+# ─────────────────────────── Keycloak ────────────────────────────
+services:
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: cdm-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: cdm-keycloak
+    restart: unless-stopped
+    command: >
+      start-dev
+      --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_RELATIVE_PATH: /auth
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - cdm-internal
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  # ──────────────────────── ThingsBoard ────────────────────────────
+  thingsboard-db:
+    image: postgres:15-alpine
+    container_name: cdm-tb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_USER: thingsboard
+      POSTGRES_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+    volumes:
+      - thingsboard-db-data:/var/lib/postgresql/data
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thingsboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  thingsboard:
+    image: thingsboard/tb-postgres:3.7.0
+    container_name: cdm-thingsboard
+    restart: unless-stopped
+    environment:
+      TB_QUEUE_TYPE: in-memory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://thingsboard-db:5432/thingsboard
+      SPRING_DATASOURCE_USERNAME: thingsboard
+      SPRING_DATASOURCE_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+      # Keycloak OIDC
+      SECURITY_OAUTH2_ENABLED: "true"
+      SECURITY_OAUTH2_DEFAULT_PROVIDER: keycloak
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_ID: thingsboard
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_SECRET: ${TB_OIDC_SECRET:-changeme}
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_AUTHORIZATION_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/auth
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_TOKEN_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_USER_INFO_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_REDIRECT_URI: http://localhost:9090/login/oauth2/code/
+    volumes:
+      - thingsboard-data:/data
+      - thingsboard-logs:/var/log/thingsboard
+    ports:
+      - "9090:9090"   # HTTP UI
+      - "1883:1883"   # MQTT
+      - "7070:7070"   # Edge
+    networks:
+      - cdm-internal
+    depends_on:
+      thingsboard-db:
+        condition: service_healthy
+
+  # ───────────────────────── hawkBit ───────────────────────────────
+  hawkbit-db:
+    image: mysql:8-debian
+    container_name: cdm-hawkbit-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: hawkbit
+      MYSQL_USER: hawkbit
+      MYSQL_PASSWORD: ${HB_DB_PASSWORD:-changeme}
+      MYSQL_ROOT_PASSWORD: ${HB_DB_ROOT_PASSWORD:-changeme_root}
+    volumes:
+      - hawkbit-db-data:/var/lib/mysql
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "hawkbit", "--password=${HB_DB_PASSWORD:-changeme}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  hawkbit:
+    image: hawkbit/hawkbit-update-server:latest
+    container_name: cdm-hawkbit
+    restart: unless-stopped
+    volumes:
+      - ./hawkbit/application.properties:/opt/hawkbit/application.properties:ro
+      - hawkbit-data:/data
+    ports:
+      - "8070:8070"
+    networks:
+      - cdm-internal
+    depends_on:
+      hawkbit-db:
+        condition: service_healthy
+
+  # ───────────────────────── InfluxDB ──────────────────────────────
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: cdm-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-changeme00}
+      DOCKER_INFLUXDB_INIT_ORG: cdm-org
+      DOCKER_INFLUXDB_INIT_BUCKET: iot-metrics
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+      - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "8086:8086"
+    networks:
+      - cdm-internal
+
+  # ───────────────────────── Grafana ───────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:10.4.0
+    container_name: cdm-grafana
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:8080/auth/realms/cdm/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - cdm-internal
+    depends_on:
+      - influxdb
+
+  # ───────────────────────── WireGuard ─────────────────────────────
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: cdm-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: UTC
+      SERVERURL: ${WG_SERVER_URL:-auto}
+      SERVERPORT: ${WG_PORT:-51820}
+      PEERS: ${WG_PEERS:-10}
+      PEERDNS: auto
+      INTERNAL_SUBNET: 10.13.13.0
+      ALLOWEDIPS: 10.13.13.0/24
+    volumes:
+      - wg-data:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "51820:51820/udp"
+    networks:
+      - cdm-internal
+      - cdm-vpn
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  # ──────────────────── IoT Bridge API (glue) ──────────────────────
+  iot-bridge-api:
+    build:
+      context: ../glue-services/iot-bridge-api
+      dockerfile: Dockerfile
+    container_name: cdm-iot-bridge-api
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_REALM: cdm
+      KEYCLOAK_CLIENT_ID: iot-bridge
+      KEYCLOAK_CLIENT_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      THINGSBOARD_URL: http://thingsboard:9090
+      THINGSBOARD_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
+      THINGSBOARD_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}
+      HAWKBIT_URL: http://hawkbit:8070
+      HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
+      HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: cdm-org
+      INFLUX_BUCKET: iot-metrics
+      WIREGUARD_CONFIG_DIR: /wg-config
+      WG_SUBNET: 10.13.13.0/24
+      WG_SERVER_IP: 10.13.13.1
+    volumes:
+      - wg-data:/wg-config
+    ports:
+      - "8000:8000"
+    networks:
+      - cdm-internal
+    depends_on:
+      - keycloak
+      - thingsboard
+      - hawkbit
+
+  # ─────────────────────── Terminal Proxy ──────────────────────────
+  terminal-proxy:
+    build:
+      context: ../glue-services/terminal-proxy
+      dockerfile: Dockerfile
+    container_name: cdm-terminal-proxy
+    restart: unless-stopped
+    environment:
+      TTYD_PORT: 7681
+      VPN_SUBNET: 10.13.13.0/24
+      AUTH_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
+      AUTH_AUDIENCE: terminal-proxy
+    ports:
+      - "8090:8090"
+    networks:
+      - cdm-internal
+      - cdm-vpn
+    depends_on:
+      - wireguard
