@@ -53,17 +53,19 @@ graph TB
         TLG[Telegraf]
         MQC[MQTT client]
         TTD[ttyd]
+        WGC[WireGuard Client]
 
         BST --> UPD
         BST --> TLG
         BST --> MQC
         BST --> TTD
+        BST --> WGC
     end
 
     MQC -->|MQTT/TLS| TB
     TLG -->|metrics| IDB
     TTD <-->|WS/ttyd| TXP
-    edge <-->|WireGuard VPN| WGS
+    WGC <-->|WireGuard VPN| WGS
 ```
 
 ---
