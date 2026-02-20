@@ -147,7 +147,7 @@ services:
       retries: 5
 
   thingsboard:
-    image: thingsboard/tb-postgres:3.7.0
+    image: thingsboard/tb-postgres:3.9.1
     container_name: cdm-thingsboard
     restart: unless-stopped
     environment:
@@ -252,7 +252,7 @@ services:
 
   # ───────────────────────── InfluxDB ──────────────────────────────
   influxdb:
-    image: influxdb:2.7-alpine
+    image: influxdb:2.8-alpine
     container_name: cdm-influxdb
     restart: unless-stopped
     environment:
@@ -273,7 +273,7 @@ services:
 
   # ───────────────────────── Grafana ───────────────────────────────
   grafana:
-    image: grafana/grafana-oss:10.4.0
+    image: grafana/grafana-oss:10.4.19
     container_name: cdm-grafana
     restart: unless-stopped
     environment:
@@ -383,7 +383,7 @@ services:
   #   – MQTT topics: cdm/<tenant>/<device>/sensors
   #   – InfluxDB tags: tenant_id, device_id on every data point
   telegraf:
-    image: telegraf:1.30-alpine
+    image: telegraf:1.37-alpine
     container_name: cdm-telegraf
     restart: unless-stopped
     environment:
