@@ -3,8 +3,6 @@
 # Bring up: docker compose up -d
 # Prerequisites: copy .env.example to .env and fill in secrets
 
-version: "3.9"
-
 networks:
   cdm-internal:
     driver: bridge
@@ -31,6 +29,9 @@ secrets:
 # ─────────────────────────── Keycloak ────────────────────────────
 services:
   # ─────────────────────── Step CA (PKI) ──────────────────────────
+  # step-ca auto-creates a Root CA + Intermediate CA on first boot
+  # using the DOCKER_STEPCA_INIT_* variables below.
+  # All values are configurable via .env (see .env.example).
   step-ca:
     build:
       context: ./step-ca
@@ -38,13 +39,28 @@ services:
     container_name: cdm-step-ca
     restart: unless-stopped
     environment:
-      DOCKER_STEPCA_INIT_NAME: "CDM Root CA"
-      DOCKER_STEPCA_INIT_DNS_NAMES: "step-ca,localhost"
-      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "cdm-admin@cdm.local"
+      # ── Root CA ──────────────────────────────────────────────────
+      # Human-readable name embedded in the Root CA subject
+      DOCKER_STEPCA_INIT_NAME: "${STEP_CA_PKI_NAME:-CDM Root CA}"
+      # Comma-separated DNS names the CA certificate is valid for
+      DOCKER_STEPCA_INIT_DNS_NAMES: "${STEP_CA_DNS_NAMES:-step-ca,localhost}"
+      # ── Intermediate CA ──────────────────────────────────────────
+      # step-ca signs the intermediate CA with the root during init;
+      # the password file protects both the root and intermediate keys.
+      # Validity of the root and intermediate CA certificates is set
+      # via the step ca init flags (see init-provisioners.sh).
       DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/step-ca-password
-      DOCKER_STEPCA_INIT_ACME: "true"
-      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "true"
-      DOCKER_STEPCA_INIT_ADDRESS: ":9000"
+      # TLS address the CA HTTPS API listens on
+      DOCKER_STEPCA_INIT_ADDRESS: "${STEP_CA_ADDRESS:-:9000}"
+      # ── Provisioner setup ────────────────────────────────────────
+      # Name/email of the first (bootstrap) admin JWK provisioner
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}"
+      # Enable ACME provisioner (for automatic device cert renewal)
+      DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
+      # Enable the Admin API so init-provisioners.sh can add more provisioners
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
+      # Disable SSH CA (not needed for this IoT platform)
+      DOCKER_STEPCA_INIT_SSH: "${STEP_CA_ENABLE_SSH:-false}"
     secrets:
       - step-ca-password
     volumes:
@@ -97,8 +113,11 @@ services:
       KC_HTTP_PORT: 8080
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_RELATIVE_PATH: /auth
-    volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      # OIDC client secrets – interpolated into realm-export.json by docker-entrypoint.sh
+      TB_OIDC_SECRET: ${TB_OIDC_SECRET:-changeme}
+      GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
+      BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
     ports:
       - "8080:8080"
     networks:
@@ -182,6 +201,9 @@ services:
     image: hawkbit/hawkbit-update-server:latest
     container_name: cdm-hawkbit
     restart: unless-stopped
+    environment:
+      HB_DB_PASSWORD: ${HB_DB_PASSWORD:-changeme}
+      HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
     volumes:
       - ./hawkbit/application.properties:/opt/hawkbit/application.properties:ro
       - hawkbit-data:/data

@@ -19,6 +19,19 @@
   },
   "clients": [
     {
+      "clientId": "hawkbit",
+      "name": "hawkBit Update Server",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${HB_OIDC_SECRET}",
+      "redirectUris": ["http://localhost:8070/*"],
+      "webOrigins": ["http://localhost:8070"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
       "clientId": "thingsboard",
       "name": "ThingsBoard",
       "enabled": true,
