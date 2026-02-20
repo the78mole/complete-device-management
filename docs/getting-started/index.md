@@ -6,13 +6,25 @@ This guide gets you from zero to a working device enrolled in the platform, send
 
 ## What You Will Build
 
-```
-step-ca (Root CA)
-    └── signs device certificate
-            └── device MQTT client  ──TLS──►  ThingsBoard  ──Rule Engine──►  iot-bridge-api
-                                                                                    ├── hawkBit target created
-                                                                                    └── WireGuard IP allocated
-device Telegraf  ──────────────────────────────────────────────────────────────►  InfluxDB → Grafana
+```mermaid
+graph LR
+    RCA["step-ca (Root CA)"]
+    DEV["device MQTT client"]
+    TB[ThingsBoard]
+    IBA[iot-bridge-api]
+    HB[hawkBit target created]
+    WG[WireGuard IP allocated]
+    TEL[device Telegraf]
+    IDB[InfluxDB]
+    GRF[Grafana]
+
+    RCA -->|signs device certificate| DEV
+    DEV -->|TLS| TB
+    TB -->|Rule Engine| IBA
+    IBA --> HB
+    IBA --> WG
+    TEL --> IDB
+    IDB --> GRF
 ```
 
 ---

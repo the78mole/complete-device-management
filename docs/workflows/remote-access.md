@@ -6,20 +6,19 @@ This page explains how to open a secure browser-based terminal on a remote devic
 
 ## How It Works
 
-```
-Browser (ThingsBoard Terminal Widget)
-    │
-    │  WSS: wss://terminal-proxy:8888/terminal?deviceId=device-001&token=<JWT>
-    ▼
-Terminal Proxy (Node.js)
-    ├── Validates Keycloak JWT (JWKS endpoint)
-    ├── Checks `preferred_username` claim has `cdm-operator` or `cdm-admin` role
-    ├── Looks up device-001 → WireGuard IP (10.8.0.2) from cdm_peers.json
-    └── Proxies WebSocket to ws://10.8.0.2:7681
-                               │
-                           ttyd on device
-                               │
-                           /bin/bash (PTY)
+```mermaid
+graph TD
+    BR["Browser (ThingsBoard Terminal Widget)"]
+    TXP["Terminal Proxy (Node.js)"]
+    TTD["ttyd on device (ws://10.8.0.2:7681)"]
+    SH["/bin/bash (PTY)"]
+
+    BR -->|"WSS wss://terminal-proxy:8888/terminal?deviceId=device-001&token=JWT"| TXP
+    TXP -->|"1. validate Keycloak JWT (JWKS)"| TXP
+    TXP -->|"2. check preferred_username role (cdm-operator / cdm-admin)"| TXP
+    TXP -->|"3. look up device-001 → WireGuard IP (10.8.0.2)"| TXP
+    TXP -->|"4. proxy WebSocket (WireGuard VPN)"| TTD
+    TTD --> SH
 ```
 
 The device is only reachable via the WireGuard VPN — it has no direct internet exposure.

@@ -6,11 +6,16 @@ The platform uses [smallstep step-ca](https://smallstep.com/docs/step-ca/) as it
 
 ## Trust Hierarchy
 
-```
-Root CA  (offline-safe, self-signed, 10-year validity)
-    └── Intermediate CA  (online, used for all signing, 5-year validity)
-            ├── Service Certificates  (serverAuth + clientAuth, 1-year)
-            └── Device Certificates  (clientAuth only, configurable TTL)
+```mermaid
+graph TD
+    RCA["Root CA<br/>offline-safe · self-signed · 10-year validity"]
+    ICA["Intermediate CA<br/>online · used for all signing · 5-year validity"]
+    SVC["Service Certificates<br/>serverAuth + clientAuth · 1-year"]
+    DEV["Device Certificates<br/>clientAuth only · configurable TTL"]
+
+    RCA --> ICA
+    ICA --> SVC
+    ICA --> DEV
 ```
 
 The Root CA private key is encrypted with `STEP_CA_PASSWORD` and stored in the `step-ca-data` Docker volume. In production, move the Root CA key offline after generating the Intermediate CA.
@@ -28,14 +33,19 @@ Two provisioners are configured out of the box:
 
 ### JWK Provisioner Flow
 
-```
-iot-bridge-api
-  1. Fetches provisioner list from step-ca API
-  2. Finds the `iot-bridge` JWK provisioner
-  3. Decrypts the provisioner private key using STEP_CA_PROVISIONER_PASSWORD
-  4. Creates a one-time token (OTT) JWT signed with the provisioner key
-  5. POSTs the CSR + OTT to step-ca /1.0/sign
-  6. Returns the signed certificate to the device
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant A as iot-bridge-api
+    participant S as step-ca
+
+    A->>S: Fetch provisioner list
+    A->>A: Find `iot-bridge` JWK provisioner
+    A->>A: Decrypt provisioner private key (STEP_CA_PROVISIONER_PASSWORD)
+    A->>A: Create one-time token (OTT) JWT
+    A->>S: POST /1.0/sign (CSR + OTT)
+    S-->>A: Signed certificate
+    A-->>D: Return certificate to device
 ```
 
 ---

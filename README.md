@@ -26,33 +26,44 @@
 
 ## Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Cloud Infrastructure (docker-compose / Kubernetes)                     │
-│                                                                         │
-│  ┌──────────┐  OIDC   ┌──────────────┐  REST  ┌──────────────┐          │
-│  │ Keycloak │◄───────►│ ThingsBoard  │◄──────►│   hawkBit    │          │
-│  │  (IAM)   │         │  (UI/MQTT)   │        │ (OTA Backend)│          │
-│  └──────────┘         └──────┬───────┘        └──────────────┘          │
-│                              │ Rule Engine                              │
-│  ┌──────────┐         ┌──────▼───────┐        ┌──────────────┐          │
-│  │ step-ca  │◄───────►│ IoT Bridge   │◄──────►│  WireGuard   │          │
-│  │  (PKI)   │  sign   │     API      │  alloc │   Server     │          │
-│  └──────────┘         └──────────────┘        └──────────────┘          │
-│                                                                         │
-│  ┌──────────┐         ┌──────────────┐        ┌──────────────┐          │
-│  │ InfluxDB │◄────────│   Telegraf   │        │Terminal Proxy│          │
-│  └──────────┘         │  (on device) │        │  (WS/JWT)    │          │
-│  ┌──────────┐         └──────────────┘        └──────────────┘          │
-│  │ Grafana  │                                                           │
-│  └──────────┘                                                           │
-└─────────────────────────────────────────────────────────────────────────┘
-         ▲  MQTT/TLS          ▲  WireGuard VPN         ▲  WS/ttyd
-         │                    │                         │
-┌────────┴────────────────────┴─────────────────────────┴─────────────────┐
-│  Edge Device (Linux / Yocto)                                            │
-│  bootstrap (step-cli) → RAUC updater → Telegraf → MQTT client → ttyd    │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph cloud["Cloud Infrastructure (docker-compose / Kubernetes)"]
+        KC["Keycloak (IAM)"]
+        TB["ThingsBoard (UI/MQTT)"]
+        HB["hawkBit (OTA Backend)"]
+        SCA["step-ca (PKI)"]
+        IBA["IoT Bridge API"]
+        WGS["WireGuard Server"]
+        IDB[InfluxDB]
+        GRF[Grafana]
+        TXP["Terminal Proxy (WS/JWT)"]
+
+        KC <-->|OIDC| TB
+        TB <-->|REST| HB
+        TB -->|Rule Engine| IBA
+        SCA <-->|sign| IBA
+        IBA <-->|alloc| WGS
+        IDB --> GRF
+    end
+
+    subgraph edge["Edge Device (Linux / Yocto)"]
+        BST["bootstrap (step-cli)"]
+        UPD[RAUC updater]
+        TLG[Telegraf]
+        MQC[MQTT client]
+        TTD[ttyd]
+
+        BST --> UPD
+        BST --> TLG
+        BST --> MQC
+        BST --> TTD
+    end
+
+    MQC -->|MQTT/TLS| TB
+    TLG -->|metrics| IDB
+    TTD <-->|WS/ttyd| TXP
+    edge <-->|WireGuard VPN| WGS
 ```
 
 ---
