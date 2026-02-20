@@ -252,7 +252,7 @@ services:
 
   # ───────────────────────── InfluxDB ──────────────────────────────
   influxdb:
-    image: influxdb:2.7-alpine
+    image: influxdb:2.8-alpine
     container_name: cdm-influxdb
     restart: unless-stopped
     environment:
