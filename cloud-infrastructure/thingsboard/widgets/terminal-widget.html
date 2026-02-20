@@ -1,0 +1,204 @@
+<!--
+  CDM Web Terminal Widget
+  ========================
+  ThingsBoard Custom Widget (HTML type).
+
+  Import via:
+    ThingsBoard UI → Widget Library → Create new widget bundle →
+    Import widget → paste this file content → Save
+
+  How it works:
+  1. Reads the device ID from the ThingsBoard widget context (ctx.datasources).
+  2. Reads the Keycloak access token from ctx.authUser.jwtToken.
+  3. Opens a WebSocket to the terminal-proxy:
+       ws://<PROXY_HOST>:<PROXY_PORT>/terminal/<deviceId>?token=<jwt>
+  4. Uses the `xterm.js` v5 library for rendering.
+
+  Required widget settings (configure in the "Settings schema" tab):
+    - proxyHost   : hostname of the terminal-proxy  (default: window.location.hostname)
+    - proxyPort   : port of the terminal-proxy       (default: "8090")
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM Web Terminal</title>
+  <!-- xterm.js: lightweight terminal emulator -->
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; }
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: #2d2d2d;
+      border-bottom: 1px solid #444;
+      font-family: sans-serif;
+      font-size: 12px;
+      color: #ccc;
+    }
+    #toolbar button {
+      padding: 3px 10px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #btn-connect    { background: #4caf50; color: #fff; }
+    #btn-disconnect { background: #f44336; color: #fff; display: none; }
+    #status {
+      margin-left: auto;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      background: #555;
+    }
+    #status.connected    { background: #388e3c; }
+    #status.disconnected { background: #c62828; }
+    #terminal-container { width: 100%; height: calc(100% - 38px); }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <span>&#x1F5A5; CDM Web Terminal</span>
+    <button id="btn-connect">Connect</button>
+    <button id="btn-disconnect">Disconnect</button>
+    <span id="status" class="disconnected">Disconnected</span>
+  </div>
+  <div id="terminal-container"></div>
+
+  <script>
+    /* ── Terminal setup ──────────────────────────────────────────── */
+    const term = new Terminal({
+      cursorBlink: true,
+      fontSize: 13,
+      fontFamily: "'Cascadia Code', 'Fira Code', monospace",
+      theme: { background: '#1e1e1e' },
+      convertEol: true
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-container'));
+    fitAddon.fit();
+
+    window.addEventListener('resize', () => fitAddon.fit());
+
+    /* ── Widget context (injected by ThingsBoard) ────────────────── */
+    let deviceId = '';
+    let jwtToken = '';
+    let proxyHost = window.location.hostname;
+    let proxyPort = '8090';
+
+    // ThingsBoard calls self.onInit() when the widget is ready
+    self.onInit = function () {
+      const ctx = self.ctx;
+
+      // Read settings defined in the widget settings schema
+      const settings = ctx.settings || {};
+      if (settings.proxyHost) proxyHost = settings.proxyHost;
+      if (settings.proxyPort) proxyPort = String(settings.proxyPort);
+
+      // Device ID from the first datasource
+      if (ctx.datasources && ctx.datasources.length > 0) {
+        const ds = ctx.datasources[0];
+        deviceId = (ds.entityId && ds.entityId.id) ? ds.entityId.id : '';
+      }
+
+      // JWT from ThingsBoard auth context
+      jwtToken = (ctx.authUser && ctx.authUser.jwtToken) ? ctx.authUser.jwtToken : '';
+
+      term.writeln('\x1b[32mCDM Web Terminal ready.\x1b[0m');
+      if (!deviceId) {
+        term.writeln('\x1b[33mWarning: no device selected – add a datasource to this widget.\x1b[0m');
+      }
+    };
+
+    self.onResize = function () { fitAddon.fit(); };
+
+    /* ── WebSocket proxy ─────────────────────────────────────────── */
+    let ws = null;
+
+    function setStatus(connected) {
+      const el = document.getElementById('status');
+      if (connected) {
+        el.textContent = 'Connected';
+        el.className = 'connected';
+        document.getElementById('btn-connect').style.display    = 'none';
+        document.getElementById('btn-disconnect').style.display = 'inline-block';
+      } else {
+        el.textContent = 'Disconnected';
+        el.className = 'disconnected';
+        document.getElementById('btn-connect').style.display    = 'inline-block';
+        document.getElementById('btn-disconnect').style.display = 'none';
+      }
+    }
+
+    function connect() {
+      if (!deviceId) {
+        term.writeln('\x1b[31mError: no device ID – configure a device datasource on this widget.\x1b[0m');
+        return;
+      }
+      if (!jwtToken) {
+        term.writeln('\x1b[31mError: no JWT token – ensure you are logged in via Keycloak.\x1b[0m');
+        return;
+      }
+
+      const url = `ws://${proxyHost}:${proxyPort}/terminal/${encodeURIComponent(deviceId)}?token=${encodeURIComponent(jwtToken)}`;
+      term.writeln(`\x1b[36mConnecting to ${url} …\x1b[0m`);
+
+      ws = new WebSocket(url);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = function () {
+        term.writeln('\x1b[32mConnected.\x1b[0m');
+        setStatus(true);
+        // Forward keystrokes to ttyd
+        term.onData(function (data) {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(data);
+          }
+        });
+      };
+
+      ws.onmessage = function (evt) {
+        let text;
+        if (evt.data instanceof ArrayBuffer) {
+          text = new TextDecoder().decode(evt.data);
+        } else {
+          text = evt.data;
+        }
+        term.write(text);
+      };
+
+      ws.onclose = function (evt) {
+        term.writeln(`\x1b[33m\r\nConnection closed (code ${evt.code}).\x1b[0m`);
+        setStatus(false);
+        ws = null;
+      };
+
+      ws.onerror = function () {
+        term.writeln('\x1b[31mWebSocket error – check proxy logs.\x1b[0m');
+        setStatus(false);
+      };
+    }
+
+    function disconnect() {
+      if (ws) {
+        ws.close(1000, 'User disconnected');
+        ws = null;
+      }
+    }
+
+    document.getElementById('btn-connect').addEventListener('click', connect);
+    document.getElementById('btn-disconnect').addEventListener('click', disconnect);
+  </script>
+</body>
+</html>

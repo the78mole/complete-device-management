@@ -14,6 +14,7 @@ volumes:
   thingsboard-data:
   thingsboard-logs:
   thingsboard-db-data:
+  tb-mqtt-certs:
   hawkbit-db-data:
   hawkbit-data:
   influxdb-data:
@@ -164,12 +165,46 @@ services:
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_USER_INFO_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_REDIRECT_URI: http://localhost:9090/login/oauth2/code/
+      # ── MQTT TLS / X.509 client-certificate authentication ────────────────
+      # Devices connect on port 8883 and present the certificate signed by step-ca.
+      # The root CA cert is read from the step-ca-data volume at the path below.
+      MQTT_SSL_ENABLED: "true"
+      MQTT_SSL_BIND_ADDRESS: "0.0.0.0"
+      MQTT_SSL_BIND_PORT: "8883"
+      # MQTT server certificate and key are stored in the tb-mqtt-certs named volume.
+      # Generate them ONCE after step-ca has initialised (init-provisioners.sh has run):
+      #
+      #   docker exec cdm-step-ca \
+      #     step ca certificate mqtt.cdm.local \
+      #       /home/step/mqttserver.pem /home/step/mqttserver-private.pem \
+      #       --provisioner iot-bridge --not-after 8760h --force
+      #
+      #   docker exec cdm-step-ca cat /home/step/mqttserver.pem \
+      #     | docker exec -i cdm-thingsboard sh -c 'cat > /etc/tb-certs/mqttserver.pem'
+      #   docker exec cdm-step-ca cat /home/step/mqttserver-private.pem \
+      #     | docker exec -i cdm-thingsboard sh -c 'cat > /etc/tb-certs/mqttserver-private.pem'
+      #
+      # Then restart ThingsBoard: docker compose restart thingsboard
+      MQTT_SSL_CREDENTIALS_TYPE: PEM
+      MQTT_SSL_PEM_CERT: /etc/tb-certs/mqttserver.pem
+      MQTT_SSL_PEM_KEY: /etc/tb-certs/mqttserver-private.pem
+      MQTT_SSL_PEM_KEY_PASSWORD: ""
+      # Require client certificates (mTLS) – devices must present a cert signed by step-ca
+      MQTT_SSL_CLIENT_AUTHENTICATION: REQUIRE
+      # Trust only certs signed by the CDM Root CA (from step-ca-data volume)
+      MQTT_SSL_TRUSTSTORE_PATH: /step-ca-certs/certs/root_ca.crt
+      MQTT_SSL_TRUSTSTORE_TYPE: PEM
     volumes:
       - thingsboard-data:/data
       - thingsboard-logs:/var/log/thingsboard
+      # Read step-ca root CA cert for MQTT TLS truststore
+      - step-ca-data:/step-ca-certs:ro
+      # MQTT server certificate (operator must run provision.sh to generate)
+      - tb-mqtt-certs:/etc/tb-certs
     ports:
       - "9090:9090"   # HTTP UI
-      - "1883:1883"   # MQTT
+      - "1883:1883"   # MQTT plain (for local dev without TLS)
+      - "8883:8883"   # MQTT TLS with X.509 client-cert authentication
       - "7070:7070"   # Edge
     networks:
       - cdm-internal
