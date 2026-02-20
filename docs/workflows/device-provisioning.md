@@ -18,54 +18,55 @@ Zero-touch provisioning means a device can be unboxed, powered on, and fully reg
 
 ### Phase 1 — Factory Enrollment (first boot)
 
-```
-[Device]                     [IoT Bridge API]             [step-ca]
-   │                                │                          │
-   │── generate EC key pair         │                          │
-   │── generate CSR (CN=device-id)  │                          │
-   │                                │                          │
-   │── POST /devices/{id}/enroll ──►│                          │
-   │         { csr_pem: "..." }     │                          │
-   │                                │── validate device-id     │
-   │                                │── build OTT JWT          │
-   │                                │── POST /1.0/sign ───────►│
-   │                                │◄── signed cert ──────────│
-   │                                │── allocate WG IP         │
-   │                                │── generate WG config     │
-   │◄── { cert, ca_chain, wg } ─────│                          │
-   │                                │                          │
-   │── save /certs/device.crt       │                          │
-   │── save /certs/ca-chain.crt     │                          │
-   │── save /certs/wg0.conf         │                          │
-   │── write /certs/enrolled        │  (idempotency flag)      │
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant I as IoT Bridge API
+    participant S as step-ca
+
+    D->>D: generate EC key pair
+    D->>D: generate CSR (CN=device-id)
+    D->>I: POST /devices/{id}/enroll { csr_pem }
+    I->>I: validate device-id
+    I->>I: build OTT JWT
+    I->>S: POST /1.0/sign
+    S-->>I: signed cert
+    I->>I: allocate WG IP
+    I->>I: generate WG config
+    I-->>D: { cert, ca_chain, wg }
+    D->>D: save /certs/device.crt
+    D->>D: save /certs/ca-chain.crt
+    D->>D: save /certs/wg0.conf
+    D->>D: write /certs/enrolled (idempotency flag)
 ```
 
 ### Phase 2 — First MQTT Connection
 
-```
-[Device]                     [ThingsBoard]              [IoT Bridge API]
-   │                                │                          │
-   │── MQTT CONNECT (mTLS) ────────►│                          │
-   │   (cert CN=device-id)          │── verify cert chain      │
-   │                                │   against step-ca Root CA│
-   │                                │                          │
-   │                                │── Rule Engine fires      │
-   │                                │   POST_CONNECT event     │
-   │                                │── POST /webhooks/thingsboard ─►│
-   │                                │                          │── create hawkBit target
-   │                                │                          │── store WG IP in TB attributes
-   │◄── CONNACK ────────────────────│                          │
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant T as ThingsBoard
+    participant I as IoT Bridge API
+
+    D->>T: MQTT CONNECT (mTLS, cert CN=device-id)
+    T->>T: verify cert chain against step-ca Root CA
+    T->>I: Rule Engine: POST_CONNECT event<br/>POST /webhooks/thingsboard
+    I->>I: create hawkBit target
+    I->>I: store WG IP in TB attributes
+    T-->>D: CONNACK
 ```
 
 ### Phase 3 — Device Registers with WireGuard
 
-```
-[Device]                     [WireGuard Server]
-   │                                │
-   │── wg-quick up wg0 ────────────►│
-   │   (uses /certs/wg0.conf)       │── add peer (public key + allowed IPs)
-   │◄── tunnel established ─────────│
-   │── now reachable at 10.8.0.x    │
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant W as WireGuard Server
+
+    D->>W: wg-quick up wg0 (uses /certs/wg0.conf)
+    W->>W: add peer (public key + allowed IPs)
+    W-->>D: tunnel established
+    Note over D: now reachable at 10.8.0.x
 ```
 
 ---

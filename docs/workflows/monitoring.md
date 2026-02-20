@@ -6,10 +6,16 @@ This page covers how device metrics flow from the edge to InfluxDB and how to us
 
 ## Architecture
 
-```
-Edge Device
-  ├── Telegraf  ──HTTP/InfluxDB Line Protocol──► InfluxDB v2  ──► Grafana
-  └── MQTT client ──MQTTS──► ThingsBoard  ──Rule Engine──► Alarms / Notifications
+```mermaid
+graph LR
+    subgraph edge[Edge Device]
+        TEL[Telegraf]
+        MQC[MQTT client]
+    end
+    TEL -->|"HTTP · InfluxDB Line Protocol"| IDB[InfluxDB v2]
+    IDB --> GRF[Grafana]
+    MQC -->|MQTTS| TB[ThingsBoard]
+    TB -->|Rule Engine| ALM["Alarms / Notifications"]
 ```
 
 **Principle:** High-frequency, high-cardinality data (every 10 seconds for every device) goes to InfluxDB to avoid overwhelming ThingsBoard's PostgreSQL backend. Business-logic data (device state, alarms, OTA status) goes through ThingsBoard.
