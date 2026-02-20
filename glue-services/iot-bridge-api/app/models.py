@@ -48,6 +48,14 @@ class WebhookResponse(BaseModel):
     reason: str | None = None
 
 
+class TelemetryWebhookResponse(BaseModel):
+    status: str
+    device_id: str | None = None
+    tenant_id: str | None = None
+    points_written: int = 0
+    reason: str | None = None
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):

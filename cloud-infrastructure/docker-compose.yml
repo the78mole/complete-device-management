@@ -372,6 +372,39 @@ services:
       - hawkbit
       - step-ca
 
+  # ───────────────── Cloud-side Telegraf (metrics aggregator) ─────────
+  # Collects device metrics from hawkBit (OTA/update status) and subscribes
+  # to tenant-scoped MQTT topics for optional additional sensor data.
+  # Primary ThingsBoard device telemetry is forwarded to InfluxDB by the
+  # iot-bridge-api /webhooks/thingsboard/telemetry endpoint (rule chain).
+  #
+  # Tenant isolation is enforced via:
+  #   – hawkBit data tagged with HAWKBIT_TENANT
+  #   – MQTT topics: cdm/<tenant>/<device>/sensors
+  #   – InfluxDB tags: tenant_id, device_id on every data point
+  telegraf:
+    image: telegraf:1.30-alpine
+    container_name: cdm-telegraf
+    restart: unless-stopped
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: cdm-org
+      INFLUX_BUCKET: iot-metrics
+      HAWKBIT_URL: http://hawkbit:8070
+      HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
+      HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
+      HAWKBIT_TENANT: ${HB_TENANT:-DEFAULT}
+      THINGSBOARD_HOST: thingsboard
+    volumes:
+      - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - cdm-internal
+    depends_on:
+      - influxdb
+      - hawkbit
+      - thingsboard
+
   # ─────────────────────── Terminal Proxy ──────────────────────────
   terminal-proxy:
     build:

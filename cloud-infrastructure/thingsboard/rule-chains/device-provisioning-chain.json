@@ -177,6 +177,36 @@
           "layoutX": 680,
           "layoutY": 0
         }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-000a-000a-000a-00000000000a"
+        },
+        "type": "org.thingsboard.rule.engine.rest.TbRestApiCallNode",
+        "name": "Forward Telemetry to InfluxDB",
+        "debugMode": false,
+        "configuration": {
+          "restEndpointUrlPattern": "http://iot-bridge-api:8000/webhooks/thingsboard/telemetry",
+          "requestMethod": "POST",
+          "enableProxy": false,
+          "useSimpleClientHttpFactory": false,
+          "ignoreRequestBody": false,
+          "readTimeoutMs": 10000,
+          "maxParallelRequestsCount": 100,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "useRedirectStrategy": false,
+          "trimDoubleQuotes": false,
+          "parseToPlainText": false,
+          "bodyTemplate": "{\"msgType\":\"${msgType}\",\"metadata\":{\"tenantId\":\"${metadata.tenantId}\",\"deviceId\":\"${metadata.deviceId}\",\"deviceName\":\"${metadata.deviceName}\"},\"data\":${msg}}"
+        },
+        "additionalInfo": {
+          "description": "Forwards device telemetry to iot-bridge-api which writes it to InfluxDB with tenant_id and device_id tags for Mandanten-Isolation.",
+          "layoutX": 680,
+          "layoutY": 300
+        }
       }
     ],
     "connections": [
@@ -208,6 +238,11 @@
       {
         "fromIndex": 2,
         "toIndex": 4,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 8,
         "type": "Success"
       },
       {
