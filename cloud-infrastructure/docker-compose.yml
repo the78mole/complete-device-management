@@ -383,7 +383,7 @@ services:
   #   – MQTT topics: cdm/<tenant>/<device>/sensors
   #   – InfluxDB tags: tenant_id, device_id on every data point
   telegraf:
-    image: telegraf:1.30-alpine
+    image: telegraf:1.37-alpine
     container_name: cdm-telegraf
     restart: unless-stopped
     environment:
