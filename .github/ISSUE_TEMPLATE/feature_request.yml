@@ -27,6 +27,7 @@ body:
         - kubernetes / helm charts
         - documentation
         - CI / GitHub Actions
+        - cross-sectional (mult. comps involved)
         - new component (describe below)
     validations:
       required: true
