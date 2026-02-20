@@ -324,6 +324,7 @@ services:
       STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
       STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
       STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
     volumes:
       - wg-data:/wg-config
     ports:
