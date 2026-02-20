@@ -1,9 +1,9 @@
-FROM quay.io/keycloak/keycloak:24.0 AS builder
+FROM quay.io/keycloak/keycloak:26.5 AS builder
 
 # Build with custom providers if needed in the future
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:24.0
+FROM quay.io/keycloak/keycloak:26.5
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 
 # Store the realm template in a staging location; the entrypoint script will

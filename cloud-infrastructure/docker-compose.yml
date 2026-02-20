@@ -78,7 +78,7 @@ services:
       start_period: 30s
 
   keycloak-db:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: cdm-keycloak-db
     restart: unless-stopped
     environment:
@@ -129,7 +129,7 @@ services:
 
   # ──────────────────────── ThingsBoard ────────────────────────────
   thingsboard-db:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: cdm-tb-db
     restart: unless-stopped
     environment:
@@ -147,7 +147,7 @@ services:
       retries: 5
 
   thingsboard:
-    image: thingsboard/tb-postgres:3.9.1
+    image: thingsboard/tb-postgres:4.2.1
     container_name: cdm-thingsboard
     restart: unless-stopped
     environment:
@@ -273,7 +273,7 @@ services:
 
   # ───────────────────────── Grafana ───────────────────────────────
   grafana:
-    image: grafana/grafana-oss:10.4.19
+    image: grafana/grafana-oss:12.3.3
     container_name: cdm-grafana
     restart: unless-stopped
     environment:
