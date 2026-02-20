@@ -72,7 +72,7 @@ services:
   # and hawkBit via the cloud-side Telegraf and iot-bridge-api telemetry
   # webhook.  Direct OS metric collection is intentionally disabled.
   telegraf:
-    image: telegraf:1.30-alpine
+    image: telegraf:1.37-alpine
     container_name: cdm-device-telegraf
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
