@@ -70,3 +70,18 @@ jobs:
         run: |
           find . -name "*.json" -not -path "./.git/*" -not -path "*/node_modules/*" | \
           while read f; do python3 -m json.tool "$f" > /dev/null && echo "OK: $f"; done
+
+  validate-docs:
+    name: Validate documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - name: Install MkDocs
+        run: pip install -r docs/requirements.txt
+      - name: Build docs (strict)
+        run: mkdocs build --strict
