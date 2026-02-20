@@ -349,6 +349,10 @@ services:
       VPN_SUBNET: 10.13.13.0/24
       AUTH_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
       AUTH_AUDIENCE: terminal-proxy
+      # Path to cdm_peers.json written by iot-bridge-api (shared volume)
+      PEERS_DB_PATH: /wg-config/cdm_peers.json
+    volumes:
+      - wg-data:/wg-config:ro
     ports:
       - "8090:8090"
     networks:
