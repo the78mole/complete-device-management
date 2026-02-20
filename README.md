@@ -44,6 +44,7 @@ graph TB
         TB -->|Rule Engine| IBA
         SCA <-->|sign| IBA
         IBA <-->|alloc| WGS
+        IBA -->|telemetry| IDB
         IDB --> GRF
     end
 
@@ -63,7 +64,7 @@ graph TB
     end
 
     MQC -->|MQTT/TLS| TB
-    TLG -->|metrics| IDB
+    TLG -.->|sensor data (optional)| IDB
     TTD <-->|WS/ttyd| TXP
     WGC <-->|WireGuard VPN| WGS
 ```
