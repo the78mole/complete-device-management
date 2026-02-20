@@ -1,0 +1,32 @@
+title: "[Q&A] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Welcome to the **complete-device-management** Q&A!
+        Please search existing discussions before posting — your question may already be answered.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What Have You Tried?
+      description: Share what you have already attempted so we can give a more targeted answer.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      placeholder: |
+        - OS: Ubuntu 22.04
+        - Docker: 24.0.7
+        - Git commit: abc1234

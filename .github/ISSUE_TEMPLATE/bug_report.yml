@@ -1,0 +1,114 @@
+name: 🐛 Bug Report
+description: Report a reproducible problem in complete-device-management
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        Please provide as much detail as possible so we can reproduce and fix the issue quickly.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the platform is affected?
+      options:
+        - cloud-infrastructure / docker-compose
+        - step-ca (PKI)
+        - keycloak (IAM)
+        - thingsboard (UI / MQTT / Rule Chain)
+        - hawkbit (OTA backend)
+        - influxdb / grafana (monitoring)
+        - wireguard (VPN)
+        - glue-services / iot-bridge-api
+        - glue-services / terminal-proxy
+        - device-stack / bootstrap (enrollment)
+        - device-stack / mqtt-client
+        - device-stack / updater (RAUC / hawkBit DDI)
+        - device-stack / telegraf
+        - device-stack / wireguard-client
+        - device-stack / ttyd (terminal)
+        - documentation
+        - CI / GitHub Actions
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "When I do X, Y happens instead of Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Exact commands or actions needed to reproduce the issue.
+      placeholder: |
+        1. Run `docker compose up -d`
+        2. Execute `curl http://localhost:8000/devices/test/enroll ...`
+        3. Observe error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behaviour
+      description: What actually happened? Include error messages and stack traces.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Paste relevant container logs here (use `docker compose logs <service>`).
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Git Commit / Tag
+      description: Output of `git rev-parse --short HEAD`
+      placeholder: "e.g. a1b2c3d"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, available RAM
+      placeholder: |
+        - OS: Ubuntu 22.04
+        - Docker: 24.0.7
+        - Docker Compose: 2.23.0
+        - RAM: 16 GB
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am using a supported version (latest `main` or `develop`).
+          required: true
+        - label: I have included logs or error messages.
+          required: false

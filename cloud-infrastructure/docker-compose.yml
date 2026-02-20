@@ -1,0 +1,397 @@
+---
+# Master Docker Compose – Cloud Infrastructure (local evaluation)
+# Bring up: docker compose up -d
+# Prerequisites: copy .env.example to .env and fill in secrets
+
+networks:
+  cdm-internal:
+    driver: bridge
+  cdm-vpn:
+    driver: bridge
+
+volumes:
+  keycloak-db-data:
+  thingsboard-data:
+  thingsboard-logs:
+  thingsboard-db-data:
+  tb-mqtt-certs:
+  hawkbit-db-data:
+  hawkbit-data:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
+  wg-data:
+  step-ca-data:
+
+secrets:
+  step-ca-password:
+    file: ./step-ca/password.txt
+
+# ─────────────────────────── Keycloak ────────────────────────────
+services:
+  # ─────────────────────── Step CA (PKI) ──────────────────────────
+  # step-ca auto-creates a Root CA + Intermediate CA on first boot
+  # using the DOCKER_STEPCA_INIT_* variables below.
+  # All values are configurable via .env (see .env.example).
+  step-ca:
+    build:
+      context: ./step-ca
+      dockerfile: Dockerfile
+    container_name: cdm-step-ca
+    restart: unless-stopped
+    environment:
+      # ── Root CA ──────────────────────────────────────────────────
+      # Human-readable name embedded in the Root CA subject
+      DOCKER_STEPCA_INIT_NAME: "${STEP_CA_PKI_NAME:-CDM Root CA}"
+      # Comma-separated DNS names the CA certificate is valid for
+      DOCKER_STEPCA_INIT_DNS_NAMES: "${STEP_CA_DNS_NAMES:-step-ca,localhost}"
+      # ── Intermediate CA ──────────────────────────────────────────
+      # step-ca signs the intermediate CA with the root during init;
+      # the password file protects both the root and intermediate keys.
+      # Validity of the root and intermediate CA certificates is set
+      # via the step ca init flags (see init-provisioners.sh).
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/step-ca-password
+      # TLS address the CA HTTPS API listens on
+      DOCKER_STEPCA_INIT_ADDRESS: "${STEP_CA_ADDRESS:-:9000}"
+      # ── Provisioner setup ────────────────────────────────────────
+      # Name/email of the first (bootstrap) admin JWK provisioner
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}"
+      # Enable ACME provisioner (for automatic device cert renewal)
+      DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
+      # Enable the Admin API so init-provisioners.sh can add more provisioners
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
+      # Disable SSH CA (not needed for this IoT platform)
+      DOCKER_STEPCA_INIT_SSH: "${STEP_CA_ENABLE_SSH:-false}"
+    secrets:
+      - step-ca-password
+    volumes:
+      - step-ca-data:/home/step
+    ports:
+      - "9000:9000"
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: cdm-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: cdm-keycloak
+    restart: unless-stopped
+    command: >
+      start-dev
+      --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_RELATIVE_PATH: /auth
+      # OIDC client secrets – interpolated into realm-export.json by docker-entrypoint.sh
+      TB_OIDC_SECRET: ${TB_OIDC_SECRET:-changeme}
+      GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
+      BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+    ports:
+      - "8080:8080"
+    networks:
+      - cdm-internal
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  # ──────────────────────── ThingsBoard ────────────────────────────
+  thingsboard-db:
+    image: postgres:15-alpine
+    container_name: cdm-tb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_USER: thingsboard
+      POSTGRES_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+    volumes:
+      - thingsboard-db-data:/var/lib/postgresql/data
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thingsboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  thingsboard:
+    image: thingsboard/tb-postgres:3.7.0
+    container_name: cdm-thingsboard
+    restart: unless-stopped
+    environment:
+      TB_QUEUE_TYPE: in-memory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://thingsboard-db:5432/thingsboard
+      SPRING_DATASOURCE_USERNAME: thingsboard
+      SPRING_DATASOURCE_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+      # Keycloak OIDC
+      SECURITY_OAUTH2_ENABLED: "true"
+      SECURITY_OAUTH2_DEFAULT_PROVIDER: keycloak
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_ID: thingsboard
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_SECRET: ${TB_OIDC_SECRET:-changeme}
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_AUTHORIZATION_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/auth
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_TOKEN_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_USER_INFO_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_REDIRECT_URI: http://localhost:9090/login/oauth2/code/
+      # ── MQTT TLS / X.509 client-certificate authentication ────────────────
+      # Devices connect on port 8883 and present the certificate signed by step-ca.
+      # The root CA cert is read from the step-ca-data volume at the path below.
+      MQTT_SSL_ENABLED: "true"
+      MQTT_SSL_BIND_ADDRESS: "0.0.0.0"
+      MQTT_SSL_BIND_PORT: "8883"
+      # MQTT server certificate and key are stored in the tb-mqtt-certs named volume.
+      # Generate them ONCE after step-ca has initialised (init-provisioners.sh has run):
+      #
+      #   docker exec cdm-step-ca \
+      #     step ca certificate mqtt.cdm.local \
+      #       /home/step/mqttserver.pem /home/step/mqttserver-private.pem \
+      #       --provisioner iot-bridge --not-after 8760h --force
+      #
+      #   docker exec cdm-step-ca cat /home/step/mqttserver.pem \
+      #     | docker exec -i cdm-thingsboard sh -c 'cat > /etc/tb-certs/mqttserver.pem'
+      #   docker exec cdm-step-ca cat /home/step/mqttserver-private.pem \
+      #     | docker exec -i cdm-thingsboard sh -c 'cat > /etc/tb-certs/mqttserver-private.pem'
+      #
+      # Then restart ThingsBoard: docker compose restart thingsboard
+      MQTT_SSL_CREDENTIALS_TYPE: PEM
+      MQTT_SSL_PEM_CERT: /etc/tb-certs/mqttserver.pem
+      MQTT_SSL_PEM_KEY: /etc/tb-certs/mqttserver-private.pem
+      MQTT_SSL_PEM_KEY_PASSWORD: ""
+      # Require client certificates (mTLS) – devices must present a cert signed by step-ca
+      MQTT_SSL_CLIENT_AUTHENTICATION: REQUIRE
+      # Trust only certs signed by the CDM Root CA (from step-ca-data volume)
+      MQTT_SSL_TRUSTSTORE_PATH: /step-ca-certs/certs/root_ca.crt
+      MQTT_SSL_TRUSTSTORE_TYPE: PEM
+    volumes:
+      - thingsboard-data:/data
+      - thingsboard-logs:/var/log/thingsboard
+      # Read step-ca root CA cert for MQTT TLS truststore
+      - step-ca-data:/step-ca-certs:ro
+      # MQTT server certificate (operator must run provision.sh to generate)
+      - tb-mqtt-certs:/etc/tb-certs
+    ports:
+      - "9090:9090"   # HTTP UI
+      - "1883:1883"   # MQTT plain (for local dev without TLS)
+      - "8883:8883"   # MQTT TLS with X.509 client-cert authentication
+      - "7070:7070"   # Edge
+    networks:
+      - cdm-internal
+    depends_on:
+      thingsboard-db:
+        condition: service_healthy
+
+  # ───────────────────────── hawkBit ───────────────────────────────
+  hawkbit-db:
+    image: mysql:8-debian
+    container_name: cdm-hawkbit-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: hawkbit
+      MYSQL_USER: hawkbit
+      MYSQL_PASSWORD: ${HB_DB_PASSWORD:-changeme}
+      MYSQL_ROOT_PASSWORD: ${HB_DB_ROOT_PASSWORD:-changeme_root}
+    volumes:
+      - hawkbit-db-data:/var/lib/mysql
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "hawkbit", "--password=${HB_DB_PASSWORD:-changeme}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  hawkbit:
+    image: hawkbit/hawkbit-update-server:latest
+    container_name: cdm-hawkbit
+    restart: unless-stopped
+    environment:
+      HB_DB_PASSWORD: ${HB_DB_PASSWORD:-changeme}
+      HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
+    volumes:
+      - ./hawkbit/application.properties:/opt/hawkbit/application.properties:ro
+      - hawkbit-data:/data
+    ports:
+      - "8070:8070"
+    networks:
+      - cdm-internal
+    depends_on:
+      hawkbit-db:
+        condition: service_healthy
+
+  # ───────────────────────── InfluxDB ──────────────────────────────
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: cdm-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-changeme00}
+      DOCKER_INFLUXDB_INIT_ORG: cdm-org
+      DOCKER_INFLUXDB_INIT_BUCKET: iot-metrics
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+      - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "8086:8086"
+    networks:
+      - cdm-internal
+
+  # ───────────────────────── Grafana ───────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:10.4.0
+    container_name: cdm-grafana
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:8080/auth/realms/cdm/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - cdm-internal
+    depends_on:
+      - influxdb
+
+  # ───────────────────────── WireGuard ─────────────────────────────
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: cdm-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: UTC
+      SERVERURL: ${WG_SERVER_URL:-auto}
+      SERVERPORT: ${WG_PORT:-51820}
+      PEERS: ${WG_PEERS:-10}
+      PEERDNS: auto
+      INTERNAL_SUBNET: 10.13.13.0
+      ALLOWEDIPS: 10.13.13.0/24
+    volumes:
+      - wg-data:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "51820:51820/udp"
+    networks:
+      - cdm-internal
+      - cdm-vpn
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  # ──────────────────── IoT Bridge API (glue) ──────────────────────
+  iot-bridge-api:
+    build:
+      context: ../glue-services/iot-bridge-api
+      dockerfile: Dockerfile
+    container_name: cdm-iot-bridge-api
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_REALM: cdm
+      KEYCLOAK_CLIENT_ID: iot-bridge
+      KEYCLOAK_CLIENT_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      THINGSBOARD_URL: http://thingsboard:9090
+      THINGSBOARD_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
+      THINGSBOARD_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}
+      HAWKBIT_URL: http://hawkbit:8070
+      HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
+      HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: cdm-org
+      INFLUX_BUCKET: iot-metrics
+      WIREGUARD_CONFIG_DIR: /wg-config
+      WG_SUBNET: 10.13.13.0/24
+      WG_SERVER_IP: 10.13.13.1
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
+    volumes:
+      - wg-data:/wg-config
+    ports:
+      - "8000:8000"
+    networks:
+      - cdm-internal
+    depends_on:
+      - keycloak
+      - thingsboard
+      - hawkbit
+      - step-ca
+
+  # ─────────────────────── Terminal Proxy ──────────────────────────
+  terminal-proxy:
+    build:
+      context: ../glue-services/terminal-proxy
+      dockerfile: Dockerfile
+    container_name: cdm-terminal-proxy
+    restart: unless-stopped
+    environment:
+      TTYD_PORT: 7681
+      VPN_SUBNET: 10.13.13.0/24
+      AUTH_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
+      AUTH_AUDIENCE: terminal-proxy
+      # Path to cdm_peers.json written by iot-bridge-api (shared volume)
+      PEERS_DB_PATH: /wg-config/cdm_peers.json
+    volumes:
+      - wg-data:/wg-config:ro
+    ports:
+      - "8090:8090"
+    networks:
+      - cdm-internal
+      - cdm-vpn
+    depends_on:
+      - wireguard
