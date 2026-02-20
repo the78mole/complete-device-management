@@ -147,7 +147,7 @@ services:
       retries: 5
 
   thingsboard:
-    image: thingsboard/tb-postgres:3.7.0
+    image: thingsboard/tb-postgres:3.9.1
     container_name: cdm-thingsboard
     restart: unless-stopped
     environment:
