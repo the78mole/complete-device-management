@@ -120,11 +120,19 @@ services:
       # hostname:port instead of the external proxy URL.
       KC_PROXY_HEADERS: xforwarded
       KC_HOSTNAME_STRICT_HTTPS: "false"
-      # OIDC client secrets – interpolated into realm-export.json by docker-entrypoint.sh
+      # OIDC client secrets – interpolated into realm JSON files by docker-entrypoint.sh
       TB_OIDC_SECRET: ${TB_OIDC_SECRET:-changeme}
       GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
       HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      # Realm bootstrap user passwords
+      PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
+      TENANT1_ADMIN_PASSWORD: ${TENANT1_ADMIN_PASSWORD:-changeme}
+      TENANT1_OPERATOR_PASSWORD: ${TENANT1_OPERATOR_PASSWORD:-changeme}
+      TENANT1_VIEWER_PASSWORD: ${TENANT1_VIEWER_PASSWORD:-changeme}
+      TENANT2_ADMIN_PASSWORD: ${TENANT2_ADMIN_PASSWORD:-changeme}
+      TENANT2_OPERATOR_PASSWORD: ${TENANT2_OPERATOR_PASSWORD:-changeme}
+      TENANT2_VIEWER_PASSWORD: ${TENANT2_VIEWER_PASSWORD:-changeme}
     ports:
       - "8080:8080"
     networks:

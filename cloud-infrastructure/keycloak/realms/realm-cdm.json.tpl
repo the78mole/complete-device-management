@@ -17,6 +17,32 @@
       { "name": "cdm-viewer",   "description": "Read-only access" }
     ]
   },
+  "users": [
+    {
+      "username": "cdm-admin",
+      "email": "cdm-admin@example.com",
+      "firstName": "CDM",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["cdm-admin"],
+      "credentials": [
+        { "type": "password", "value": "changeme", "temporary": true }
+      ]
+    },
+    {
+      "username": "cdm-operator",
+      "email": "cdm-operator@example.com",
+      "firstName": "CDM",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["cdm-operator"],
+      "credentials": [
+        { "type": "password", "value": "changeme", "temporary": true }
+      ]
+    }
+  ],
   "clients": [
     {
       "clientId": "hawkbit",
@@ -25,8 +51,8 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "${HB_OIDC_SECRET}",
-      "redirectUris": ["http://localhost:8070/*"],
-      "webOrigins": ["http://localhost:8070"],
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false
@@ -51,8 +77,8 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "${GRAFANA_OIDC_SECRET}",
-      "redirectUris": ["http://localhost:3000/*"],
-      "webOrigins": ["http://localhost:3000"],
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false
@@ -75,7 +101,7 @@
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": true,
-      "redirectUris": ["http://localhost:8090/*"],
+      "redirectUris": ["*"],
       "webOrigins": ["*"],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
