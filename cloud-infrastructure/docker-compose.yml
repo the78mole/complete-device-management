@@ -143,6 +143,12 @@ services:
     depends_on:
       keycloak-db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /auth/realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 5 grep -q 200 <&3"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
 
   # ──────────────────────── ThingsBoard ────────────────────────────
   thingsboard-db:
@@ -232,6 +238,8 @@ services:
     depends_on:
       thingsboard-db:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
 
   # ───────────────────────── hawkBit ───────────────────────────────
   # RabbitMQ is required by hawkBit's DMF (Device Management Federation) bus.
@@ -301,6 +309,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
 
   # ───────────────────────── InfluxDB ──────────────────────────────
   influxdb:
@@ -322,6 +332,10 @@ services:
       - "8086:8086"
     networks:
       - cdm-internal
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
 
   # ───────────────────────── Grafana ───────────────────────────────
   grafana:
@@ -362,7 +376,10 @@ services:
     networks:
       - cdm-internal
     depends_on:
-      - influxdb
+      influxdb:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
 
   # ───────────────────────── WireGuard ─────────────────────────────
   wireguard:
@@ -392,6 +409,10 @@ services:
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
     restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
 
   # ──────────────────── IoT Bridge API (glue) ──────────────────────
   iot-bridge-api:
@@ -447,10 +468,14 @@ services:
     networks:
       - cdm-internal
     depends_on:
-      - keycloak
-      - thingsboard
-      - hawkbit
-      - step-ca
+      keycloak:
+        condition: service_healthy
+      thingsboard:
+        condition: service_started
+      hawkbit:
+        condition: service_started
+      step-ca:
+        condition: service_healthy
 
   # ───────────────── Cloud-side Telegraf (metrics aggregator) ─────────
   # Collects device metrics from hawkBit (OTA/update status) and subscribes
@@ -507,7 +532,10 @@ services:
       - cdm-internal
       - cdm-vpn
     depends_on:
-      - wireguard
+      wireguard:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
 
   # ─────────────────────── nginx (reverse proxy) ───────────────────
   # Single entry point on port 8888.  All services reachable by prefix:
@@ -530,12 +558,21 @@ services:
     networks:
       - cdm-internal
     depends_on:
-      - keycloak
-      - thingsboard
-      - grafana
-      - hawkbit
-      - iot-bridge-api
-      - terminal-proxy
-      - step-ca
-      - influxdb
-      - rabbitmq
+      keycloak:
+        condition: service_healthy
+      thingsboard:
+        condition: service_started
+      grafana:
+        condition: service_started
+      hawkbit:
+        condition: service_started
+      iot-bridge-api:
+        condition: service_started
+      terminal-proxy:
+        condition: service_started
+      step-ca:
+        condition: service_healthy
+      influxdb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
