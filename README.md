@@ -27,32 +27,32 @@
 ## Architecture Overview
 
 ```mermaid
-graph TB
-    subgraph cloud["Cloud Infrastructure (docker-compose / Kubernetes)"]
-        KC["Keycloak (IAM)"]
-        TB["ThingsBoard (UI/MQTT)"]
-        HB["hawkBit (OTA Backend)"]
-        SCA["step-ca (PKI)"]
-        IBA["IoT Bridge API"]
-        WGS["WireGuard Server"]
+flowchart TB
+    subgraph cloud[Cloud Infrastructure]
+        KC[Keycloak IAM]
+        TB[ThingsBoard UI and MQTT]
+        HB[hawkBit OTA Backend]
+        SCA[step-ca PKI]
+        IBA[IoT Bridge API]
+        WGS[WireGuard Server]
         IDB[InfluxDB]
         GRF[Grafana]
-        TXP["Terminal Proxy (WS/JWT)"]
+        TXP[Terminal Proxy WS JWT]
 
         KC <-->|OIDC| TB
         TB <-->|REST| HB
         TB -->|Rule Engine| IBA
-        SCA <-->|sign| IBA
-        IBA <-->|alloc| WGS
-        IBA -->|telemetry| IDB
+        SCA <-->|Sign| IBA
+        IBA <-->|Allocate| WGS
+        IBA -->|Telemetry| IDB
         IDB --> GRF
     end
 
-    subgraph edge["Edge Device (Linux / Yocto)"]
-        BST["bootstrap (step-cli)"]
-        UPD[RAUC updater]
+    subgraph edge[Edge Device]
+        BST[Bootstrap step-cli]
+        UPD[RAUC Updater]
         TLG[Telegraf]
-        MQC[MQTT client]
+        MQC[MQTT Client]
         TTD[ttyd]
         WGC[WireGuard Client]
 
@@ -63,9 +63,9 @@ graph TB
         BST --> WGC
     end
 
-    MQC -->|MQTT/TLS| TB
-    TLG -.->|sensor data (optional)| IDB
-    TTD <-->|WS/ttyd| TXP
+    MQC -->|MQTT over TLS| TB
+    TLG -.->|Optional sensor data| IDB
+    TTD <-->|WebSocket ttyd| TXP
     WGC <-->|WireGuard VPN| WGS
 ```
 
