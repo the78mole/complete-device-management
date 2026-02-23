@@ -119,7 +119,9 @@ services:
       # nginx). Without this Keycloak builds redirect URLs using the internal
       # hostname:port instead of the external proxy URL.
       KC_PROXY_HEADERS: xforwarded
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # KC_HOSTNAME_STRICT_HTTPS is a deprecated v1 hostname option (KC 26+).
+      # Leaving it out avoids issuer-mismatch 403s when clients access KC over
+      # HTTPS (Codespaces). KC_PROXY_HEADERS=xforwarded already handles this.
       # OIDC client secrets – interpolated into realm JSON files by docker-entrypoint.sh
       TB_OIDC_SECRET: ${TB_OIDC_SECRET:-changeme}
       GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}

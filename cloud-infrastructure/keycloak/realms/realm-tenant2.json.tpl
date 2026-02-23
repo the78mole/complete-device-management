@@ -26,6 +26,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["cdm-admin"],
+      "clientRoles": { "realm-management": ["realm-admin"] },
       "credentials": [
         { "type": "password", "value": "${TENANT2_ADMIN_PASSWORD}", "temporary": true }
       ]
