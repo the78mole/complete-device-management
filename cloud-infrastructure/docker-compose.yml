@@ -21,6 +21,7 @@ volumes:
   influxdb-config:
   grafana-data:
   wg-data:
+  rabbitmq-data:
   step-ca-data:
 
 secrets:
@@ -114,6 +115,11 @@ services:
       KC_HTTP_PORT: 8080
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_RELATIVE_PATH: /auth
+      # Trust X-Forwarded-* headers from reverse proxies (e.g. GitHub Codespaces,
+      # nginx). Without this Keycloak builds redirect URLs using the internal
+      # hostname:port instead of the external proxy URL.
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME_STRICT_HTTPS: "false"
       # OIDC client secrets – interpolated into realm-export.json by docker-entrypoint.sh
       TB_OIDC_SECRET: ${TB_OIDC_SECRET:-changeme}
       GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
@@ -160,15 +166,18 @@ services:
       SECURITY_OAUTH2_DEFAULT_PROVIDER: keycloak
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_ID: thingsboard
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_SECRET: ${TB_OIDC_SECRET:-changeme}
-      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_AUTHORIZATION_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/auth
+      # AUTH_URI is browser-facing – must use EXTERNAL_URL so Codespaces browsers can reach Keycloak
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_AUTHORIZATION_URI: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
+      # TOKEN/USERINFO/JWKS are server-to-server calls – use internal hostname
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_TOKEN_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_USER_INFO_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
-      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_REDIRECT_URI: http://localhost:9090/login/oauth2/code/
+      # REDIRECT_URI is browser-facing – Keycloak redirects here after login (port 9090, not 8888)
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_REDIRECT_URI: ${TB_EXTERNAL_URL:-http://localhost:9090}/login/oauth2/code/
       # ── MQTT TLS / X.509 client-certificate authentication ────────────────
       # Devices connect on port 8883 and present the certificate signed by step-ca.
       # The root CA cert is read from the step-ca-data volume at the path below.
-      MQTT_SSL_ENABLED: "true"
+      MQTT_SSL_ENABLED: "${MQTT_SSL_ENABLED:-false}"
       MQTT_SSL_BIND_ADDRESS: "0.0.0.0"
       MQTT_SSL_BIND_PORT: "8883"
       # MQTT server certificate and key are stored in the tb-mqtt-certs named volume.
@@ -184,13 +193,14 @@ services:
       #   docker exec cdm-step-ca cat /home/step/mqttserver-private.pem \
       #     | docker exec -i cdm-thingsboard sh -c 'cat > /etc/tb-certs/mqttserver-private.pem'
       #
-      # Then restart ThingsBoard: docker compose restart thingsboard
+      # Then set MQTT_SSL_ENABLED=true in .env and restart ThingsBoard:
+      #   docker compose restart thingsboard
       MQTT_SSL_CREDENTIALS_TYPE: PEM
       MQTT_SSL_PEM_CERT: /etc/tb-certs/mqttserver.pem
       MQTT_SSL_PEM_KEY: /etc/tb-certs/mqttserver-private.pem
       MQTT_SSL_PEM_KEY_PASSWORD: ""
       # Require client certificates (mTLS) – devices must present a cert signed by step-ca
-      MQTT_SSL_CLIENT_AUTHENTICATION: REQUIRE
+      MQTT_SSL_CLIENT_AUTHENTICATION: "${MQTT_SSL_CLIENT_AUTHENTICATION:-NONE}"
       # Trust only certs signed by the CDM Root CA (from step-ca-data volume)
       MQTT_SSL_TRUSTSTORE_PATH: /step-ca-certs/certs/root_ca.crt
       MQTT_SSL_TRUSTSTORE_TYPE: PEM
@@ -213,6 +223,24 @@ services:
         condition: service_healthy
 
   # ───────────────────────── hawkBit ───────────────────────────────
+  # RabbitMQ is required by hawkBit's DMF (Device Management Federation) bus.
+  # Even if you only use the DDI (HTTP polling) API, the hawkbit-update-server
+  # image unconditionally loads its AmqpConfiguration and needs a live broker.
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: cdm-rabbitmq
+    restart: unless-stopped
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   hawkbit-db:
     image: mysql:8-debian
     container_name: cdm-hawkbit-db
@@ -239,6 +267,14 @@ services:
     environment:
       HB_DB_PASSWORD: ${HB_DB_PASSWORD:-changeme}
       HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
+      # RabbitMQ connection for the hawkBit DMF event bus
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: "5672"
+      # server.port in application.properties is overridden by the bundled default;
+      # env vars have the highest precedence in Spring Boot.
+      SERVER_PORT: "8070"
+      # Sub-path for the nginx reverse proxy
+      SERVER_SERVLET_CONTEXT_PATH: /hawkbit
     volumes:
       - ./hawkbit/application.properties:/opt/hawkbit/application.properties:ro
       - hawkbit-data:/data
@@ -248,6 +284,8 @@ services:
       - cdm-internal
     depends_on:
       hawkbit-db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
 
   # ───────────────────────── InfluxDB ──────────────────────────────
@@ -277,13 +315,16 @@ services:
     container_name: cdm-grafana
     restart: unless-stopped
     environment:
-      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:8080/auth/realms/cdm/protocol/openid-connect/auth
+      # AUTH_URL is browser-facing – must be reachable from the user's browser.
+      # In Codespaces set EXTERNAL_URL=https://<name>-80.app.github.dev in .env
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${EXTERNAL_URL:-http://localhost}/auth/realms/cdm/protocol/openid-connect/auth
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
       GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
       GF_AUTH_ANONYMOUS_ENABLED: "true"
@@ -345,7 +386,7 @@ services:
       THINGSBOARD_URL: http://thingsboard:9090
       THINGSBOARD_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
       THINGSBOARD_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}
-      HAWKBIT_URL: http://hawkbit:8070
+      HAWKBIT_URL: http://hawkbit:8070/hawkbit
       HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
       HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
       INFLUX_URL: http://influxdb:8086
@@ -360,6 +401,8 @@ services:
       STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
       STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
       STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
+      # Sub-path prefix for nginx reverse proxy (/api/)
+      ROOT_PATH: /api
     volumes:
       - wg-data:/wg-config
     ports:
@@ -391,7 +434,7 @@ services:
       INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
       INFLUX_ORG: cdm-org
       INFLUX_BUCKET: iot-metrics
-      HAWKBIT_URL: http://hawkbit:8070
+      HAWKBIT_URL: http://hawkbit:8070/hawkbit
       HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
       HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
       HAWKBIT_TENANT: ${HB_TENANT:-DEFAULT}
@@ -428,3 +471,34 @@ services:
       - cdm-vpn
     depends_on:
       - wireguard
+
+  # ─────────────────────── nginx (reverse proxy) ───────────────────
+  # Single entry point on port 8888.  All services reachable by prefix:
+  #   /            → Landing page   /auth/     → Keycloak
+  #   /grafana/    → Grafana        /hawkbit/  → hawkBit
+  #   /hawkbit/    → hawkBit        /api/      → IoT Bridge API
+  #   /terminal/   → Terminal Proxy
+  #
+  # Codespaces: https://<name>-8888.app.github.dev/
+  # Local:      http://localhost:8888/
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: cdm-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+    ports:
+      - "8888:8888"
+    networks:
+      - cdm-internal
+    depends_on:
+      - keycloak
+      - thingsboard
+      - grafana
+      - hawkbit
+      - iot-bridge-api
+      - terminal-proxy
+      - step-ca
+      - influxdb
+      - rabbitmq

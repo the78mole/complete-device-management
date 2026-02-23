@@ -150,7 +150,8 @@ InfluxDB, Grafana, WireGuard server, iot-bridge-api, terminal-proxy.
 ### 3. Bootstrap ThingsBoard
 
 ```bash
-docker compose exec thingsboard bash /provision/provision.sh
+cd cloud-infrastructure
+./thingsboard/scripts/provision.sh
 ```
 
 ### 4. Simulate a Device
@@ -169,11 +170,15 @@ then all other services start automatically.
 
 | Service | URL | Default Credentials |
 |---|---|---|
-| ThingsBoard | http://localhost:8080 | admin@thingsboard.org / from .env |
-| Keycloak | http://localhost:8180 | admin / from .env |
-| Grafana | http://localhost:3000 | admin / from .env |
-| hawkBit | http://localhost:8090 | admin / admin |
-| iot-bridge-api docs | http://localhost:8000/docs | — |
+| **nginx (single entry point)** | http://localhost/ | — |
+| ThingsBoard | http://localhost/tb/ | sysadmin@thingsboard.org / from .env |
+| Keycloak | http://localhost/auth/admin/ | admin / from .env |
+| Grafana | http://localhost/grafana/ | admin / from .env |
+| hawkBit | http://localhost/hawkbit/ | admin / admin |
+| iot-bridge-api docs | http://localhost/api/docs | — |
+| Terminal Proxy | ws://localhost/terminal/ | — (JWT via Keycloak) |
+
+> **Codespaces:** Ersetze `http://localhost` durch `https://<name>-80.app.github.dev`.
 
 ---
 

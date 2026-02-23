@@ -38,8 +38,8 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "${TB_OIDC_SECRET}",
-      "redirectUris": ["http://localhost:9090/*"],
-      "webOrigins": ["http://localhost:9090"],
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true

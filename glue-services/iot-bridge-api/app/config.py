@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     thingsboard_sysadmin_password: str = "sysadmin"
 
     # ── hawkBit ───────────────────────────────────────────────────────────────
-    hawkbit_url: str = "http://hawkbit:8070"
+    hawkbit_url: str = "http://hawkbit:8070/hawkbit"
     hawkbit_user: str = "admin"
     hawkbit_password: str = "admin"
 

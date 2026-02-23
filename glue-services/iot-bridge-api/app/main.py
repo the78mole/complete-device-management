@@ -1,4 +1,4 @@
-"""FastAPI application entry point."""
+import os
 
 from fastapi import FastAPI
 
@@ -11,6 +11,9 @@ app = FastAPI(
         "step-ca (PKI), ThingsBoard, hawkBit, and WireGuard."
     ),
     version="0.1.0",
+    # root_path allows FastAPI to generate correct OpenAPI URLs when served
+    # behind a reverse proxy at a sub-path (e.g. nginx /api/ prefix).
+    root_path=os.getenv("ROOT_PATH", ""),
 )
 
 app.include_router(health.router)

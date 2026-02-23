@@ -12,7 +12,11 @@ mkdir -p "$(dirname "$DEST")"
 
 # Substitute only the variables we expect in the template; leave any other
 # dollar-sign expressions untouched.
-envsubst '${TB_OIDC_SECRET} ${GRAFANA_OIDC_SECRET} ${HB_OIDC_SECRET} ${BRIDGE_OIDC_SECRET}' \
-  < "$TEMPLATE" > "$DEST"
+sed \
+  -e "s|\${TB_OIDC_SECRET}|${TB_OIDC_SECRET}|g" \
+  -e "s|\${GRAFANA_OIDC_SECRET}|${GRAFANA_OIDC_SECRET}|g" \
+  -e "s|\${HB_OIDC_SECRET}|${HB_OIDC_SECRET}|g" \
+  -e "s|\${BRIDGE_OIDC_SECRET}|${BRIDGE_OIDC_SECRET:-}|g" \
+  "$TEMPLATE" > "$DEST"
 
 exec /opt/keycloak/bin/kc.sh "$@"
