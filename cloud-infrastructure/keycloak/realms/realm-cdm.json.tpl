@@ -141,6 +141,36 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "attributes": { "post.logout.redirect.uris": "*" }
+    },
+    {
+      "clientId": "influxdb-proxy",
+      "name": "InfluxDB Proxy",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${INFLUX_PROXY_OIDC_SECRET}",
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": { "post.logout.redirect.uris": "*" },
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "identityProviders": [],

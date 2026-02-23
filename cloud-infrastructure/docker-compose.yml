@@ -128,6 +128,7 @@ services:
       HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
       # Realm bootstrap user passwords
       PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
       TENANT1_ADMIN_PASSWORD: ${TENANT1_ADMIN_PASSWORD:-changeme}
@@ -328,14 +329,68 @@ services:
       - influxdb-data:/var/lib/influxdb2
       - influxdb-config:/etc/influxdb2
       - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - cdm-internal
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # ──────────────────── InfluxDB OAuth2 Proxy ──────────────────────
+  # oauth2-proxy enforces Keycloak login before the InfluxDB web UI.
+  # Only users with the cdm-admin or cdm-operator realm role are granted
+  # access. The proxy listens on port 4180, exposed as host port 8086 so
+  # the landing page link stays unchanged.
+  #
+  # InfluxDB API paths (/api/v2/, /write, /query, /ping, /health) bypass
+  # authentication – service-to-service calls (iot-bridge-api, telegraf)
+  # use InfluxDB API tokens on the internal Docker network and are
+  # unaffected.
+  influxdb-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+    container_name: cdm-influxdb-proxy
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/auth/realms/cdm
+      OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
+      OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      # Browser-facing callback URL – uses port 8086 (not 8888) like ThingsBoard
+      # Codespaces: https://<name>-8086.app.github.dev
+      # Local:      http://localhost:8086
+      OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://influxdb:8086
+      # Permit any Keycloak-verified identity; roles claim gates access
+      OAUTH2_PROXY_EMAIL_DOMAIN: "*"
+      # The influxdb-proxy Keycloak client has a realm-roles ProtocolMapper
+      # that injects a flat "roles" array claim. cdm-viewer is excluded –
+      # Grafana already covers read-only dashboard access.
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
+      OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
+      # Include roles scope so the claim is present in the token
+      OAUTH2_PROXY_SCOPE: "openid profile email roles"
+      # Skip the auth flow for all InfluxDB API and health paths so that
+      # service tokens from iot-bridge-api / telegraf pass through unchanged.
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
+      # Cookie settings – SECURE must be false over plain HTTP (local dev)
+      OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
     ports:
-      - "8086:8086"
+      - "8086:4180"
     networks:
       - cdm-internal
     depends_on:
       keycloak:
         condition: service_healthy
-
+      influxdb:
+        condition: service_healthy
 
   # ───────────────────────── Grafana ───────────────────────────────
   grafana:
@@ -377,7 +432,7 @@ services:
       - cdm-internal
     depends_on:
       influxdb:
-        condition: service_started
+        condition: service_healthy
       keycloak:
         condition: service_healthy
 
@@ -572,7 +627,7 @@ services:
         condition: service_started
       step-ca:
         condition: service_healthy
-      influxdb:
+      influxdb-proxy:
         condition: service_started
       rabbitmq:
         condition: service_healthy
