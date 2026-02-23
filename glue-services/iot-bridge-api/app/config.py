@@ -65,3 +65,18 @@ class Settings(BaseSettings):
         ' "tenant1": {"name": "Acme Devices GmbH"},'
         ' "tenant2": {"name": "Beta Industries Ltd"}}'
     )
+
+    # ── RabbitMQ Management API ───────────────────────────────────────────────
+    rabbitmq_mgmt_url: str = "http://rabbitmq:15672"
+    rabbitmq_admin_user: str = "admin"
+    rabbitmq_admin_password: str = "changeme"
+
+    # ── Keycloak admin credentials (for dynamic tenant provisioning) ──────────
+    keycloak_admin_user: str = "admin"
+    keycloak_admin_password: str = "changeme"
+
+    # ── step-ca Admin API (for adding OIDC provisioners per tenant) ───────────
+    # Name of the bootstrap admin JWK provisioner (DOCKER_STEPCA_INIT_PROVISIONER_NAME)
+    step_ca_admin_provisioner: str = "cdm-admin@cdm.local"
+    # Password protecting the admin provisioner key (contents of step-ca/password.txt)
+    step_ca_admin_password: str = "changeme"

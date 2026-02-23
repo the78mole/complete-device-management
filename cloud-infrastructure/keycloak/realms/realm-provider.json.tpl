@@ -32,6 +32,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["platform-admin"],
+      "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${KC_ADMIN_PASSWORD}", "temporary": false }
       ]
@@ -44,6 +45,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["platform-operator"],
+      "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${PROVIDER_OPERATOR_PASSWORD}", "temporary": true }
       ]

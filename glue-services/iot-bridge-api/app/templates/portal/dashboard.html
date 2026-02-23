@@ -115,6 +115,20 @@
         </a>
       </div>
 
+      {% if realm == 'cdm' %}
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/api/portal/admin/">
+          <div class="icon">🏢</div>
+          <div class="flex-grow-1">
+            <h5>Tenant-Verwaltung</h5>
+            <p class="mb-2">Tenants anlegen, RabbitMQ vHosts &amp; step-ca OIDC-Provisioner verwalten</p>
+            <span class="btn btn-primary btn-service">Admin-Portal →</span>
+          </div>
+        </a>
+      </div>
+      {% endif %}
+
       <div class="col-12 col-sm-6 col-lg-4">
         <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
            href="#" data-direct-port="9090" target="_blank" rel="noopener">

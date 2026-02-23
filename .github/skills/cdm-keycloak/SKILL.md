@@ -65,8 +65,14 @@ OIDC clients registered here.
 | `grafana` | Grafana | confidential | `GRAFANA_OIDC_SECRET` |
 | `iot-bridge` | IoT Bridge API | confidential + service-account | `BRIDGE_OIDC_SECRET` |
 | `terminal-proxy` | Terminal Proxy | public | — |
+| `portal` | CDM Tenant Portal (iot-bridge-api) | confidential | `PORTAL_OIDC_SECRET` |
 
 All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic Codespaces hostnames.
+
+> **Grafana — realm-roles mapper**: The `grafana` client has a `realm-roles` ProtocolMapper
+> (`oidc-usermodel-realm-role-mapper`) that injects all realm roles as a flat array into the
+> `roles` claim of the access token.  Grafana maps this claim to its internal role via
+> `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`.
 
 **Template file**: `cloud-infrastructure/keycloak/realms/realm-cdm.json.tpl`
 
@@ -135,6 +141,16 @@ Second example tenant realm.
 3. Writes rendered JSON to `/opt/keycloak/data/import/`
 4. Keycloak starts with `--import-realm` → imports all files in that directory
 5. **Existing realms are skipped** (Keycloak behaviour: "Realm X already exists. Import skipped")
+6. **Background post-start hook** — a background subshell (`&`) polls every 5 s until
+   Keycloak is ready, then uses `kcadm.sh` to apply two idempotent post-boot changes to
+   every non-master realm:
+   - Adds the `account-audience` mapper to the `account-console` client (required for
+     `aud: account` in the access token; KC 26 validates `aud` strictly)
+   - Adds `manage-account` and `view-profile` as composites of `default-roles-{realm}` so
+     newly created users automatically receive the Account REST API roles
+   
+   The subshell starts with `set +eu` to prevent the Keycloak `set -eu` entrypoint from
+   terminating the retry loop on the first poll failure.
 
 ### 3.2 Cross-realm admin wiring (manual, once)
 
@@ -305,6 +321,78 @@ curl -sf -X POST -H "Authorization: Bearer $TOKEN" \
    ```
 8. Run `keycloak/init-tenants.sh` to grant the superadmin cross-realm access
 
+### Critical rules for new realm templates
+
+- **Never include system clients** (`account`, `account-console`, `broker`, `security-admin-console`,
+  `realm-management`) in the `"clients": []` array.  Keycloak auto-creates them; a duplicate import
+  causes a PostgreSQL unique-key constraint violation that crashes startup.
+- **Use `"attributes": { "post.logout.redirect.uris": "*" }`** for post-logout redirect on confidential
+  clients — the field `"postLogoutRedirectUris"` is **not** recognised by KC 26 import and causes an
+  `Unrecognized field` deserialization error.
+- **Every user must have Account REST API roles**.  Include in every user's JSON:
+  ```json
+  "clientRoles": { "account": ["manage-account", "view-profile"] }
+  ```
+  Without these, the Account Console (`/auth/realms/<realm>/account/`) returns HTTP 403.
+- **Rebuild the image** after every template change — templates are baked into the Docker image at
+  build time, not mounted as a volume:
+  ```bash
+  cd cloud-infrastructure && docker compose build keycloak
+  ```
+
+---
+
+## 7. Known pitfalls — Keycloak 26 specifics
+
+### 7.1 Import JSON restrictions
+
+| Mistake | Symptom | Fix |
+|---|---|---|
+| `"postLogoutRedirectUris": ["*"]` in a client | `Unrecognized field "postLogoutRedirectUris"` → crash | Use `"attributes": { "post.logout.redirect.uris": "*" }` |
+| System client (`account-console`, `account`, `broker`, …) included in `clients[]` | `ERROR: duplicate key value violates unique constraint` → crash loop | Remove from template; use `kcadm.sh` post-boot hook for custom config |
+| Using `jq` in KC container | `jq: command not found` | Use `python3 -c "import json…"` or `kcadm.sh` instead |
+
+### 7.2 Account Console — 403 on `/account/?userProfileMetadata=true`
+
+Two independent requirements must both be satisfied:
+
+| Requirement | Why | How |
+|---|---|---|
+| `aud: account` in access token | KC 26 validates JWT audience strictly | Add `account-audience` mapper (`oidc-audience-mapper`) to `account-console` client |
+| `manage-account` **or** `view-profile` client role | Account REST API enforces role check | Add roles to user (template: `"clientRoles": {"account": ["manage-account","view-profile"]}`) |
+
+The entrypoint background hook handles both requirements for all realms on every container start.
+
+### 7.3 nginx — upstream sent too big header
+
+Keycloak sends large response headers (JWT `Set-Cookie`, long `Content-Security-Policy`).
+The nginx default `proxy_buffer_size` (4 KB) is too small and causes `502 Bad Gateway` on the
+first authenticated request.
+
+Required nginx config inside the `/auth/` location block:
+
+```nginx
+proxy_buffer_size       32k;
+proxy_buffers           8 32k;
+proxy_busy_buffers_size 64k;
+```
+
+This is already set in `cloud-infrastructure/nginx/nginx.conf`.  
+Config is volume-mounted → changes take effect after `docker compose exec nginx nginx -s reload`.
+
+### 7.4 kcadm.sh in background subshells
+
+`docker-entrypoint.sh` uses `set -euo pipefail`.  Background subshells inherit these flags,
+so the **first** failed `kcadm.sh` invocation (before Keycloak is ready) kills the entire
+subshell.  Always begin background subshells with:
+
+```sh
+(
+  set +eu
+  # ... retry loop ...
+) &
+```
+
 ---
 
 ## 8. Tenant Portal
@@ -371,4 +459,51 @@ cloud-infrastructure/
       realm-provider.json.tpl      provider realm  (platform ops team)
       realm-tenant1.json.tpl       Acme Devices GmbH
       realm-tenant2.json.tpl       Beta Industries Ltd
+```
+
+---
+
+## 9. Maintenance scripts
+
+Ready-to-use scripts live in `.github/skills/cdm-keycloak/scripts/`.
+All scripts accept `BASE_URL` as a positional argument (default: `http://localhost:8888`).
+
+| Script | Purpose | Usage |
+|---|---|---|
+| `kc-token.sh` | Obtain an admin token from master realm | `TOKEN=$(bash scripts/kc-token.sh [BASE_URL])` |
+| `kc-apply-account-audience-mapper.sh` | Add `account-audience` mapper to `account-console` | `bash scripts/kc-apply-account-audience-mapper.sh [BASE_URL] [REALM …]` |
+| `kc-apply-account-roles.sh` | Grant `manage-account`+`view-profile` to all users + `default-roles-{realm}` | `bash scripts/kc-apply-account-roles.sh [BASE_URL] [REALM …]` |
+| `kc-force-logout.sh` | Invalidate all sessions for one or more users | `bash scripts/kc-force-logout.sh REALM USER [USER …] [-- BASE_URL]` |
+| `kc-show-client-mappers.sh` | List all protocol mappers for a client | `bash scripts/kc-show-client-mappers.sh REALM CLIENT_ID [BASE_URL]` |
+| `kc-debug-account-api.sh` | Diagnose Account REST API 403s for a user | `bash scripts/kc-debug-account-api.sh REALM USERNAME PASSWORD [BASE_URL]` |
+
+### Quick-fix runbook — Account Console 403
+
+If users get `403 Forbidden` on `/auth/realms/<realm>/account/`:
+
+```bash
+# 1. Apply account-audience mapper to all realms
+bash .github/skills/cdm-keycloak/scripts/kc-apply-account-audience-mapper.sh
+
+# 2. Grant manage-account + view-profile to all existing users
+bash .github/skills/cdm-keycloak/scripts/kc-apply-account-roles.sh
+
+# 3. Force-logout the affected user so they get a fresh token
+bash .github/skills/cdm-keycloak/scripts/kc-force-logout.sh tenant1 alice
+
+# 4. (Optional) Verify the fix
+bash .github/skills/cdm-keycloak/scripts/kc-debug-account-api.sh tenant1 alice alice
+```
+
+### Quick-fix runbook — Grafana OIDC role not recognized
+
+If Grafana shows a user as `Viewer` despite having `cdm-admin` realm role:
+
+```bash
+# Verify the realm-roles mapper is present on the grafana client
+bash .github/skills/cdm-keycloak/scripts/kc-show-client-mappers.sh cdm grafana
+# Expect: "realm-roles" with protocolMapper = oidc-usermodel-realm-role-mapper
+
+# Force token refresh
+bash .github/skills/cdm-keycloak/scripts/kc-force-logout.sh cdm cdm-admin
 ```

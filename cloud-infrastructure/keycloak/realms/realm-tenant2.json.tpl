@@ -26,7 +26,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["cdm-admin"],
-      "clientRoles": { "realm-management": ["realm-admin"] },
+      "clientRoles": { "realm-management": ["realm-admin"], "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${TENANT2_ADMIN_PASSWORD}", "temporary": true }
       ]
@@ -39,6 +39,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["cdm-operator"],
+      "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${TENANT2_OPERATOR_PASSWORD}", "temporary": true }
       ]
@@ -51,6 +52,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["cdm-viewer"],
+      "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${TENANT2_VIEWER_PASSWORD}", "temporary": true }
       ]
@@ -69,7 +71,7 @@
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "postLogoutRedirectUris": ["*"]
+      "attributes": { "post.logout.redirect.uris": "*" }
     }
   ],
   "identityProviders": [],

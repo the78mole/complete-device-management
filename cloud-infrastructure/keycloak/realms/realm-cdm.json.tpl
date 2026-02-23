@@ -26,6 +26,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["cdm-admin"],
+      "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "changeme", "temporary": true }
       ]
@@ -38,6 +39,7 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["cdm-operator"],
+      "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "changeme", "temporary": true }
       ]
@@ -81,7 +83,26 @@
       "webOrigins": ["*"],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "post.logout.redirect.uris": "*"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
     },
     {
       "clientId": "iot-bridge",
@@ -119,7 +140,7 @@
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "postLogoutRedirectUris": ["*"]
+      "attributes": { "post.logout.redirect.uris": "*" }
     }
   ],
   "identityProviders": [],

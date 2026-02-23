@@ -86,18 +86,34 @@ async def portal_login(
     request: Request,
     settings: Settings = Depends(get_settings),
 ):
-    """Validate tenant input and start the OIDC authorisation-code flow."""
+    """Validate tenant input and start the OIDC authorisation-code flow.
+
+    Validation: first checks the static PORTAL_TENANTS_JSON map; if not found
+    there, falls back to a live Keycloak realm lookup so dynamically created
+    tenants are immediately usable without a service restart.
+    """
     form = await request.form()
     tenant_input = str(form.get("tenant_id", "")).strip().lower()
 
     tenants = _parse_tenants(settings)
 
-    # Match by exact ID or case-insensitive display name
+    # 1. Match by exact ID or case-insensitive display name in the static map
     tenant_id: str | None = None
     for tid, meta in tenants.items():
         if tid == tenant_input or meta.get("name", "").lower() == tenant_input:
             tenant_id = tid
             break
+
+    # 2. Fallback: live Keycloak realm existence check
+    if not tenant_id:
+        realm_url = f"{settings.keycloak_url}/realms/{tenant_input}"
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=5) as client:
+                resp = await client.get(realm_url)
+            if resp.status_code == 200:
+                tenant_id = tenant_input
+        except Exception as exc:
+            logger.warning("KC live realm check failed for '%s': %s", tenant_input, exc)
 
     if not tenant_id:
         return templates.TemplateResponse(
@@ -167,9 +183,11 @@ async def portal_callback(
         )
 
     # Exchange code for tokens (backend-to-backend via internal Keycloak URL)
+    # verify=False: internal HTTP endpoint; avoids SSL_CERT_FILE env var issues
+    # in Python 3.14 containers where the path may not exist.
     token_url = f"{settings.keycloak_url}/realms/{tenant_id}/protocol/openid-connect/token"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         resp = await client.post(
             token_url,
             data={

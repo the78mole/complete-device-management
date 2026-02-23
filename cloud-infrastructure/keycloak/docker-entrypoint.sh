@@ -50,4 +50,75 @@ for tpl in "$TEMPLATE_DIR"/*.json.tpl; do
     echo "[entrypoint] prepared realm import: $(basename "$dest")"
 done
 
+# ── Post-start patch: add account-audience mapper to every realm ─────────────
+# Runs as a background process so it doesn't block Keycloak startup.
+# The mapper is not injectable via import JSON (system clients cause duplicate-
+# key errors), so we apply it via kcadm.sh once KC is ready.
+(
+  set +eu  # reset inherited errexit/nounset – failures in the retry loop are expected
+
+  KCADM="/opt/keycloak/bin/kcadm.sh"
+  KCFG="/tmp/kcadm-patch.config"
+  KC_USER="${KC_ADMIN_USER:-admin}"
+  KC_PASS="${KC_ADMIN_PASSWORD:-changeme}"
+  MAPPER_JSON='{"name":"account-audience","protocol":"openid-connect","protocolMapper":"oidc-audience-mapper","consentRequired":false,"config":{"included.client.audience":"account","id.token.claim":"false","access.token.claim":"true"}}'
+
+  # Wait up to 5 minutes for Keycloak Admin API to be ready
+  READY=0
+  for i in $(seq 1 60); do
+    sleep 5
+    "$KCADM" config credentials \
+      --config "$KCFG" \
+      --server http://localhost:8080/auth \
+      --realm master \
+      --user "$KC_USER" \
+      --password "$KC_PASS" >/dev/null 2>&1 && READY=1 && break
+  done
+
+  if [ "$READY" != "1" ]; then
+    echo "[entrypoint] WARNING: kcadm auth failed – account-audience mapper not applied"
+    exit 0
+  fi
+
+  for REALM in master cdm provider tenant1 tenant2; do
+    AC_ID=$("$KCADM" get clients --config "$KCFG" -r "$REALM" \
+      -q clientId=account-console --fields id 2>/dev/null \
+      | grep '"id"' | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+    [ -z "$AC_ID" ] && continue
+    "$KCADM" create "clients/$AC_ID/protocol-mappers/models" \
+      --config "$KCFG" -r "$REALM" -b "$MAPPER_JSON" >/dev/null 2>&1
+    echo "[entrypoint] account-audience mapper: realm=$REALM OK"
+
+    # Add manage-account + view-profile to default-roles-{realm} composite
+    # so all NEW users automatically get access to the Account REST API.
+    ACCOUNT_CLIENT_ID=$("$KCADM" get clients --config "$KCFG" -r "$REALM" \
+      -q clientId=account --fields id 2>/dev/null \
+      | grep '"id"' | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+    [ -z "$ACCOUNT_CLIENT_ID" ] && continue
+
+    DEFAULT_ROLE_ID=$("$KCADM" get roles --config "$KCFG" -r "$REALM" 2>/dev/null \
+      | python3 -c "
+import sys,json
+try:
+  roles=json.load(sys.stdin)
+  dr=[r for r in roles if r.get('name','').startswith('default-roles-')]
+  print(dr[0]['id'] if dr else '')
+except: print('')
+")
+    [ -z "$DEFAULT_ROLE_ID" ] && continue
+
+    for ROLE_NAME in manage-account view-profile; do
+      ROLE_JSON=$("$KCADM" get "clients/$ACCOUNT_CLIENT_ID/roles/$ROLE_NAME" \
+        --config "$KCFG" -r "$REALM" 2>/dev/null)
+      [ -z "$ROLE_JSON" ] && continue
+      "$KCADM" add-roles --config "$KCFG" -r "$REALM" \
+        --rname "default-roles-${REALM}" \
+        --cclientid account \
+        --rolename "$ROLE_NAME" >/dev/null 2>&1
+    done
+    echo "[entrypoint] account default roles: realm=$REALM OK"
+  done
+  rm -f "$KCFG"
+) &
+
 exec /opt/keycloak/bin/kc.sh "$@"

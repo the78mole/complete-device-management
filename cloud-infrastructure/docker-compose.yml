@@ -241,6 +241,9 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: cdm-rabbitmq
     restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
@@ -332,14 +335,22 @@ services:
       GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
-      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email roles
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN: "true"
       # AUTH_URL is browser-facing – must be reachable from the user's browser.
-      # In Codespaces set EXTERNAL_URL=https://<name>-80.app.github.dev in .env
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${EXTERNAL_URL:-http://localhost}/auth/realms/cdm/protocol/openid-connect/auth
+      # In Codespaces set EXTERNAL_URL=https://<name>-8888.app.github.dev in .env
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
       GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Map Keycloak realm roles → Grafana roles (JMESPath against userinfo)
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'cdm-admin') && 'Admin' || contains(roles[*], 'cdm-operator') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      # Redirect directly to Keycloak login (skip Grafana login page)
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
+      # Redirect to Keycloak logout when signing out of Grafana
+      GF_AUTH_SIGNOUT_REDIRECT_URL: "${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/grafana/login"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
     volumes:
@@ -399,6 +410,16 @@ services:
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
       PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-change-this-portal-session-secret}
       PORTAL_TENANTS_JSON: '{"cdm":{"name":"CDM Platform"},"tenant1":{"name":"Acme Devices GmbH"},"tenant2":{"name":"Beta Industries Ltd"}}'
+      # RabbitMQ Management API (for admin portal tenant provisioning)
+      RABBITMQ_MGMT_URL: http://rabbitmq:15672
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+      # Keycloak admin credentials (for dynamic realm creation)
+      KEYCLOAK_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      # step-ca admin provisioner (JWK password = contents of step-ca/password.txt)
+      STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}
+      STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
       THINGSBOARD_URL: http://thingsboard:9090
       THINGSBOARD_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
       THINGSBOARD_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}
