@@ -55,7 +55,22 @@
       ]
     }
   ],
-  "clients": [],
+  "clients": [
+    {
+      "clientId": "portal",
+      "name": "CDM Tenant Portal",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${PORTAL_OIDC_SECRET}",
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "postLogoutRedirectUris": ["*"]
+    }
+  ],
   "identityProviders": [],
   "defaultDefaultClientScopes": ["profile", "email", "roles", "web-origins"],
   "defaultOptionalClientScopes": ["offline_access", "address", "phone"],

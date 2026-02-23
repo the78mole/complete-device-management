@@ -307,7 +307,58 @@ curl -sf -X POST -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 7. File map
+## 8. Tenant Portal
+
+The IoT Bridge API (`glue-services/iot-bridge-api`) hosts a browser-facing tenant portal
+at `/api/portal/`.  It implements an OIDC authorisation-code flow against the appropriate
+Keycloak realm and renders a role-based service dashboard after successful login.
+
+### Flow
+
+```
+GET  /api/portal/           → Tenant selection page (organisation ID input — no tenant list shown)
+POST /api/portal/login      → Validates tenant, redirects to Keycloak realm login
+GET  /api/portal/callback   → Code exchange, session setup
+GET  /api/portal/dashboard  → Role-based service dashboard
+GET  /api/portal/logout     → Session clear + Keycloak RP-initiated logout
+```
+
+### Dashboard service matrix
+
+| Role | Services shown |
+|---|---|
+| `cdm-admin` / `platform-admin` | Keycloak Admin, ThingsBoard, Grafana, hawkBit, InfluxDB, RabbitMQ, IoT Bridge Swagger, step-ca, Account Portal |
+| `cdm-operator` / `platform-operator` | ThingsBoard, Grafana, hawkBit, Account Portal |
+| `cdm-viewer` | Grafana, Account Portal |
+
+### Keycloak client requirements
+
+Every realm that the portal should serve **must** have a confidential OIDC client:
+
+```json
+{
+  "clientId": "portal",
+  "publicClient": false,
+  "secret": "<PORTAL_OIDC_SECRET>",
+  "redirectUris": ["*"],
+  "standardFlowEnabled": true,
+  "attributes": { "post.logout.redirect.uris": "*" }
+}
+```
+
+This client is included in `realm-cdm.json.tpl`, `realm-tenant1.json.tpl`, `realm-tenant2.json.tpl`,
+and `realm-provider.json.tpl` and is provisioned via API by `init-tenants.sh` for existing deployments.
+
+### Environment variables (iot-bridge-api)
+
+| Variable | Purpose |
+|---|---|
+| `EXTERNAL_URL` | Browser-facing base URL (e.g. `https://<codespaces-host>-8888.app.github.dev`) |
+| `PORTAL_OIDC_SECRET` | Secret for the `portal` client — same across all realms in dev |
+| `PORTAL_SESSION_SECRET` | Signs the encrypted session cookie — **change in production** |
+| `PORTAL_TENANTS_JSON` | JSON map `{"<id>":{"name":"<Display Name>"}, ...}` of known tenants |
+
+
 
 ```
 cloud-infrastructure/

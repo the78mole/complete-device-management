@@ -167,57 +167,22 @@
 
     </div>
 
-    <!-- Keycloak Realms -->
-    <div class="section-label">Keycloak Realms</div>
-    <div class="row g-3 mb-4">
-
-      <div class="col-12 col-sm-6 col-lg-4">
-        <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
-          <div class="icon">🏢</div>
-          <div class="flex-grow-1">
-            <h5>Provider Realm</h5>
-            <p class="mb-2">Platform operations — superadmin &amp; platform-operator accounts</p>
-            <div class="d-flex flex-wrap gap-2">
-              <a href="/auth/admin/provider/console/" class="btn btn-danger btn-service">Admin Console →</a>
-              <a href="/auth/realms/provider/account/" class="btn btn-outline-secondary btn-service">Account Portal →</a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-12 col-sm-6 col-lg-4">
-        <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
-          <div class="icon">🏭</div>
-          <div class="flex-grow-1">
-            <h5>Tenant 1 – Acme Devices GmbH</h5>
-            <p class="mb-2">Users: alice (admin), bob (operator), carol (viewer)</p>
-            <div class="d-flex flex-wrap gap-2">
-              <a href="/auth/admin/tenant1/console/" class="btn btn-danger btn-service">Admin Console →</a>
-              <a href="/auth/realms/tenant1/account/" class="btn btn-outline-secondary btn-service">Account Portal →</a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-12 col-sm-6 col-lg-4">
-        <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
-          <div class="icon">🏗️</div>
-          <div class="flex-grow-1">
-            <h5>Tenant 2 – Beta Industries Ltd</h5>
-            <p class="mb-2">Users: dave (admin), eve (operator), frank (viewer)</p>
-            <div class="d-flex flex-wrap gap-2">
-              <a href="/auth/admin/tenant2/console/" class="btn btn-danger btn-service">Admin Console →</a>
-              <a href="/auth/realms/tenant2/account/" class="btn btn-outline-secondary btn-service">Account Portal →</a>
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
     <!-- Developer APIs -->
     <div class="section-label">Developer APIs &amp; Tools</div>
     <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/api/portal/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🏠</div>
+            <div class="flex-grow-1">
+              <h5>Tenant Portal</h5>
+              <p class="mb-2">Mandanten-Login &amp; rollenbasiertes Service-Dashboard</p>
+              <span class="btn btn-primary btn-service">Portal öffnen →</span>
+            </div>
+          </div>
+        </a>
+      </div>
 
       <div class="col-12 col-sm-6 col-lg-4">
         <a class="service-link" href="/api/docs">
@@ -262,7 +227,7 @@
 
     <!-- Infrastructure & Ops -->
     <div class="section-label">Infrastructure &amp; Ops</div>
-    <div class="row g-3">
+    <div class="row g-3 mb-4">
 
       <div class="col-12 col-sm-6 col-lg-4">
         <a class="service-link" id="link-influxdb" href="#" data-direct-port="8086">
@@ -301,6 +266,54 @@
             </div>
           </div>
         </a>
+      </div>
+
+    </div>
+
+    <!-- Keycloak Realms (Admin-Bereich – am Ende der Seite) -->
+    <div class="section-label mt-4">Keycloak Realms</div>
+    <div class="row g-3">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+          <div class="icon">🏢</div>
+          <div class="flex-grow-1">
+            <h5>Provider Realm</h5>
+            <p class="mb-2">Platform operations — superadmin &amp; platform-operator accounts</p>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="/auth/admin/provider/console/" class="btn btn-danger btn-service">Admin Console →</a>
+              <a href="/auth/realms/provider/account/" class="btn btn-outline-secondary btn-service">Account Portal →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+          <div class="icon">🏭</div>
+          <div class="flex-grow-1">
+            <h5>Tenant 1 – Acme Devices GmbH</h5>
+            <p class="mb-2">Users: alice (admin), bob (operator), carol (viewer)</p>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="/auth/admin/tenant1/console/" class="btn btn-danger btn-service">Admin Console →</a>
+              <a href="/auth/realms/tenant1/account/" class="btn btn-outline-secondary btn-service">Account Portal →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+          <div class="icon">🏗️</div>
+          <div class="flex-grow-1">
+            <h5>Tenant 2 – Beta Industries Ltd</h5>
+            <p class="mb-2">Users: dave (admin), eve (operator), frank (viewer)</p>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="/auth/admin/tenant2/console/" class="btn btn-danger btn-service">Admin Console →</a>
+              <a href="/auth/realms/tenant2/account/" class="btn btn-outline-secondary btn-service">Account Portal →</a>
+            </div>
+          </div>
+        </div>
       </div>
 
     </div>

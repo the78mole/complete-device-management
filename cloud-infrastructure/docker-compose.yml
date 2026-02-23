@@ -125,6 +125,7 @@ services:
       GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
       HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
       # Realm bootstrap user passwords
       PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
       TENANT1_ADMIN_PASSWORD: ${TENANT1_ADMIN_PASSWORD:-changeme}
@@ -391,6 +392,11 @@ services:
       KEYCLOAK_REALM: cdm
       KEYCLOAK_CLIENT_ID: iot-bridge
       KEYCLOAK_CLIENT_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      # Tenant portal settings
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-change-this-portal-session-secret}
+      PORTAL_TENANTS_JSON: '{"cdm":{"name":"CDM Platform"},"tenant1":{"name":"Acme Devices GmbH"},"tenant2":{"name":"Beta Industries Ltd"}}'
       THINGSBOARD_URL: http://thingsboard:9090
       THINGSBOARD_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
       THINGSBOARD_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}

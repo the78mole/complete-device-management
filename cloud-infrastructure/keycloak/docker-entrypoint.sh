@@ -43,6 +43,8 @@ for tpl in "$TEMPLATE_DIR"/*.json.tpl; do
       -e "s|\${TENANT2_ADMIN_PASSWORD}|${TENANT2_ADMIN_PASSWORD:-changeme}|g" \
       -e "s|\${TENANT2_OPERATOR_PASSWORD}|${TENANT2_OPERATOR_PASSWORD:-changeme}|g" \
       -e "s|\${TENANT2_VIEWER_PASSWORD}|${TENANT2_VIEWER_PASSWORD:-changeme}|g" \
+      -e "s|\${PORTAL_OIDC_SECRET}|${PORTAL_OIDC_SECRET:-changeme}|g" \
+      -e "s|\${EXTERNAL_URL}|${EXTERNAL_URL:-http://localhost:8888}|g" \
       "$tpl" > "$dest"
 
     echo "[entrypoint] prepared realm import: $(basename "$dest")"
