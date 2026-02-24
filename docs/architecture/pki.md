@@ -1,6 +1,8 @@
 # PKI — smallstep step-ca
 
-The platform uses [smallstep step-ca](https://smallstep.com/docs/step-ca/) as its private Certificate Authority. This page describes the trust hierarchy, certificate profiles, and operational procedures.
+The platform uses [smallstep step-ca](https://smallstep.com/docs/step-ca/) as its private
+Certificate Authority.  The PKI is split across two stacks to isolate trust anchors from
+operational CAs.
 
 ---
 
@@ -8,44 +10,79 @@ The platform uses [smallstep step-ca](https://smallstep.com/docs/step-ca/) as it
 
 ```mermaid
 graph TD
-    RCA["Root CA<br/>offline-safe · self-signed · 10-year validity"]
-    ICA["Intermediate CA<br/>online · used for all signing · 5-year validity"]
-    SVC["Service Certificates<br/>serverAuth + clientAuth · 1-year"]
-    DEV["Device Certificates<br/>clientAuth only · configurable TTL"]
+    RCA["Root CA\nProvider-Stack · self-signed · 10-year validity"]
+    ICA["Intermediate CA\nProvider-Stack · online · 5-year validity"]
+    TSCA["Tenant Issuing Sub-CA  ×N\nTenant-Stack · signed by Provider ICA · 2-year"]
+    SVC["Provider Service Certs\nserverAuth + clientAuth · 1-year"]
+    TSVC["Tenant Service Certs\nserverAuth + clientAuth · 1-year"]
+    DEV["Device Certs\nclientAuth only · configurable TTL"]
 
     RCA --> ICA
+    ICA --> TSCA
     ICA --> SVC
-    ICA --> DEV
+    TSCA --> TSVC
+    TSCA --> DEV
 ```
 
-The Root CA private key is encrypted with `STEP_CA_PASSWORD` and stored in the `step-ca-data` Docker volume. In production, move the Root CA key offline after generating the Intermediate CA.
+**Provider-Stack step-ca** is the trust anchor for the entire platform:
+- Hosts the Root CA and Intermediate CA.
+- Signs Tenant Sub-CA CSRs during the JOIN workflow.
+- Issues service certificates for Provider-Stack services.
+
+**Tenant-Stack step-ca** is an Issuing Sub-CA per tenant:
+- Private key generated locally on the Tenant-Stack (never leaves the tenant).
+- Certificate signed by the Provider Intermediate CA via the JOIN workflow.
+- Issues device certificates and tenant service certificates.
+- Devices trust the full chain: device → Sub-CA → ICA → Root CA.
+
+The Root CA private key is encrypted with `STEP_CA_PASSWORD` and stored in the
+`step-ca-data` Docker volume.  In production, move the Root CA key offline after
+generating the Intermediate CA.
 
 ---
 
 ## Provisioners
 
-Two provisioners are configured out of the box:
+Two provisioners are configured in the **Provider-Stack** step-ca:
 
 | Name | Type | Purpose |
 |---|---|---|
-| `iot-bridge` | JWK (JSON Web Key) | Used by `iot-bridge-api` to sign device CSRs programmatically |
-| `acme` | ACME | Used by internal services to auto-renew TLS certificates via the ACME protocol |
+| `iot-bridge` | JWK (JSON Web Key) | Signs Tenant Sub-CA CSRs and (via Tenant step-ca) device CSRs programmatically |
+| `acme` | ACME | Auto-renews TLS certificates for Provider-Stack services via Caddy |
 
-### JWK Provisioner Flow
+Each **Tenant-Stack** step-ca also has an `iot-bridge` JWK provisioner for signing device CSRs.
+
+### Sub-CA Signing Flow (JOIN Workflow — Provider-Stack)
+
+```mermaid
+sequenceDiagram
+    participant T as Tenant-Stack
+    participant A as Provider IoT Bridge API
+    participant S as Provider step-ca
+
+    T->>T: generate Sub-CA key pair + CSR
+    T->>A: POST /admin/tenants/{id}/join-request { sub_ca_csr }
+    Note over A: Provider Admin approves
+    A->>S: Fetch iot-bridge provisioner
+    A->>A: Create OTT JWT (intermediate-ca profile)
+    A->>S: POST /1.0/sign (Sub-CA CSR + OTT)
+    S-->>A: Signed Sub-CA certificate
+    A-->>T: { sub_ca_cert, root_ca_cert }
+```
+
+### Device Leaf Signing Flow (Tenant-Stack)
 
 ```mermaid
 sequenceDiagram
     participant D as Device
-    participant A as iot-bridge-api
-    participant S as step-ca
+    participant A as Tenant IoT Bridge API
+    participant S as Tenant step-ca (Sub-CA)
 
-    A->>S: Fetch provisioner list
-    A->>A: Find `iot-bridge` JWK provisioner
-    A->>A: Decrypt provisioner private key (STEP_CA_PROVISIONER_PASSWORD)
-    A->>A: Create one-time token (OTT) JWT
-    A->>S: POST /1.0/sign (CSR + OTT)
-    S-->>A: Signed certificate
-    A-->>D: Return certificate to device
+    A->>S: Fetch iot-bridge provisioner
+    A->>A: Create OTT JWT (device-leaf profile)
+    A->>S: POST /1.0/sign (Device CSR + OTT)
+    S-->>A: Signed device cert (chain: device → Sub-CA → ICA → RCA)
+    A-->>D: Certificate + CA chain
 ```
 
 ---
@@ -71,24 +108,20 @@ sequenceDiagram
 
 ## Operational Procedures
 
-### Retrieve the Root CA Certificate
+### Retrieve the Root CA Fingerprint (Provider-Stack)
 
 ```bash
-# From the running container
-docker compose exec step-ca step ca root
+cd provider-stack
 
-# Save to file
+# Print fingerprint (needed by Tenant-Stacks and devices)
+docker compose exec step-ca step ca fingerprint
+
+# Export PEM
 docker compose exec step-ca step ca root /tmp/root_ca.crt
 docker compose cp step-ca:/tmp/root_ca.crt ./root_ca.crt
 ```
 
-### Retrieve the CA Fingerprint
-
-```bash
-step certificate fingerprint root_ca.crt
-```
-
-Set this value as `STEP_CA_FINGERPRINT` in both `.env` files.
+Set the fingerprint as `STEP_CA_FINGERPRINT` in every Tenant-Stack and Device-Stack `.env`.
 
 ### Inspect a Device Certificate
 
@@ -96,26 +129,23 @@ Set this value as `STEP_CA_FINGERPRINT` in both `.env` files.
 step certificate inspect device.crt
 ```
 
-### Revoke a Device Certificate
+### Revoke a Device Certificate (Tenant-Stack)
+
+Device certs are issued by the Tenant Sub-CA.  Revoke at tenant level first:
 
 ```bash
 step ca revoke --cert device.crt --key device.key \
-  --ca-url https://localhost:9000 --root root_ca.crt
+  --ca-url https://<tenant-step-ca>:9000 \
+  --root root_ca.crt
 ```
 
-After revocation, the certificate will be rejected at the next MQTT reconnect (ThingsBoard validates against the CRL/OCSP endpoint).
-
-### Rotate the Intermediate CA
+For escalation (Sub-CA compromise), revoke the entire Sub-CA at the Provider level:
 
 ```bash
-# Generate a new intermediate key and CSR
-step certificate create "CDM Intermediate CA 2" intermediate2.csr intermediate2.key \
-  --ca root_ca.crt --ca-key root_ca.key --profile intermediate-ca --no-password --insecure
-
-# Sign with Root CA
-step certificate sign intermediate2.csr root_ca.crt root_ca.key
-
-# Replace in step-ca — see smallstep docs for hot rotation
+cd provider-stack
+step ca revoke <sub-ca-serial> \
+  --ca-url https://localhost:9000 \
+  --root root_ca.crt
 ```
 
 ---
@@ -123,7 +153,14 @@ step certificate sign intermediate2.csr root_ca.crt root_ca.key
 ## Security Considerations
 
 !!! warning "Root CA Key"
-    In production, after generating the Intermediate CA, export the Root CA private key from the container, store it offline (HSM or air-gapped vault), and remove it from the `step-ca-data` volume. Only the Intermediate CA needs to be online.
+    In production, after generating the Intermediate CA, export the Root CA private key from
+    the container, store it offline (HSM or air-gapped vault), and remove it from the
+    `step-ca-data` volume.  Only the Intermediate CA needs to be online.
 
 !!! tip "Certificate Validity"
-    Keep device certificate validity short (hours to days) and rely on automatic renewal. Short-lived certs are more resilient to key compromise than long-lived ones.
+    Keep device certificate validity short (hours to days) and rely on automatic renewal.
+    Short-lived certs are more resilient to key compromise than long-lived ones.
+
+!!! tip "Sub-CA Independence"
+    Each Tenant-Stack Sub-CA can be independently rotated by generating a new CSR and going
+    through the JOIN signing flow again — without affecting other tenants or the Provider-Stack.

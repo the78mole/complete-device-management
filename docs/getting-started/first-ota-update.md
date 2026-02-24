@@ -1,12 +1,18 @@
 # Trigger Your First OTA Update
 
+!!! warning "Phase 2 — Tenant-Stack required"
+    hawkBit, ThingsBoard, and the OTA update pipeline are part of the
+    **Tenant-Stack**, which is available in Phase 2.  The steps below will work
+    once a Tenant-Stack is deployed and the device is enrolled.
+    See [Tenant-Stack Setup](../installation/tenant-stack.md).
+
 This guide shows you how to upload a software bundle to hawkBit and deploy it to a device.
 
 ---
 
 ## Prerequisites
 
-- The cloud stack is running and ThingsBoard has been bootstrapped.
+- The Tenant-Stack is running (ThingsBoard + hawkBit bootstrapped).
 - At least one device is enrolled and connected (see [Enroll Your First Device](first-device.md)).
 - The device's `rauc-hawkbit-updater` service (or `ddi-poll.sh` simulation) is running.
 
@@ -14,7 +20,7 @@ This guide shows you how to upload a software bundle to hawkBit and deploy it to
 
 ## 1. Log In to hawkBit
 
-Open **http://localhost:8090** in your browser.
+Open **https://tenant.example.com/hawkbit** in your browser (replace with your Tenant-Stack hostname).
 
 Default credentials:
 

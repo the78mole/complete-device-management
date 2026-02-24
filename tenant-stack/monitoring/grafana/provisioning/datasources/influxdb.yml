@@ -1,0 +1,45 @@
+apiVersion: 1
+
+datasources:
+  # Primary telemetry bucket – MQTT device data from all enrolled devices
+  - name: InfluxDB-device-telemetry
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: ${INFLUX_ORG}
+      defaultBucket: device-telemetry
+      tlsSkipVerify: true
+    secureJsonData:
+      token: ${INFLUX_TOKEN}
+    isDefault: true
+    editable: false
+
+  # Device events – firmware update status, state changes, alerts
+  - name: InfluxDB-device-events
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: ${INFLUX_ORG}
+      defaultBucket: device-events
+      tlsSkipVerify: true
+    secureJsonData:
+      token: ${INFLUX_TOKEN}
+    editable: false
+
+  # Audit log – enrollment, certificate issuance, access events
+  - name: InfluxDB-device-audit
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: ${INFLUX_ORG}
+      defaultBucket: device-audit
+      tlsSkipVerify: true
+    secureJsonData:
+      token: ${INFLUX_TOKEN}
+    editable: false

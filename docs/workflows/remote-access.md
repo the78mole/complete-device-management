@@ -2,6 +2,10 @@
 
 This page explains how to open a secure browser-based terminal on a remote device.
 
+!!! info "Tenant-Stack components"
+    WireGuard and Terminal Proxy are part of the **Tenant-Stack**.  The device must be
+    enrolled against the Tenant step-ca and connected to the Tenant WireGuard server.
+
 ---
 
 ## How It Works
@@ -9,12 +13,12 @@ This page explains how to open a secure browser-based terminal on a remote devic
 ```mermaid
 graph TD
     BR["Browser (ThingsBoard Terminal Widget)"]
-    TXP["Terminal Proxy (Node.js)"]
+    TXP["Terminal Proxy (Tenant-Stack · Node.js)"]
     TTD["ttyd on device (ws://10.8.0.2:7681)"]
     SH["/bin/bash (PTY)"]
 
-    BR -->|"WSS wss://terminal-proxy:8888/terminal?deviceId=device-001&token=JWT"| TXP
-    TXP -->|"1. validate Keycloak JWT (JWKS)"| TXP
+    BR -->|"WSS wss://tenant.example.com/terminal?deviceId=device-001&token=JWT"| TXP
+    TXP -->|"1. validate Keycloak JWT (JWKS from Tenant Keycloak)"| TXP
     TXP -->|"2. check preferred_username role (cdm-operator / cdm-admin)"| TXP
     TXP -->|"3. look up device-001 → WireGuard IP (10.8.0.2)"| TXP
     TXP -->|"4. proxy WebSocket (WireGuard VPN)"| TTD
@@ -27,10 +31,10 @@ The device is only reachable via the WireGuard VPN — it has no direct internet
 
 ## Prerequisites
 
-- The device must be enrolled and connected to the WireGuard VPN.
+- The device must be enrolled and connected to the Tenant WireGuard VPN.
 - `ttyd` must be running on the device (port 7681, bound to the WireGuard interface only).
-- The terminal-proxy must be running and healthy.
-- The operator must have a valid Keycloak JWT with role `cdm-operator` or `cdm-admin`.
+- The terminal-proxy (Tenant-Stack) must be running and healthy.
+- The operator must have a valid Keycloak JWT with role `cdm-operator` or `cdm-admin` in the Tenant realm.
 
 ---
 
@@ -51,14 +55,15 @@ For testing or automation:
 # Install wscat
 npm install -g wscat
 
-# Get a Keycloak token
+# Get a Keycloak token from the Tenant Keycloak
+TENANT=https://tenant.example.com
 TOKEN=$(curl -s -X POST \
-  http://localhost:8180/realms/cdm/protocol/openid-connect/token \
-  -d "grant_type=password&client_id=thingsboard&username=admin&password=<pw>" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  "$TENANT/auth/realms/tenant-acme/protocol/openid-connect/token" \
+  -d "grant_type=password&client_id=terminal-proxy&username=operator&password=<pw>" \
+  | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
 
 # Connect to the terminal proxy
-wscat --connect "ws://localhost:8888/terminal?deviceId=device-001&token=$TOKEN"
+wscat --connect "$TENANT/terminal?deviceId=device-001&token=$TOKEN"
 ```
 
 ---

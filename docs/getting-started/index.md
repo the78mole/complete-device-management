@@ -1,6 +1,7 @@
 # Quickstart
 
-This guide gets you from zero to a working device enrolled in the platform, sending telemetry, in under 20 minutes.
+This guide gets you from zero to a running Provider-Stack in under 10 minutes.
+Device enrollment and Tenant-Stack setup are covered in the follow-on pages.
 
 ---
 
@@ -8,56 +9,61 @@ This guide gets you from zero to a working device enrolled in the platform, send
 
 ```mermaid
 graph LR
-    RCA["step-ca (Root CA)"]
-    DEV["device MQTT client"]
-    TB[ThingsBoard]
-    IBA[iot-bridge-api]
-    HB[hawkBit target created]
-    WG[WireGuard IP allocated]
-    TEL[device Telegraf]
-    IDB[InfluxDB]
-    GRF[Grafana]
+    PS[\"Provider-Stack\nCaddy · Keycloak · RabbitMQ\nInfluxDB · Grafana · step-ca\"]
+    TS[\"Tenant-Stack (Phase 2)\nThingsBoard · hawkBit\nWireGuard · Terminal Proxy\"]
+    DS[\"Device-Stack\nmqtt-client · telegraf\nrauc-updater · wireguard-client\"]
 
-    RCA -->|signs device certificate| DEV
-    DEV -->|TLS| TB
-    TB -->|Rule Engine| IBA
-    IBA --> HB
-    IBA --> WG
-    TEL --> IDB
-    IDB --> GRF
+    PS -- &quot;JOIN workflow&quot; --> TS
+    TS -- &quot;enroll + connect&quot; --> DS
 ```
 
 ---
 
-## Step 1 — Start the Cloud Stack
+## Step 1 — Start the Provider-Stack
 
 ```bash
 git clone https://github.com/the78mole/complete-device-management.git
-cd complete-device-management/cloud-infrastructure
+cd complete-device-management/provider-stack
 cp .env.example .env
 # Edit .env — set all *_PASSWORD and STEP_CA_* values
 docker compose up -d
 docker compose ps   # wait until all services are healthy
 ```
 
-Full details: [Cloud Infrastructure Setup](../installation/cloud-infrastructure.md)
+Full details: [Provider-Stack Setup](../installation/provider-stack.md)
 
 ---
 
-## Step 2 — Bootstrap ThingsBoard
+## Step 2 — Verify Core Services
 
 ```bash
-docker compose exec thingsboard bash /provision/provision.sh
+# Keycloak admin console
+open http://localhost:8888/auth/
+
+# Grafana
+open http://localhost:8888/grafana/
+
+# IoT Bridge API docs
+open http://localhost:8888/api/docs
 ```
 
 ---
 
-## Step 3 — Enroll Your First Device
+## Step 3 — Enroll a Tenant *(Phase 2)*
+
+The Tenant-Stack (ThingsBoard, hawkBit, WireGuard) is deployed per customer in Phase 2 via
+the JOIN workflow.
+
+\u2192 See [Tenant-Stack Setup](../installation/tenant-stack.md) and [Tenant Onboarding](../use-cases/tenant-onboarding.md).
+
+---
+
+## Step 4 — Enroll Your First Device *(requires Tenant-Stack)*
 
 ```bash
-cd ../device-stack
+cd complete-device-management/device-stack
 cp .env.example .env
-# Edit .env — set DEVICE_ID=device-001 and point URLs to your cloud host
+# Edit .env — DEVICE_ID=device-001, point TENANT_API_URL to your Tenant-Stack
 docker compose up
 ```
 
@@ -66,34 +72,20 @@ Watch the `bootstrap` container log:
 ```
 [enroll] Generating EC P-256 key pair...
 [enroll] Generating CSR for device-001...
-[enroll] Sending CSR to iot-bridge-api...
+[enroll] Sending CSR to Tenant IoT Bridge API...
 [enroll] Certificate received — saving to /certs/device.crt
 [enroll] WireGuard config saved to /certs/wg0.conf
 [enroll] Done. Exiting cleanly.
 ```
 
-All other services start automatically once enrollment succeeds.
-
----
-
-## Step 4 — Verify in ThingsBoard
-
-1. Open **http://localhost:8080** and log in.
-2. Navigate to **Devices** — `device-001` should appear with status *Active*.
-3. Open the device and check the **Latest Telemetry** tab — CPU, memory, and disk metrics arrive from Telegraf.
-
----
-
-## Step 5 — View Metrics in Grafana
-
-1. Open **http://localhost:3000** (admin / your password from `.env`).
-2. Go to **Dashboards → Device Overview**.
-3. Select `device-001` from the device dropdown.
+All other device containers start automatically once enrollment succeeds.
 
 ---
 
 ## Next Steps
 
+- [Provider-Stack Setup (detailed)](../installation/provider-stack.md) — all configuration options.
 - [Enroll Your First Device (detailed)](first-device.md) — understand every step of the enrollment flow.
-- [Trigger Your First OTA Update](first-ota-update.md) — upload a software bundle to hawkBit and deploy it.
+- [Trigger Your First OTA Update](first-ota-update.md) — deploy a firmware bundle via hawkBit.
 - [Remote Access](../workflows/remote-access.md) — open a browser terminal on your device.
+

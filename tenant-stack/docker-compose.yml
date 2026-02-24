@@ -1,0 +1,633 @@
+---
+# Tenant Stack – CDM Per-Tenant Infrastructure
+#
+# One instance of this stack is deployed per customer tenant.
+# After deployment the tenant must complete the JOIN workflow with the
+# Provider-Stack (see docs/use-cases/tenant-onboarding.md).
+#
+# Prerequisites:
+#   1. A running Provider-Stack (provider root CA fingerprint needed)
+#   2. cp .env.example .env  and fill in ALL [CHANGE ME] values
+#   3. docker compose up -d
+#
+# Services included:
+#   step-ca      → Tenant Issuing Sub-CA (CSR signed by Provider Root CA)
+#   keycloak     → Tenant Keycloak realm (federated into Provider cdm realm)
+#   thingsboard  → Device registry, MQTT broker, Rule Engine, dashboards
+#   hawkbit      → OTA software-lifecycle management (DDI + DMF)
+#   wireguard    → VPN server for device remote-access tunnel
+#   terminal-proxy → WebSocket → ttyd proxy (browser terminal)
+#   influxdb     → Tenant device telemetry (time-series)
+#   grafana      → Tenant device dashboards
+#   telegraf     → Tenant metrics aggregator
+#   iot-bridge-api → Tenant management API (device enrollment, WG alloc)
+#   caddy        → Reverse proxy / single entry point (:8888)
+#
+# NOT included here (→ provider-stack):
+#   Root CA, central RabbitMQ, platform-wide InfluxDB/Grafana
+#
+# Port mapping:
+#   8888       → Caddy  (main entry point, path-based routing)
+#   9090       → ThingsBoard UI (direct, SPA can't use sub-path)
+#   8086       → InfluxDB (via oauth2-proxy, direct)
+#   8883       → ThingsBoard MQTT over TLS (direct, device connections)
+#   51820/udp  → WireGuard (direct, device VPN)
+#   9000       → step-ca (HTTPS, direct)
+
+networks:
+  tenant-net:
+    driver: bridge
+  tenant-vpn:
+    driver: bridge
+
+volumes:
+  keycloak-db-data:
+  thingsboard-data:
+  thingsboard-logs:
+  thingsboard-db-data:
+  tb-mqtt-certs:
+  hawkbit-db-data:
+  hawkbit-data:
+  hawkbit-rmq-data:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
+  wg-data:
+  step-ca-data:
+  caddy-data:
+
+secrets:
+  step-ca-password:
+    file: ./step-ca/password.txt
+
+# ─────────────────────────────────────────────────────────────────
+services:
+
+  # ── step-ca (Tenant Issuing Sub-CA) ─────────────────────────────
+  # Initialises as a subordinate CA whose certificate is signed by the
+  # Provider Root CA.  On first start:
+  #   1. Creates a new key pair for the Tenant Sub-CA
+  #   2. Sends a CSR to the Provider step-ca via STEP_CA_PROVIDER_URL
+  #   3. Receives and stores the signed Sub-CA certificate
+  #   4. Starts serving the Issuing CA API on port 9000
+  #
+  # Run once after Provider-Stack is healthy and STEP_CA_PROVIDER_* vars
+  # are set:
+  #   docker compose exec tenant-step-ca /usr/local/bin/init-sub-ca.sh
+  step-ca:
+    build:
+      context: ./step-ca
+      dockerfile: Dockerfile
+    container_name: ${TENANT_ID:-tenant}-step-ca
+    restart: unless-stopped
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "${STEP_CA_PKI_NAME:-Tenant Sub-CA}"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "${STEP_CA_DNS_NAMES:-step-ca,localhost}"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/step-ca-password
+      DOCKER_STEPCA_INIT_ADDRESS: "${STEP_CA_ADDRESS:-:9000}"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "${STEP_CA_ADMIN_PROVISIONER:-tenant-admin@cdm.local}"
+      DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
+      DOCKER_STEPCA_INIT_SSH: "false"
+      # Provider Root CA connection (for Sub-CA signing)
+      STEP_CA_PROVIDER_URL: "${STEP_CA_PROVIDER_URL:-}"
+      STEP_CA_PROVIDER_FINGERPRINT: "${STEP_CA_PROVIDER_FINGERPRINT:-}"
+      STEP_CA_PROVIDER_ADMIN_PROVISIONER: "${STEP_CA_PROVIDER_ADMIN_PROVISIONER:-cdm-admin@cdm.local}"
+      STEP_CA_PROVIDER_ADMIN_PASSWORD: "${STEP_CA_PROVIDER_ADMIN_PASSWORD:-}"
+      TENANT_ID: "${TENANT_ID:-tenant}"
+    secrets:
+      - step-ca-password
+    volumes:
+      - step-ca-data:/home/step
+    ports:
+      - "9000:9000"
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Keycloak ────────────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:18-alpine
+    container_name: ${TENANT_ID:-tenant}-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: ${TENANT_ID:-tenant}-keycloak
+    restart: unless-stopped
+    command: >
+      start-dev
+      --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      # OIDC client secrets – injected into realm template by docker-entrypoint.sh
+      GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      TB_OIDC_SECRET: ${TB_OIDC_SECRET:-changeme}
+      HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
+      BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      # Tenant bootstrap user passwords
+      TENANT_ADMIN_PASSWORD: ${TENANT_ADMIN_PASSWORD:-changeme}
+      TENANT_OPERATOR_PASSWORD: ${TENANT_OPERATOR_PASSWORD:-changeme}
+      TENANT_VIEWER_PASSWORD: ${TENANT_VIEWER_PASSWORD:-changeme}
+      # Tenant identity for realm template rendering
+      TENANT_ID: ${TENANT_ID:-tenant}
+      TENANT_DISPLAY_NAME: ${TENANT_DISPLAY_NAME:-My Tenant}
+      TENANT_ADMIN_EMAIL: ${TENANT_ADMIN_EMAIL:-admin@tenant.example.com}
+      TENANT_OPERATOR_EMAIL: ${TENANT_OPERATOR_EMAIL:-operator@tenant.example.com}
+      TENANT_VIEWER_EMAIL: ${TENANT_VIEWER_EMAIL:-viewer@tenant.example.com}
+      # Provider Keycloak federation (cdm realm Identity Provider)
+      PROVIDER_KC_URL: ${PROVIDER_KC_URL:-http://localhost:8888}
+      PROVIDER_KC_CLIENT_ID: ${PROVIDER_KC_CLIENT_ID:-}
+      PROVIDER_KC_CLIENT_SECRET: ${PROVIDER_KC_CLIENT_SECRET:-}
+      # External URL for browser-facing redirect URIs
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+      TB_EXTERNAL_URL: ${TB_EXTERNAL_URL:-http://localhost:9090}
+    ports:
+      - "8080:8080"
+    networks:
+      - tenant-net
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /auth/realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 5 grep -q 200 <&3"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+  # ── ThingsBoard ─────────────────────────────────────────────────
+  thingsboard-db:
+    image: postgres:18-alpine
+    container_name: ${TENANT_ID:-tenant}-tb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_USER: thingsboard
+      POSTGRES_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+    volumes:
+      - thingsboard-db-data:/var/lib/postgresql/data
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thingsboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  thingsboard:
+    image: thingsboard/tb-postgres:4.2.1
+    container_name: ${TENANT_ID:-tenant}-thingsboard
+    restart: unless-stopped
+    environment:
+      TB_QUEUE_TYPE: in-memory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://thingsboard-db:5432/thingsboard
+      SPRING_DATASOURCE_USERNAME: thingsboard
+      SPRING_DATASOURCE_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+      # Keycloak OIDC – ThingsBoard uses the tenant Keycloak realm
+      SECURITY_OAUTH2_ENABLED: "true"
+      SECURITY_OAUTH2_DEFAULT_PROVIDER: keycloak
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_ID: thingsboard
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_SECRET: ${TB_OIDC_SECRET:-changeme}
+      # AUTH_URI is browser-facing – must use EXTERNAL_URL
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_AUTHORIZATION_URI: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/auth
+      # TOKEN/USERINFO/JWKS are server-to-server – use internal hostname
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_TOKEN_URI: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/token
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_USER_INFO_URI: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/userinfo
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_JWKS_URI: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/certs
+      # REDIRECT_URI is browser-facing – ThingsBoard on port 9090
+      SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_REDIRECT_URI: ${TB_EXTERNAL_URL:-http://localhost:9090}/login/oauth2/code/
+      # MQTT TLS / X.509 mTLS – devices present certs signed by Tenant Sub-CA
+      MQTT_SSL_ENABLED: "${MQTT_SSL_ENABLED:-false}"
+      MQTT_SSL_BIND_ADDRESS: "0.0.0.0"
+      MQTT_SSL_BIND_PORT: "8883"
+      MQTT_SSL_CREDENTIALS_TYPE: PEM
+      MQTT_SSL_PEM_CERT: /etc/tb-certs/mqttserver.pem
+      MQTT_SSL_PEM_KEY: /etc/tb-certs/mqttserver-private.pem
+      MQTT_SSL_PEM_KEY_PASSWORD: ""
+      # Require mTLS – devices must present a cert signed by Tenant Sub-CA
+      MQTT_SSL_CLIENT_AUTHENTICATION: "${MQTT_SSL_CLIENT_AUTHENTICATION:-NONE}"
+      # Trust certs signed by the Tenant Sub-CA (which chains to Provider Root CA)
+      MQTT_SSL_TRUSTSTORE_PATH: /step-ca-certs/certs/root_ca.crt
+      MQTT_SSL_TRUSTSTORE_TYPE: PEM
+    volumes:
+      - thingsboard-data:/data
+      - thingsboard-logs:/var/log/thingsboard
+      - step-ca-data:/step-ca-certs:ro
+      - tb-mqtt-certs:/etc/tb-certs
+    ports:
+      - "9090:9090"    # HTTP UI (direct, SPA sub-path not supported)
+      - "8883:8883"    # MQTT TLS / mTLS
+    networks:
+      - tenant-net
+    depends_on:
+      thingsboard-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      step-ca:
+        condition: service_healthy
+
+  # ThingsBoard provisioning script (run once after first start)
+  thingsboard-provision:
+    image: curlimages/curl:latest
+    container_name: ${TENANT_ID:-tenant}-tb-provision
+    restart: no
+    entrypoint: ["sh", "/provision/provision.sh"]
+    environment:
+      TB_URL: http://thingsboard:9090
+      TB_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
+      TB_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}
+      TENANT_DISPLAY_NAME: ${TENANT_DISPLAY_NAME:-My Tenant}
+      TENANT_ADMIN_EMAIL: ${TENANT_ADMIN_EMAIL:-admin@tenant.example.com}
+      TENANT_ADMIN_PASSWORD: ${TENANT_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ../cloud-infrastructure/thingsboard/scripts:/provision:ro
+    networks:
+      - tenant-net
+    depends_on:
+      thingsboard:
+        condition: service_started
+    profiles:
+      - provision
+
+  # ── hawkBit ─────────────────────────────────────────────────────
+  # hawkBit requires its own RabbitMQ instance for the DMF event bus.
+  # This is separate from the Provider RabbitMQ (device telemetry).
+  hawkbit-rmq:
+    image: rabbitmq:4-alpine
+    container_name: ${TENANT_ID:-tenant}-hawkbit-rmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${HB_RMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${HB_RMQ_PASSWORD:-changeme}
+    volumes:
+      - hawkbit-rmq-data:/var/lib/rabbitmq
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  hawkbit-db:
+    image: mysql:8-debian
+    container_name: ${TENANT_ID:-tenant}-hawkbit-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: hawkbit
+      MYSQL_USER: hawkbit
+      MYSQL_PASSWORD: ${HB_DB_PASSWORD:-changeme}
+      MYSQL_ROOT_PASSWORD: ${HB_DB_ROOT_PASSWORD:-changeme_root}
+    volumes:
+      - hawkbit-db-data:/var/lib/mysql
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "hawkbit", "--password=${HB_DB_PASSWORD:-changeme}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  hawkbit:
+    image: hawkbit/hawkbit-update-server:latest
+    container_name: ${TENANT_ID:-tenant}-hawkbit
+    restart: unless-stopped
+    environment:
+      HB_DB_PASSWORD: ${HB_DB_PASSWORD:-changeme}
+      HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
+      SPRING_RABBITMQ_HOST: hawkbit-rmq
+      SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${HB_RMQ_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${HB_RMQ_PASSWORD:-changeme}
+      SERVER_PORT: "8070"
+      SERVER_SERVLET_CONTEXT_PATH: /hawkbit
+    volumes:
+      - ./hawkbit/application.properties:/opt/hawkbit/application.properties:ro
+      - hawkbit-data:/data
+    networks:
+      - tenant-net
+    depends_on:
+      hawkbit-db:
+        condition: service_healthy
+      hawkbit-rmq:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # ── InfluxDB (tenant device telemetry) ──────────────────────────
+  influxdb:
+    image: influxdb:2.8-alpine
+    container_name: ${TENANT_ID:-tenant}-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-changeme00}
+      DOCKER_INFLUXDB_INIT_ORG: ${TENANT_ID:-tenant}-org
+      DOCKER_INFLUXDB_INIT_BUCKET: device-telemetry
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+      - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
+  influxdb-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+    container_name: ${TENANT_ID:-tenant}-influxdb-proxy
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}
+      OAUTH2_PROXY_LOGIN_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/token
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/certs
+      OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
+      OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://influxdb:8086
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
+      OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
+      OAUTH2_PROXY_SCOPE: "openid profile email roles"
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
+      OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+    ports:
+      - "8086:4180"
+    networks:
+      - tenant-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
+  # ── Grafana (tenant device dashboards) ──────────────────────────
+  grafana:
+    image: grafana/grafana-oss:12.3.3
+    container_name: ${TENANT_ID:-tenant}-grafana
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email roles
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'cdm-admin') && 'Admin' || contains(roles[*], 'cdm-operator') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_SIGNOUT_REDIRECT_URL: "${EXTERNAL_URL:-http://localhost:8888}/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/grafana/login"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - tenant-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # ── Telegraf (tenant metrics aggregator) ────────────────────────
+  telegraf:
+    image: telegraf:1.37-alpine
+    container_name: ${TENANT_ID:-tenant}-telegraf
+    restart: unless-stopped
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: ${TENANT_ID:-tenant}-org
+      INFLUX_BUCKET: device-telemetry
+      HAWKBIT_URL: http://hawkbit:8070/hawkbit
+      HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
+      HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
+      HAWKBIT_TENANT: DEFAULT
+      THINGSBOARD_HOST: thingsboard
+      TENANT_ID: ${TENANT_ID:-tenant}
+      # Provider RabbitMQ (optional: forward aggregated metrics to provider)
+      PROVIDER_RABBITMQ_URL: ${PROVIDER_RABBITMQ_URL:-}
+      PROVIDER_RABBITMQ_USER: ${PROVIDER_RABBITMQ_USER:-}
+      PROVIDER_RABBITMQ_PASSWORD: ${PROVIDER_RABBITMQ_PASSWORD:-}
+    volumes:
+      - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - tenant-net
+    depends_on:
+      - influxdb
+      - hawkbit
+      - thingsboard
+
+  # ── WireGuard (device VPN server) ───────────────────────────────
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: ${TENANT_ID:-tenant}-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${TZ:-UTC}
+      SERVERURL: ${WG_SERVER_URL:-auto}
+      SERVERPORT: ${WG_PORT:-51820}
+      PEERS: ${WG_PEERS:-10}
+      PEERDNS: auto
+      INTERNAL_SUBNET: ${WG_INTERNAL_SUBNET:-10.8.0.0}
+      ALLOWEDIPS: ${WG_INTERNAL_SUBNET:-10.8.0.0}/24
+    volumes:
+      - wg-data:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "${WG_PORT:-51820}:51820/udp"
+    networks:
+      - tenant-net
+      - tenant-vpn
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # ── IoT Bridge API (tenant-scoped) ──────────────────────────────
+  # In the tenant-stack this service connects to the local ThingsBoard,
+  # hawkBit, step-ca Sub-CA, WireGuard, and InfluxDB.
+  # It also calls the Provider IoT Bridge API for Sub-CA certificate
+  # signing and RabbitMQ vHost provisioning during the JOIN workflow.
+  iot-bridge-api:
+    build:
+      context: ../glue-services/iot-bridge-api
+      dockerfile: Dockerfile
+    container_name: ${TENANT_ID:-tenant}-iot-bridge-api
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_REALM: ${TENANT_ID:-tenant}
+      KEYCLOAK_CLIENT_ID: iot-bridge
+      KEYCLOAK_CLIENT_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-change-this-portal-session-secret}
+      THINGSBOARD_URL: http://thingsboard:9090
+      THINGSBOARD_SYSADMIN_EMAIL: ${TB_SYSADMIN_EMAIL:-sysadmin@thingsboard.org}
+      THINGSBOARD_SYSADMIN_PASSWORD: ${TB_SYSADMIN_PASSWORD:-sysadmin}
+      HAWKBIT_URL: http://hawkbit:8070/hawkbit
+      HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
+      HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: ${TENANT_ID:-tenant}-org
+      INFLUX_BUCKET: device-telemetry
+      WIREGUARD_CONFIG_DIR: /wg-config
+      WG_SUBNET: ${WG_INTERNAL_SUBNET:-10.8.0.0}/24
+      WG_SERVER_IP: ${WG_SERVER_IP:-10.8.0.1}
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-tenant-admin@cdm.local}
+      STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
+      STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
+      # Provider API connection (for JOIN workflow)
+      PROVIDER_API_URL: ${PROVIDER_API_URL:-}
+      PROVIDER_API_TOKEN: ${PROVIDER_API_TOKEN:-}
+      TENANT_ID: ${TENANT_ID:-tenant}
+      ROOT_PATH: /api
+    volumes:
+      - wg-data:/wg-config
+    ports:
+      - "8000:8000"
+    networks:
+      - tenant-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      step-ca:
+        condition: service_healthy
+      thingsboard:
+        condition: service_started
+      hawkbit:
+        condition: service_started
+      influxdb:
+        condition: service_healthy
+
+  # ── Terminal Proxy ───────────────────────────────────────────────
+  terminal-proxy:
+    build:
+      context: ../glue-services/terminal-proxy
+      dockerfile: Dockerfile
+    container_name: ${TENANT_ID:-tenant}-terminal-proxy
+    restart: unless-stopped
+    environment:
+      TTYD_PORT: 7681
+      VPN_SUBNET: ${WG_INTERNAL_SUBNET:-10.8.0.0}/24
+      AUTH_JWKS_URI: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/certs
+      AUTH_AUDIENCE: terminal-proxy
+      PEERS_DB_PATH: /wg-config/cdm_peers.json
+    volumes:
+      - wg-data:/wg-config:ro
+    ports:
+      - "8090:8090"
+    networks:
+      - tenant-net
+      - tenant-vpn
+    depends_on:
+      wireguard:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+
+  # ── Caddy (reverse proxy / single entry point) ───────────────────
+  # Entry point on port 8888 (same as provider-stack).
+  # ThingsBoard uses port 9090 directly (SPA webpack limitation).
+  # InfluxDB uses port 8086 directly (SPA limitation).
+  caddy:
+    image: caddy:2-alpine
+    container_name: ${TENANT_ID:-tenant}-caddy
+    restart: unless-stopped
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/html:/srv/html:ro
+      - caddy-data:/data
+    ports:
+      - "${CADDY_PORT:-8888}:${CADDY_PORT:-8888}"
+    networks:
+      - tenant-net
+    environment:
+      CADDY_PORT: ${CADDY_PORT:-8888}
+      CADDY_AUTO_HTTPS: ${CADDY_AUTO_HTTPS:-off}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+      TENANT_ID: ${TENANT_ID:-tenant}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      grafana:
+        condition: service_started
+      iot-bridge-api:
+        condition: service_started
+      step-ca:
+        condition: service_healthy
+      influxdb-proxy:
+        condition: service_started
+      thingsboard:
+        condition: service_started
+      hawkbit:
+        condition: service_started
+      terminal-proxy:
+        condition: service_started

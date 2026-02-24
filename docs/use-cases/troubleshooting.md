@@ -4,21 +4,21 @@ This page collects the most common operational problems and their solutions.
 
 ---
 
-## Cloud Infrastructure
+## Provider-Stack
 
 ### Services fail to start — "port already in use"
 
 ```
-Error: bind: address already in use (0.0.0.0:8080)
+Error: bind: address already in use (0.0.0.0:8888)
 ```
 
 **Fix:** Stop the conflicting process or change the port mapping in `.env`:
 
 ```bash
 # Find the conflicting process
-lsof -i :8080
+lsof -i :8888
 # Or change the port in .env
-TB_HTTP_PORT=8081
+CADDY_HTTP_PORT=9888
 ```
 
 ---
@@ -44,9 +44,10 @@ docker compose ps
 **Fix (destructive — deletes the CA):**
 
 ```bash
-docker compose down
-docker volume rm cloud-infrastructure_step-ca-data
-docker compose up -d
+# Provider Root CA
+docker compose -f provider-stack/docker-compose.yml down
+docker volume rm provider-stack_step-ca-data
+docker compose -f provider-stack/docker-compose.yml up -d
 ```
 
 !!! warning
@@ -77,11 +78,11 @@ If `STEP_CA_VERIFY_TLS=true`, set it to `false` for local dev, or mount the Root
 
 ---
 
-### Keycloak returns `Connection refused` from ThingsBoard/hawkBit
+### Keycloak returns `Connection refused` from other services
 
-**Cause:** Services use the internal Docker hostname `keycloak`, but the redirect URI was set to `localhost`.
+**Cause:** Services use the internal Docker hostname `provider-keycloak` (or `tenant-keycloak`), but the redirect URI was set to `localhost`.
 
-**Fix:** Update `Valid Redirect URIs` in each Keycloak client to use the internal hostname, and ensure `KC_HOSTNAME` in `.env` matches the externally reachable name.
+**Fix:** Update `Valid Redirect URIs` in each Keycloak client to use the external Caddy hostname, and ensure `KC_HOSTNAME` in `.env` matches the externally reachable name.
 
 ---
 
@@ -89,15 +90,15 @@ If `STEP_CA_VERIFY_TLS=true`, set it to `false` for local dev, or mount the Root
 
 ### bootstrap exits with code 1 — "curl: (6) Could not resolve host"
 
-**Cause:** `BRIDGE_API_URL` points to `localhost` which resolves to the container itself.
+**Cause:** `TENANT_API_URL` points to `localhost` which resolves to the container itself.
 
 **Fix:** Use the Docker host IP or the service name:
 
 ```bash
 # On Linux (Docker host IP from inside a container)
-BRIDGE_API_URL=http://172.17.0.1:8000
+TENANT_API_URL=http://172.17.0.1:8000
 # Or use host.docker.internal (macOS/Windows)
-BRIDGE_API_URL=http://host.docker.internal:8000
+TENANT_API_URL=http://host.docker.internal:8000
 ```
 
 ---
@@ -153,7 +154,7 @@ cap_add:
 
 ### `404 Not Found` — "device not found in peers DB"
 
-**Fix:** Verify the device is enrolled and `cdm_peers.json` contains the device:
+**Fix:** Verify the device is enrolled and `cdm_peers.json` contains the device (run in the Tenant-Stack directory):
 
 ```bash
 docker compose exec terminal-proxy cat /wg-config/cdm_peers.json
@@ -175,6 +176,33 @@ systemctl status ttyd
 journalctl -u ttyd -n 30
 # Check the bind address — must be the WireGuard interface IP, not 0.0.0.0
 ```
+
+---
+
+## Stack Communication
+
+### Tenant-Stack cannot publish to Provider RabbitMQ
+
+**Cause:** RabbitMQ vHost or credentials not yet provisioned on the Provider-Stack.
+
+**Fix:**
+
+```bash
+# On the Provider-Stack host
+docker compose -f provider-stack/docker-compose.yml exec rabbitmq \
+  rabbitmqctl list_vhosts
+# Should contain the tenant vHost, e.g. /tenant-acme
+
+# If missing, re-run init-tenants.sh:
+bash provider-stack/keycloak/init-tenants.sh
+```
+
+### Tenant Keycloak federation login fails
+
+**Cause:** Provider Keycloak OIDC client for the Tenant-Stack is not yet configured, or client secret is wrong.
+
+**Fix:** Re-run the JOIN workflow step from [Tenant Onboarding](../use-cases/tenant-onboarding.md),
+or update the client secret in Provider Keycloak → Realm `cdm` → Clients → `<tenant-id>-idp`.
 
 ---
 

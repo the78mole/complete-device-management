@@ -1,0 +1,99 @@
+# ============================================================================
+# zensical.toml – Complete Device Management documentation
+#
+# Migrated from mkdocs.yml (MkDocs + Material for MkDocs)
+# Build:   zensical build
+# Serve:   zensical serve
+# ============================================================================
+
+[project]
+
+site_name = "Complete Device Management"
+site_description = "Enterprise-grade open-source IoT Device & Software Lifecycle Management Platform"
+site_author = "the78mole contributors"
+site_url = "https://the78mole.github.io/complete-device-management/"
+
+repo_url = "https://github.com/the78mole/complete-device-management"
+repo_name = "the78mole/complete-device-management"
+edit_uri = "edit/main/docs/"
+
+docs_dir = "docs"
+
+copyright = "Copyright &copy; the78mole contributors &ndash; MIT License"
+
+# ── Navigation ───────────────────────────────────────────────────────────────
+nav = [
+  { "Home" = "index.md" },
+  { "Installation" = [
+    { "Overview" = "installation/index.md" },
+    { "Provider Stack" = "installation/provider-stack.md" },
+    { "Tenant Stack" = "installation/tenant-stack.md" },
+    { "Device Stack" = "installation/device-stack.md" },
+  ]},
+  { "Getting Started" = [
+    { "Quickstart" = "getting-started/index.md" },
+    { "Enroll Your First Device" = "getting-started/first-device.md" },
+    { "Trigger Your First OTA Update" = "getting-started/first-ota-update.md" },
+  ]},
+  { "Architecture" = [
+    { "Overview" = "architecture/index.md" },
+    { "Stack Topology" = "architecture/stack-topology.md" },
+    { "PKI (step-ca)" = "architecture/pki.md" },
+    { "Identity & Access Management" = "architecture/iam.md" },
+    { "Data Flow" = "architecture/data-flow.md" },
+  ]},
+  { "Workflows" = [
+    { "Device Provisioning" = "workflows/device-provisioning.md" },
+    { "OTA Updates" = "workflows/ota-updates.md" },
+    { "Remote Access" = "workflows/remote-access.md" },
+    { "Monitoring & Telemetry" = "workflows/monitoring.md" },
+  ]},
+  { "Use Cases" = [
+    { "Overview" = "use-cases/index.md" },
+    { "Tenant Onboarding" = "use-cases/tenant-onboarding.md" },
+    { "Fleet Management" = "use-cases/fleet-management.md" },
+    { "Security Incident Response" = "use-cases/security-incident-response.md" },
+    { "Troubleshooting" = "use-cases/troubleshooting.md" },
+  ]},
+]
+
+# ── Theme ────────────────────────────────────────────────────────────────────
+[project.theme]
+language = "en"
+
+features = [
+  "content.action.edit",
+  "content.action.view",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.tabs.sticky",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+# ── Social links (footer) ────────────────────────────────────────────────────
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/the78mole/complete-device-management"

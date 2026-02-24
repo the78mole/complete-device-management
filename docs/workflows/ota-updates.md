@@ -1,6 +1,12 @@
 # OTA Update Workflow
 
-This page covers the full OTA software lifecycle — from uploading a bundle to monitoring rollout success across the fleet.
+!!! info "Phase 2 — Tenant-Stack"
+    hawkBit and RAUC update components are part of the **Tenant-Stack** (Phase 2).  
+    See [Tenant-Stack Setup](../installation/tenant-stack.md) and
+    [Tenant Onboarding](../use-cases/tenant-onboarding.md) for prerequisites.
+
+This page covers the full OTA software lifecycle — from uploading a bundle to monitoring
+rollout success across the fleet.
 
 ---
 
@@ -43,25 +49,28 @@ rauc bundle \
 
 ### 2. Create a Software Module in hawkBit
 
+Replace `HAWKBIT` with the Tenant-Stack hawkBit URL (e.g. `https://tenant.example.com/hawkbit`):
+
 ```bash
+HAWKBIT=https://tenant.example.com/hawkbit
 # Via hawkBit REST API
-curl -X POST http://localhost:8090/rest/v1/softwaremodules \
-  -u admin:admin -H "Content-Type: application/json" \
+curl -X POST $HAWKBIT/rest/v1/softwaremodules \
+  -H "Authorization: Basic <base64-creds>" -H "Content-Type: application/json" \
   -d '{"name":"cdm-os","version":"1.1.0","type":"os"}'
 ```
 
 Upload the bundle:
 
 ```bash
-curl -X POST "http://localhost:8090/rest/v1/softwaremodules/{id}/artifacts" \
-  -u admin:admin -F "file=@cdm-os-1.1.0.raucb"
+curl -X POST "$HAWKBIT/rest/v1/softwaremodules/{id}/artifacts" \
+  -H "Authorization: Basic <base64-creds>" -F "file=@cdm-os-1.1.0.raucb"
 ```
 
 ### 3. Create a Distribution Set
 
 ```bash
-curl -X POST http://localhost:8090/rest/v1/distributionsets \
-  -u admin:admin -H "Content-Type: application/json" \
+curl -X POST $HAWKBIT/rest/v1/distributionsets \
+  -H "Authorization: Basic <base64-creds>" -H "Content-Type: application/json" \
   -d '{"name":"cdm-release-1.1.0","version":"1.1.0","modules":[{"id":<module_id>}]}'
 ```
 
@@ -70,8 +79,8 @@ curl -X POST http://localhost:8090/rest/v1/distributionsets \
 For a staged rollout (canary → 10% → 50% → 100%):
 
 ```bash
-curl -X POST http://localhost:8090/rest/v1/rollouts \
-  -u admin:admin -H "Content-Type: application/json" \
+curl -X POST $HAWKBIT/rest/v1/rollouts \
+  -H "Authorization: Basic <base64-creds>" -H "Content-Type: application/json" \
   -d '{
     "name": "rollout-1.1.0",
     "distributionSetId": <ds_id>,

@@ -1,6 +1,11 @@
 # Fleet Management
 
-This use case describes how to manage a large fleet of IoT devices across multiple tenants using **Complete Device Management**.
+This use case describes how to manage a large fleet of IoT devices across multiple tenants
+using **Complete Device Management**.
+
+!!! info "Stack context"
+    Device management plane (ThingsBoard, hawkBit, WireGuard) lives in the **Tenant-Stack**.
+    Platform-wide fleet dashboards are in the **Provider-Stack** (Grafana → Provider InfluxDB).
 
 ---
 
@@ -17,18 +22,15 @@ An industrial equipment manufacturer ships 500 Linux-based controllers to custom
 
 ## Setup
 
-### 1. Create Tenants
+### 1. Deploy a Tenant-Stack per Customer
 
-For each customer, create an organisation in Keycloak:
-
-1. Log in to Keycloak → `cdm` realm → **Groups → New Group** → `customer-a`.
-2. The `tenant-sync-service` automatically creates:
-   - A ThingsBoard tenant: `Customer A`
-   - A Grafana organisation: `Customer A`
+Each customer operates an independent Tenant-Stack.  Follow the
+[Tenant Onboarding](tenant-onboarding.md) use case to provision the stack and connect it
+to the Provider-Stack via the JOIN workflow.
 
 ### 2. Assign Operators
 
-Add operator users to the customer group in Keycloak. They receive:
+Add operator users to the tenant Keycloak realm.  They receive:
 
 - `cdm-operator` role → ThingsBoard Customer User, hawkBit read + trigger, Grafana Editor.
 
@@ -38,8 +40,8 @@ Bake the following into the Yocto OS image before shipping:
 
 ```
 /opt/cdm/enroll.sh        — enrollment script
-/opt/cdm/ca-fingerprint   — step-ca root CA fingerprint
-/etc/cdm/device-config    — BRIDGE_API_URL, TB_MQTT_HOST, HAWKBIT_URL, INFLUXDB_URL
+/opt/cdm/ca-fingerprint   — Tenant step-ca Sub-CA fingerprint
+/etc/cdm/device-config    — TENANT_API_URL, TB_MQTT_HOST, HAWKBIT_URL, INFLUXDB_URL
 ```
 
 The device ID is derived from the hardware serial number at first boot.

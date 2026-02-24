@@ -14,8 +14,10 @@
 #   bash scripts/kc-debug-account-api.sh REALM USERNAME PASSWORD [BASE_URL]
 #
 # Examples:
-#   bash scripts/kc-debug-account-api.sh tenant1 alice alice
-#   bash scripts/kc-debug-account-api.sh cdm cdm-admin CDM_ADMIN_PASSWORD http://localhost:8888
+#   bash scripts/kc-debug-account-api.sh cdm cdm-admin <CDM_ADMIN_PASSWORD>
+#   bash scripts/kc-debug-account-api.sh provider provider-operator <password> http://localhost:8888
+#   # Tenant-Stack:
+#   bash scripts/kc-debug-account-api.sh <tenant-realm> <username> <password> http://<tenant-host>:8888
 #
 # Note: PASSWORD is the user's own password, not the admin password.
 

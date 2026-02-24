@@ -2,6 +2,11 @@
 
 This page is the complete operational runbook for the zero-touch device provisioning flow.
 
+!!! info "Stack context"
+    All provisioning components (IoT Bridge API, step-ca Sub-CA, ThingsBoard, WireGuard)
+    reside in the **Tenant-Stack**.  The "step-ca Sub-CA" is the Issuing CA for a specific
+    tenant; it is itself signed by the Provider Root CA.
+
 ---
 
 ## Overview
@@ -21,8 +26,8 @@ Zero-touch provisioning means a device can be unboxed, powered on, and fully reg
 ```mermaid
 sequenceDiagram
     participant D as Device
-    participant I as IoT Bridge API
-    participant S as step-ca
+    participant I as Tenant IoT Bridge API
+    participant S as Tenant step-ca (Sub-CA)
 
     D->>D: generate EC key pair
     D->>D: generate CSR (CN=device-id)
@@ -30,7 +35,7 @@ sequenceDiagram
     I->>I: validate device-id
     I->>I: build OTT JWT
     I->>S: POST /1.0/sign
-    S-->>I: signed cert
+    S-->>I: signed cert (chain: device → Sub-CA → ICA → Root CA)
     I->>I: allocate WG IP
     I->>I: generate WG config
     I-->>D: { cert, ca_chain, wg }
@@ -45,11 +50,11 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant D as Device
-    participant T as ThingsBoard
-    participant I as IoT Bridge API
+    participant T as ThingsBoard (Tenant-Stack)
+    participant I as Tenant IoT Bridge API
 
     D->>T: MQTT CONNECT (mTLS, cert CN=device-id)
-    T->>T: verify cert chain against step-ca Root CA
+    T->>T: verify cert chain against Sub-CA → Root CA
     T->>I: Rule Engine: POST_CONNECT event<br/>POST /webhooks/thingsboard
     I->>I: create hawkBit target
     I->>I: store WG IP in TB attributes
@@ -77,11 +82,11 @@ sequenceDiagram
 
 | Variable | Description | Example |
 |---|---|---|
-| `STEP_CA_URL` | step-ca API endpoint | `https://step-ca:9000` |
-| `STEP_CA_FINGERPRINT` | Root CA SHA-256 fingerprint | `abc123...` |
+| `STEP_CA_URL` | Tenant step-ca Sub-CA API endpoint | `https://tenant-step-ca:9000` |
+| `STEP_CA_FINGERPRINT` | Sub-CA SHA-256 fingerprint | `abc123...` |
 | `STEP_CA_PROVISIONER_NAME` | JWK provisioner name | `iot-bridge` |
 | `STEP_CA_PROVISIONER_PASSWORD` | JWK provisioner decrypt password | `...` |
-| `HAWKBIT_URL` | hawkBit server URL | `http://hawkbit:8090` |
+| `HAWKBIT_URL` | hawkBit server URL (Tenant-Stack) | `http://tenant-hawkbit:8090` |
 | `WG_SUBNET` | WireGuard allocation subnet | `10.8.0.0/24` |
 | `WG_SERVER_ENDPOINT` | Public WireGuard endpoint | `vpn.example.com:51820` |
 | `WG_SERVER_PUBLIC_KEY` | WireGuard server public key | `...` |

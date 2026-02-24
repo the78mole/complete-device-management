@@ -1,6 +1,6 @@
 # Installation Overview
 
-This page lists everything you need before running the platform and points you to the individual setup guides.
+This page lists prerequisites and points you to the individual setup guides.
 
 ---
 
@@ -10,9 +10,10 @@ This page lists everything you need before running the platform and points you t
 |---|---|---|
 | Docker | 24.x | |
 | Docker Compose | 2.20 | Ships with Docker Desktop |
-| RAM (cloud stack) | 8 GB | 16 GB recommended |
-| RAM (device simulation) | 2 GB | |
-| Disk (cloud stack) | 20 GB free | InfluxDB data grows over time |
+| RAM (Provider-Stack) | 6 GB | 8 GB recommended |
+| RAM (Tenant-Stack) | 8 GB | 16 GB recommended (ThingsBoard) |
+| RAM (Device simulation) | 2 GB | |
+| Disk (per stack) | 10 GB free | InfluxDB data grows over time |
 | OS | Linux (amd64) | macOS works for development; Windows via WSL 2 |
 | `git` | 2.40+ | |
 | `step` CLI | 0.25+ | Required on the host only if you manage certs manually |
@@ -21,34 +22,61 @@ This page lists everything you need before running the platform and points you t
 
 ## Installation Paths
 
-### Option A — Local Evaluation (Docker Compose)
+### Path A — Provider-Stack (start here)
 
-The fastest way to get started. All components run as containers on a single machine.
+The Provider-Stack is the trust anchor and central infrastructure for the platform.  Set it
+up first before deploying any Tenant-Stacks.
 
-1. [Cloud Infrastructure setup](cloud-infrastructure.md) — bring up Keycloak, ThingsBoard, hawkBit, step-ca, InfluxDB, Grafana, WireGuard, and the glue services.
-2. [Device Stack setup](device-stack.md) — run a simulated IoT device that enrolls, connects, and sends telemetry.
+→ [Provider-Stack Setup](provider-stack.md)
 
-### Option B — Production (Kubernetes)
+### Path B — Tenant-Stack *(Phase 2)*
 
-Kubernetes Helm charts are scaffolded under `cloud-infrastructure/helm/` (work in progress). Refer to individual component documentation for production hardening advice.
+Each customer tenant operates an independent Tenant-Stack.  It connects to the Provider-Stack
+via the JOIN workflow after the Provider-Stack is running.
+
+→ [Tenant-Stack Setup](tenant-stack.md)
+
+### Path C — Device-Stack
+
+Simulates an IoT edge device (bootstrap, MQTT telemetry, OTA updater, WireGuard client).  
+Requires a running Tenant-Stack.
+
+→ [Device-Stack Setup](device-stack.md)
+
+!!! tip "GitHub Codespaces"
+    Click the **Open in Codespaces** button in the README for a zero-install evaluation.
+    Codespaces automatically builds images and forwards all required ports.  The
+    `CODESPACE_NAME` URL scheme is handled transparently by Caddy and Keycloak.
 
 ---
 
-## Port Map
+## Port Map — Provider-Stack
 
-| Service | Default Port | Protocol |
+| Service | Default Port/Path | Protocol |
 |---|---|---|
-| ThingsBoard UI | 8080 | HTTP |
-| ThingsBoard MQTT (plain) | 1883 | MQTT |
-| ThingsBoard MQTT (TLS/mTLS) | 8883 | MQTTS |
-| Keycloak | 8180 | HTTP |
-| hawkBit | 8090 | HTTP |
-| InfluxDB | 8086 | HTTP |
-| Grafana | 3000 | HTTP |
-| step-ca | 9000 | HTTPS |
-| iot-bridge-api | 8000 | HTTP |
-| terminal-proxy | 8888 | HTTP / WS |
-| WireGuard | 51820 | UDP |
+| Caddy (entry point) | `:8888` | HTTP/HTTPS |
+| Keycloak | `:8888/auth/` | HTTP |
+| Grafana | `:8888/grafana/` | HTTP |
+| IoT Bridge API | `:8888/api/` | HTTP |
+| RabbitMQ Management | `:8888/rabbitmq/` | HTTP |
+| InfluxDB | `:8086` | HTTP (direct) |
+| step-ca | `:9000` | HTTPS (direct) |
+
+## Port Map — Tenant-Stack *(planned)*
+
+| Service | Default Port/Path | Protocol |
+|---|---|---|
+| Caddy (entry point) | `:8888` | HTTPS |
+| Keycloak | `:8888/auth/` | HTTPS |
+| ThingsBoard UI | `:9090` | HTTPS (direct) |
+| ThingsBoard MQTT (mTLS) | `:8883` | MQTTS |
+| hawkBit | `:8888/hawkbit/` | HTTPS |
+| WireGuard | `:51820` | UDP |
+| Terminal Proxy | `:8888/terminal/` | WSS |
+| InfluxDB | `:8086` | HTTPS (direct) |
+| step-ca | `:9000` | HTTPS (direct) |
 
 !!! warning "Firewall"
-    In production, only expose ports that must be reachable from the internet (e.g., WireGuard UDP and the ThingsBoard MQTT TLS port). All other ports should be behind a reverse proxy or restricted to the internal network.
+    In production, only expose ports that must be reachable from the internet (WireGuard UDP,
+    Caddy HTTPS `:443`, ThingsBoard MQTTS `:8883`).  All other ports should be behind the
+    Caddy reverse proxy or restricted to the internal network.

@@ -68,7 +68,8 @@
       "moby": false,
       "installDockerBuildx": true,
       "dockerDashComposeVersion": "v2"
-    }
+    },
+    "ghcr.io/devcontainers/features/python:1": {}
   },
 
   // ── Environment ───────────────────────────────────────────────────────────

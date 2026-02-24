@@ -10,7 +10,9 @@
 #
 # Examples:
 #   bash scripts/kc-show-client-mappers.sh cdm grafana
-#   bash scripts/kc-show-client-mappers.sh tenant1 account-console http://localhost:8888
+#   bash scripts/kc-show-client-mappers.sh provider account-console http://localhost:8888
+#   # Tenant-Stack:
+#   bash scripts/kc-show-client-mappers.sh <tenant-realm> account-console http://<tenant-host>:8888
 
 set -euo pipefail
 

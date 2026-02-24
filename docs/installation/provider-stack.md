@@ -1,0 +1,172 @@
+# Provider-Stack Setup
+
+This guide walks you through starting all provider-side services using Docker Compose.
+The Provider-Stack is the **trust anchor** of the entire CDM platform: it hosts the Root CA,
+the central MQTT broker, and the management API that tenant stacks register against.
+
+!!! tip "GitHub Codespaces"
+    The fastest way to evaluate the platform is via the **Open in Codespaces** button in
+    the repository README.  Codespaces automatically forwards all required ports through
+    the `CODESPACE_NAME` URL scheme.  All scripts default to `http://localhost:8888`; in
+    Codespaces replace that with the forwarded URL shown in the **Ports** tab.
+
+---
+
+## Prerequisites
+
+| Requirement | Minimum Version | Notes |
+|---|---|---|
+| Docker | 24.x | |
+| Docker Compose | 2.20 | Ships with Docker Desktop |
+| RAM | 6 GB | 8 GB recommended |
+| Disk | 10 GB free | InfluxDB data grows over time |
+| OS | Linux (amd64) | macOS works for development; Windows via WSL 2 |
+| `git` | 2.40+ | |
+| `step` CLI | 0.25+ | Required on the host only if you manage certs manually |
+
+---
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/the78mole/complete-device-management.git
+cd complete-device-management/provider-stack
+```
+
+---
+
+## 2. Configure Environment Variables
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set every value marked `# [CHANGE ME]`.  At a minimum:
+
+| Variable | Description |
+|---|---|
+| `POSTGRES_PASSWORD` | Password for the Keycloak PostgreSQL instance |
+| `KC_ADMIN_USER` | Keycloak bootstrap admin username (default: `admin`) |
+| `KC_ADMIN_PASSWORD` | Keycloak bootstrap admin password |
+| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password |
+| `INFLUXDB_ADMIN_PASSWORD` | InfluxDB admin password |
+| `INFLUXDB_ADMIN_TOKEN` | InfluxDB API token |
+| `STEP_CA_PASSWORD` | step-ca Root CA key encryption password |
+| `STEP_CA_PROVISIONER_PASSWORD` | Password for the JWK provisioner |
+| `GRAFANA_OIDC_SECRET` | Grafana OIDC client secret (set after first Keycloak boot) |
+| `BRIDGE_OIDC_SECRET` | IoT Bridge API OIDC client secret |
+| `PROVIDER_OPERATOR_PASSWORD` | Initial password for `provider-operator` user |
+| `RABBITMQ_DEFAULT_PASS` | RabbitMQ admin password |
+
+!!! danger "Secrets"
+    Never commit your `.env` file.  It is listed in `.gitignore`.
+
+---
+
+## 3. Start the Stack
+
+```bash
+docker compose up -d
+```
+
+Services start in dependency order.  `step-ca` initialises first (generates Root CA and
+Intermediate CA on first boot), then the remaining services start.
+
+Check that all containers are running:
+
+```bash
+docker compose ps
+```
+
+Expected output — every service should show `healthy` or `running`:
+
+```
+NAME                    STATUS
+provider-step-ca        running (healthy)
+provider-keycloak-db    running (healthy)
+provider-keycloak       running (healthy)
+provider-rabbitmq       running (healthy)
+provider-influxdb       running (healthy)
+provider-grafana        running (healthy)
+provider-telegraf       running
+provider-iot-bridge-api running (healthy)
+provider-caddy          running (healthy)
+```
+
+---
+
+## 4. Retrieve the step-ca Root CA Fingerprint
+
+Tenant-Stacks and devices need to trust the Root CA.  Export the fingerprint with:
+
+```bash
+docker compose exec step-ca step ca fingerprint
+```
+
+Save this value as `STEP_CA_FINGERPRINT` — you will need it when setting up Tenant-Stacks
+and enrolling devices.
+
+To export the PEM certificate:
+
+```bash
+docker compose exec step-ca step ca root /tmp/root_ca.crt
+docker compose cp step-ca:/tmp/root_ca.crt ./root_ca.crt
+```
+
+---
+
+## 5. Finalise Keycloak Configuration
+
+Keycloak is pre-seeded with the `cdm` and `provider` realms from templates.  After first
+boot, retrieve the auto-generated OIDC client secrets and add them to your `.env`:
+
+1. Open **http://localhost:8888/auth/admin/cdm/console/** and log in.
+2. For each client (`grafana`, `iot-bridge`, `portal`, `influxdb-proxy`):  
+   **Clients → \<client\> → Credentials → copy Secret**.
+3. Update `.env`:
+   ```
+   GRAFANA_OIDC_SECRET=<from Keycloak>
+   BRIDGE_OIDC_SECRET=<from Keycloak>
+   PORTAL_OIDC_SECRET=<from Keycloak>
+   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak>
+   ```
+4. Restart the affected services:
+   ```bash
+   docker compose restart iot-bridge-api grafana
+   ```
+
+### Grant superadmin cross-realm access
+
+```bash
+source .env
+bash keycloak/init-tenants.sh
+```
+
+This grants the `${KC_ADMIN_USER}` account `realm-admin` rights on the `cdm` and `provider`
+realms so you can manage them from the Keycloak Admin Console with a single login.
+
+---
+
+## 6. Verify Service Health
+
+| Service | URL | Default credentials |
+|---|---|---|
+| CDM Dashboard (Caddy) | http://localhost:8888 | — |
+| Keycloak Admin (cdm) | http://localhost:8888/auth/admin/cdm/console/ | `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` |
+| Keycloak Admin (provider) | http://localhost:8888/auth/admin/provider/console/ | same |
+| Grafana | http://localhost:8888/grafana/ | `admin` / `GRAFANA_ADMIN_PASSWORD` |
+| RabbitMQ Management | http://localhost:8888/rabbitmq/ | `admin` / `RABBITMQ_DEFAULT_PASS` |
+| IoT Bridge API (Swagger) | http://localhost:8888/api/docs | — (requires OIDC JWT) |
+| InfluxDB | http://localhost:8086 | `admin` / `INFLUXDB_ADMIN_PASSWORD` |
+| step-ca | https://localhost:9000/health | — |
+
+---
+
+## 7. Next Steps
+
+- **Tenant-Stack** — [Installation → Tenant-Stack](tenant-stack.md) *(Phase 2)*  
+  Set up a customer tenant that connects to this Provider-Stack.
+- **Device-Stack** — [Installation → Device-Stack](device-stack.md)  
+  Simulate an IoT device enrolling against a Tenant-Stack.
+- **Architecture** — [Architecture → Stack Topology](../architecture/stack-topology.md)  
+  Understand how Provider-Stack, Tenant-Stack, and Device-Stack interact.

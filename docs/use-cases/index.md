@@ -8,6 +8,7 @@ This section describes real-world operational scenarios supported by **Complete 
 
 | Use Case | Description |
 |---|---|
+| [Tenant Onboarding](tenant-onboarding.md) | Register a new customer tenant and connect their Tenant-Stack to the Provider-Stack |
 | [Fleet Management](fleet-management.md) | Manage hundreds of devices across multiple tenants — provisioning, OTA rollouts, monitoring |
 | [Security Incident Response](security-incident-response.md) | Revoke compromised certificates, isolate devices, audit access |
 | [Troubleshooting](troubleshooting.md) | Diagnose and fix common operational issues |
@@ -28,12 +29,17 @@ A typical day for a fleet operator using this platform:
 
 ## Multi-Tenant Operation
 
-The platform is designed for multi-tenancy from the start:
+The platform uses a **two-stack architecture** for multi-tenancy:
 
-- Each customer is a separate **Keycloak realm organisation** → mapped to a **ThingsBoard Tenant** → mapped to a **Grafana Organisation**.
-- The `tenant-sync-service` in `iot-bridge-api` automates this mapping.
-- Devices are isolated per tenant — operators of tenant A cannot see devices of tenant B.
-- hawkBit supports tenant namespacing via the `X-Tenant-Id` header.
+- **Provider-Stack** — operated by the CDM platform team.  Hosts the trust anchor
+  (Keycloak `cdm` realm, Root CA, RabbitMQ), collects platform-health metrics.
+- **Tenant-Stack** — one stack per customer.  Hosts ThingsBoard, hawkBit, WireGuard,
+  device telemetry InfluxDB, and a tenant-scoped Keycloak realm that federates into the
+  Provider Keycloak.
+
+The `iot-bridge-api` in each Tenant-Stack manages device enrollment and synchronises
+device metadata with the Provider-Stack.  Devices are fully isolated — operators of
+Tenant A cannot see devices of Tenant B.
 
 ---
 

@@ -15,10 +15,11 @@
 | Admin console | `/auth/admin/` |
 | Admin CLI token endpoint | `/auth/realms/master/protocol/openid-connect/token` |
 | Proxy mode | `KC_PROXY_HEADERS=xforwarded` |
-| Database | PostgreSQL 18 (`cdm-keycloak-db`, DB name `keycloak`) |
-| Image build context | `cloud-infrastructure/keycloak/` |
-| Dockerfile | `cloud-infrastructure/keycloak/Dockerfile` |
-| Entrypoint | `cloud-infrastructure/keycloak/docker-entrypoint.sh` |
+| Database | PostgreSQL 18 (`keycloak-db`, DB name `keycloak`) |
+| Image build context | `provider-stack/keycloak/` |
+| Dockerfile | `provider-stack/keycloak/Dockerfile` |
+| Entrypoint | `provider-stack/keycloak/docker-entrypoint.sh` |
+| Managed realms | `cdm`, `provider` only (tenant realms live in each Tenant-Stack) |
 
 Keycloak is started with `start-dev --import-realm`.
 
@@ -60,12 +61,13 @@ OIDC clients registered here.
 
 | Client ID | Service | Type | Secret env var |
 |---|---|---|---|
-| `hawkbit` | hawkBit Update Server | confidential | `HB_OIDC_SECRET` |
-| `thingsboard` | ThingsBoard | confidential | `TB_OIDC_SECRET` |
-| `grafana` | Grafana | confidential | `GRAFANA_OIDC_SECRET` |
+| `grafana` | Grafana (Provider Dashboards) | confidential | `GRAFANA_OIDC_SECRET` |
 | `iot-bridge` | IoT Bridge API | confidential + service-account | `BRIDGE_OIDC_SECRET` |
-| `terminal-proxy` | Terminal Proxy | public | — |
 | `portal` | CDM Tenant Portal (iot-bridge-api) | confidential | `PORTAL_OIDC_SECRET` |
+| `influxdb-proxy` | InfluxDB oauth2-proxy sidecar | confidential | `INFLUXDB_PROXY_OIDC_SECRET` |
+
+> **hawkBit, ThingsBoard, Terminal Proxy** OIDC clients are registered in each
+> Tenant-Stack's own Keycloak instance (Phase 2), not in the provider-stack `cdm` realm.
 
 All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic Codespaces hostnames.
 
@@ -74,7 +76,9 @@ All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic
 > `roles` claim of the access token.  Grafana maps this claim to its internal role via
 > `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`.
 
-**Template file**: `cloud-infrastructure/keycloak/realms/realm-cdm.json.tpl`
+**Admin console**: `/auth/admin/cdm/console/`  
+**Account portal**: `/auth/realms/cdm/account/`  
+**Template file**: `provider-stack/keycloak/realms/realm-cdm.json.tpl`
 
 ### 2.3 provider — Platform Operations
 
@@ -94,39 +98,15 @@ Realm for the platform operations team.  Has no OIDC clients; purely for human o
 
 **Admin console**: `/auth/admin/provider/console/`  
 **Account portal**: `/auth/realms/provider/account/`  
-**Template file**: `cloud-infrastructure/keycloak/realms/realm-provider.json.tpl`
+**Template file**: `provider-stack/keycloak/realms/realm-provider.json.tpl`
 
-### 2.4 tenant1 — Acme Devices GmbH
+### 2.4 Tenant realms — Phase 2
 
-First example tenant realm.  Roles mirror the `cdm` realm.
-
-**Users**
-
-| Username | Role | Email | Initial password env var |
-|---|---|---|---|
-| `alice` | `cdm-admin` | alice@acme-devices.example.com | `TENANT1_ADMIN_PASSWORD` |
-| `bob` | `cdm-operator` | bob@acme-devices.example.com | `TENANT1_OPERATOR_PASSWORD` |
-| `carol` | `cdm-viewer` | carol@acme-devices.example.com | `TENANT1_VIEWER_PASSWORD` |
-
-**Admin console**: `/auth/admin/tenant1/console/`  
-**Account portal**: `/auth/realms/tenant1/account/`  
-**Template file**: `cloud-infrastructure/keycloak/realms/realm-tenant1.json.tpl`
-
-### 2.5 tenant2 — Beta Industries Ltd
-
-Second example tenant realm.
-
-**Users**
-
-| Username | Role | Email | Initial password env var |
-|---|---|---|---|
-| `dave` | `cdm-admin` | dave@beta-industries.example.com | `TENANT2_ADMIN_PASSWORD` |
-| `eve` | `cdm-operator` | eve@beta-industries.example.com | `TENANT2_OPERATOR_PASSWORD` |
-| `frank` | `cdm-viewer` | frank@beta-industries.example.com | `TENANT2_VIEWER_PASSWORD` |
-
-**Admin console**: `/auth/admin/tenant2/console/`  
-**Account portal**: `/auth/realms/tenant2/account/`  
-**Template file**: `cloud-infrastructure/keycloak/realms/realm-tenant2.json.tpl`
+> **Note: Tenant realms (`tenant1`, `tenant2`, …) are NOT part of the Provider-Stack.**
+> Each Tenant-Stack runs its own dedicated Keycloak instance and registers its realm as an
+> Identity Provider inside the `cdm` realm via Keycloak Realm-Federation (see `architecture/iam.md`).
+> The legacy `realm-tenant1.json.tpl` and `realm-tenant2.json.tpl` files remain in
+> `cloud-infrastructure/keycloak/realms/` for reference until Phase 2 is complete.
 
 ---
 
@@ -134,7 +114,7 @@ Second example tenant realm.
 
 ### 3.1 Realm import (automatic on every container start)
 
-`cloud-infrastructure/keycloak/docker-entrypoint.sh` runs before Keycloak starts:
+`provider-stack/keycloak/docker-entrypoint.sh` runs before Keycloak starts:
 
 1. Iterates over every `*.json.tpl` in `/opt/keycloak/data/import-template/`
 2. Applies `sed` substitution of all `${VAR}` placeholders
@@ -157,16 +137,20 @@ Second example tenant realm.
 After the first successful start, run:
 
 ```bash
-cd cloud-infrastructure
+cd provider-stack
 source .env
 bash keycloak/init-tenants.sh
 ```
 
 `init-tenants.sh` uses the Keycloak Admin REST API to:
 - Create/verify the `${KC_ADMIN_USER}` account in the **master** realm
-- Grant `realm-admin` role on the `tenant1-realm`, `tenant2-realm`, and `provider-realm` clients
+- Grant `realm-admin` role on the `cdm-realm` and `provider-realm` clients
 
-After this, the superadmin can access `/auth/admin/<tenant>/console/` with their normal credentials.
+After this, the superadmin can access `/auth/admin/<realm>/console/` with their normal credentials.
+
+> **Tenant realms** are managed exclusively by Tenant-Stack instances.  When a tenant joins
+> the platform (the JOIN workflow introduced in Phase 3), the IoT Bridge API automatically
+> registers the Tenant-Stack Keycloak realm as an Identity Provider in the `cdm` realm.
 
 ---
 
@@ -178,17 +162,14 @@ All variables are substituted in every `*.json.tpl` file by `docker-entrypoint.s
 |---|---|---|
 | `${KC_ADMIN_USER}` | provider | Provider superadmin username |
 | `${KC_ADMIN_PASSWORD}` | provider | Provider superadmin password |
-| `${HB_OIDC_SECRET}` | cdm | hawkBit OIDC client secret |
-| `${TB_OIDC_SECRET}` | cdm | ThingsBoard OIDC client secret |
 | `${GRAFANA_OIDC_SECRET}` | cdm | Grafana OIDC client secret |
 | `${BRIDGE_OIDC_SECRET}` | cdm | IoT Bridge OIDC client secret |
+| `${PORTAL_OIDC_SECRET}` | cdm | Portal OIDC client secret |
+| `${INFLUXDB_PROXY_OIDC_SECRET}` | cdm | InfluxDB oauth2-proxy OIDC client secret |
 | `${PROVIDER_OPERATOR_PASSWORD}` | provider | provider-operator initial password |
-| `${TENANT1_ADMIN_PASSWORD}` | tenant1 | alice initial password |
-| `${TENANT1_OPERATOR_PASSWORD}` | tenant1 | bob initial password |
-| `${TENANT1_VIEWER_PASSWORD}` | tenant1 | carol initial password |
-| `${TENANT2_ADMIN_PASSWORD}` | tenant2 | dave initial password |
-| `${TENANT2_OPERATOR_PASSWORD}` | tenant2 | eve initial password |
-| `${TENANT2_VIEWER_PASSWORD}` | tenant2 | frank initial password |
+
+> **Tenant-specific variables** (`TENANT1_*`, `TENANT2_*`, `HB_OIDC_SECRET`, `TB_OIDC_SECRET`, …)
+> belong to individual Tenant-Stack `.env` files, not to provider-stack.
 
 ---
 
@@ -200,7 +181,7 @@ Codespaces URL when running in GitHub Codespaces.
 ### Obtain an admin token
 
 ```bash
-source cloud-infrastructure/.env
+source provider-stack/.env
 
 TOKEN=$(curl -sf \
   -X POST "http://localhost:8888/auth/realms/master/protocol/openid-connect/token" \
@@ -220,7 +201,7 @@ curl -sf -H "Authorization: Bearer $TOKEN" \
 ### List users in a realm
 
 ```bash
-REALM=tenant1
+REALM=cdm
 curl -sf -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8888/auth/admin/realms/${REALM}/users" \
   | jq '.[] | {username, email, enabled}'
@@ -229,7 +210,7 @@ curl -sf -H "Authorization: Bearer $TOKEN" \
 ### Create a user
 
 ```bash
-REALM=tenant1
+REALM=cdm
 curl -sf -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
@@ -246,7 +227,7 @@ curl -sf -X POST \
 ### Assign a realm role to a user
 
 ```bash
-REALM=tenant1
+REALM=cdm
 USER_ID=$(curl -sf -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8888/auth/admin/realms/${REALM}/users?username=newuser&exact=true" \
   | jq -r '.[0].id')
@@ -265,7 +246,7 @@ curl -sf -X POST \
 ### Reset a user's password
 
 ```bash
-REALM=tenant1
+REALM=cdm
 USER_ID=<uuid>
 curl -sf -X PUT \
   -H "Authorization: Bearer $TOKEN" \
@@ -306,20 +287,23 @@ curl -sf -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## 6. Adding a new realm
 
-1. Create `cloud-infrastructure/keycloak/realms/realm-<name>.json.tpl`  
-   (copy `realm-tenant1.json.tpl` as starting point)
+1. Create `provider-stack/keycloak/realms/realm-<name>.json.tpl`  
+   (copy `realm-cdm.json.tpl` as starting point)
 2. Add any new `${NEW_VAR}` password placeholders  
-3. Register them in `docker-entrypoint.sh` as new `-e "s|${NEW_VAR}|...|g"` lines  
-4. Add the variables to `docker-compose.yml` under the `keycloak:` `environment:` block  
-5. Add them to `.env` and `.env.example`  
-6. Add them to `init-tenants.sh` `MANAGED_REALMS` array  
+3. Register them in `provider-stack/keycloak/docker-entrypoint.sh` as new `-e "s|${NEW_VAR}|...|g"` lines  
+4. Add the variables to `provider-stack/docker-compose.yml` under the `keycloak:` `environment:` block  
+5. Add them to `provider-stack/.env` and `provider-stack/.env.example`  
+6. Add the realm to `provider-stack/keycloak/init-tenants.sh` `MANAGED_REALMS` array  
 7. Rebuild and restart:
    ```bash
-   cd cloud-infrastructure
+   cd provider-stack
    docker compose build keycloak
    docker compose up -d keycloak
    ```
 8. Run `keycloak/init-tenants.sh` to grant the superadmin cross-realm access
+
+> **Tenant realms** are NOT added here.  They are bootstrapped by the Tenant-Stack and
+> federated into the `cdm` realm via Keycloak Identity Provider federation (Phase 3).
 
 ### Critical rules for new realm templates
 
@@ -337,7 +321,7 @@ curl -sf -X POST -H "Authorization: Bearer $TOKEN" \
 - **Rebuild the image** after every template change — templates are baked into the Docker image at
   build time, not mounted as a volume:
   ```bash
-  cd cloud-infrastructure && docker compose build keycloak
+  cd provider-stack && docker compose build keycloak
   ```
 
 ---
@@ -363,22 +347,20 @@ Two independent requirements must both be satisfied:
 
 The entrypoint background hook handles both requirements for all realms on every container start.
 
-### 7.3 nginx — upstream sent too big header
+### 7.3 Caddy — large response headers
 
 Keycloak sends large response headers (JWT `Set-Cookie`, long `Content-Security-Policy`).
-The nginx default `proxy_buffer_size` (4 KB) is too small and causes `502 Bad Gateway` on the
-first authenticated request.
+Caddy handles these natively with its internal HTTP/2 buffering; the old nginx `proxy_buffer_size`
+workaround is **not needed** in the provider-stack.
 
-Required nginx config inside the `/auth/` location block:
-
-```nginx
-proxy_buffer_size       32k;
-proxy_buffers           8 32k;
-proxy_busy_buffers_size 64k;
-```
-
-This is already set in `cloud-infrastructure/nginx/nginx.conf`.  
-Config is volume-mounted → changes take effect after `docker compose exec nginx nginx -s reload`.
+> **nginx is not used in the provider-stack.**  All ingress is handled by
+> `provider-stack/caddy/Caddyfile`.  If you deploy a custom nginx in front, apply:
+> ```nginx
+> proxy_buffer_size       32k;
+> proxy_buffers           8 32k;
+> proxy_busy_buffers_size 64k;
+> ```
+> inside the `/auth/` location block.
 
 ### 7.4 kcadm.sh in background subshells
 
@@ -434,8 +416,10 @@ Every realm that the portal should serve **must** have a confidential OIDC clien
 }
 ```
 
-This client is included in `realm-cdm.json.tpl`, `realm-tenant1.json.tpl`, `realm-tenant2.json.tpl`,
-and `realm-provider.json.tpl` and is provisioned via API by `init-tenants.sh` for existing deployments.
+This client is included in `provider-stack/keycloak/realms/realm-cdm.json.tpl` and
+`provider-stack/keycloak/realms/realm-provider.json.tpl` and is provisioned via API
+by `init-tenants.sh` for existing deployments.  Each Tenant-Stack must also register
+a `portal` client in its own realm.
 
 ### Environment variables (iot-bridge-api)
 
@@ -444,12 +428,12 @@ and `realm-provider.json.tpl` and is provisioned via API by `init-tenants.sh` fo
 | `EXTERNAL_URL` | Browser-facing base URL (e.g. `https://<codespaces-host>-8888.app.github.dev`) |
 | `PORTAL_OIDC_SECRET` | Secret for the `portal` client — same across all realms in dev |
 | `PORTAL_SESSION_SECRET` | Signs the encrypted session cookie — **change in production** |
-| `PORTAL_TENANTS_JSON` | JSON map `{"<id>":{"name":"<Display Name>"}, ...}` of known tenants |
+| `PORTAL_TENANTS_JSON` | JSON map `{"<id>":{"name":"<Display Name>"}, ...}` of statically known realms/tenants; in provider-stack defaults to `{"cdm":{"name":"CDM Platform"}}`. Tenants are added here dynamically when they join (Phase 3). |
 
 
 
 ```
-cloud-infrastructure/
+provider-stack/
   keycloak/
     Dockerfile                     Image build: copies realms/ and entrypoint
     docker-entrypoint.sh           Template loop: sed substitution → import/
@@ -457,9 +441,10 @@ cloud-infrastructure/
     realms/
       realm-cdm.json.tpl           cdm realm  (platform OIDC clients + users)
       realm-provider.json.tpl      provider realm  (platform ops team)
-      realm-tenant1.json.tpl       Acme Devices GmbH
-      realm-tenant2.json.tpl       Beta Industries Ltd
 ```
+
+> **Tenant realms** (`realm-tenant.json.tpl`, etc.) live in each Tenant-Stack under
+> `tenant-stack/keycloak/realms/` (Phase 2).
 
 ---
 
@@ -482,17 +467,22 @@ All scripts accept `BASE_URL` as a positional argument (default: `http://localho
 If users get `403 Forbidden` on `/auth/realms/<realm>/account/`:
 
 ```bash
-# 1. Apply account-audience mapper to all realms
+# 1. Apply account-audience mapper to all provider-stack realms
 bash .github/skills/cdm-keycloak/scripts/kc-apply-account-audience-mapper.sh
 
 # 2. Grant manage-account + view-profile to all existing users
 bash .github/skills/cdm-keycloak/scripts/kc-apply-account-roles.sh
 
 # 3. Force-logout the affected user so they get a fresh token
-bash .github/skills/cdm-keycloak/scripts/kc-force-logout.sh tenant1 alice
+bash .github/skills/cdm-keycloak/scripts/kc-force-logout.sh cdm cdm-admin
 
 # 4. (Optional) Verify the fix
-bash .github/skills/cdm-keycloak/scripts/kc-debug-account-api.sh tenant1 alice alice
+bash .github/skills/cdm-keycloak/scripts/kc-debug-account-api.sh cdm cdm-admin <password>
+```
+
+For tenant realms (Tenant-Stack), pass the base URL and realm explicitly:
+```bash
+bash .github/skills/cdm-keycloak/scripts/kc-apply-account-audience-mapper.sh http://<tenant-host>:8888 tenant-realm-name
 ```
 
 ### Quick-fix runbook — Grafana OIDC role not recognized

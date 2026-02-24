@@ -10,13 +10,13 @@ This use case covers how to respond to security incidents — compromised device
 
 ### Response Steps
 
-#### 1. Revoke the Certificate Immediately
+#### 1. Revoke the Certificate at Tenant Sub-CA
 
 ```bash
-# From a workstation that trusts the step-ca root
+# Against the Tenant step-ca Sub-CA
 step ca revoke \
   --cert /path/to/device-001.crt \
-  --ca-url https://your-step-ca:9000 \
+  --ca-url https://tenant.example.com/pki \
   --root root_ca.crt
 ```
 
@@ -24,19 +24,36 @@ If you do not have the certificate file, revoke by serial number:
 
 ```bash
 step ca revoke <serial-number> \
-  --ca-url https://your-step-ca:9000 \
+  --ca-url https://tenant.example.com/pki \
   --root root_ca.crt
 ```
 
-#### 2. Remove the WireGuard Peer
+#### 1b. Escalation: Compromise of the Tenant Sub-CA itself
+
+If the Sub-CA private key is compromised, revoke the Sub-CA certificate at the Provider Root CA:
 
 ```bash
-# On the WireGuard server
+# Against the Provider step-ca (Root/Intermediate CA)
+step ca revoke <sub-ca-serial> \
+  --ca-url https://provider.example.com/pki \
+  --root provider_root_ca.crt
+```
+
+Then re-issue a new Sub-CA for the tenant and re-enroll all tenant devices.
+
+#### 2. Remove the WireGuard Peer (Tenant-Stack)
+
+```bash
+# On the Tenant-Stack host
+# Find the device's public key
+docker compose exec tenant-iot-bridge-api cat /wg-config/cdm_peers.json | grep device-001 -A3
+
+# Remove from WireGuard interface
 wg set wg0 peer <compromised-device-public-key> remove
 wg-quick save wg0
 
-# Remove from cdm_peers.json (in the wg-data volume)
-docker compose exec iot-bridge-api \
+# Remove from peers JSON
+docker compose exec tenant-iot-bridge-api \
   python3 -c "
 import json
 with open('/wg-config/cdm_peers.json') as f: data = json.load(f)
@@ -45,18 +62,18 @@ with open('/wg-config/cdm_peers.json','w') as f: json.dump(data, f)
 "
 ```
 
-#### 3. Delete the Device from ThingsBoard
+#### 3. Delete the Device from ThingsBoard (Tenant-Stack)
 
 ```bash
-curl -X DELETE http://localhost:8080/api/device/<device-id> \
+curl -X DELETE https://tenant.example.com:9090/api/device/<device-id> \
   -H "Authorization: Bearer <admin-jwt>"
 ```
 
-#### 4. Delete the Target from hawkBit
+#### 4. Delete the Target from hawkBit (Tenant-Stack)
 
 ```bash
-curl -X DELETE http://localhost:8090/rest/v1/targets/device-001 \
-  -u admin:admin
+curl -X DELETE https://tenant.example.com/hawkbit/rest/v1/targets/device-001 \
+  -H "Authorization: Basic <base64-creds>"
 ```
 
 #### 5. Issue a New Certificate for the Replacement Device
@@ -71,11 +88,11 @@ Follow the [Device Provisioning Workflow](../workflows/device-provisioning.md) w
 
 ### Response Steps
 
-1. Log in to InfluxDB (http://localhost:8086).
+1. Log in to Tenant InfluxDB (`https://tenant.example.com:8086`) or Provider InfluxDB (`https://provider.example.com:8086`).
 2. Go to **Load Data → API Tokens**.
 3. Find the compromised token and click **Delete**.
 4. Create a new token with the same permissions.
-5. Update `INFLUXDB_TOKEN` in `.env` and restart Telegraf on all devices.
+5. Update `INFLUXDB_TOKEN` in the relevant `.env` and restart Telegraf on all devices.
 
 ---
 
@@ -102,15 +119,18 @@ Follow the [Device Provisioning Workflow](../workflows/device-provisioning.md) w
 
 ### Response Steps
 
-1. **Immediately** change the admin password via the Keycloak admin CLI:
+1. **Immediately** change the admin password via the Keycloak admin CLI (run in the
+   affected stack — provider-stack or tenant-stack directory):
    ```bash
    docker compose exec keycloak \
      /opt/keycloak/bin/kcadm.sh set-password \
      --target-realm master --username admin --new-password <new-pw>
    ```
-2. Rotate all OIDC client secrets (ThingsBoard, hawkBit, Grafana) — see [IAM Architecture](../architecture/iam.md#updating-client-secrets).
+2. Rotate all OIDC client secrets — see [IAM Architecture](../architecture/iam.md).
 3. Invalidate all active sessions in the `cdm` realm: **Realm Settings → Sessions → Logout all**.
 4. Audit the Keycloak event log for unauthorised actions: **Events → Admin Events**.
+5. If the Provider Keycloak admin is compromised, also rotate all OIDC federation client
+   secrets used by Tenant Keycloak instances.
 
 ---
 
@@ -120,10 +140,10 @@ All security-relevant events are logged in:
 
 | Source | How to Access |
 |---|---|
-| step-ca certificate events | `docker compose logs step-ca` |
+| step-ca certificate events | `docker compose logs step-ca` (provider- or tenant-stack) |
 | Keycloak admin events | Keycloak UI → **Events → Admin Events** |
-| ThingsBoard device events | ThingsBoard UI → Device → **Audit Log** |
-| iot-bridge-api enrollment log | `docker compose logs iot-bridge-api` |
-| WireGuard connection log | `docker compose logs wireguard` |
+| ThingsBoard device events | ThingsBoard UI (Tenant-Stack) → Device → **Audit Log** |
+| iot-bridge-api enrollment log | `docker compose logs tenant-iot-bridge-api` |
+| WireGuard connection log | `docker compose logs tenant-wireguard` |
 
 For production, forward all logs to a SIEM (e.g. Grafana Loki, OpenSearch, Splunk) for long-term retention and alerting.

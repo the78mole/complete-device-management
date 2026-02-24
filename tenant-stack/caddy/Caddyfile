@@ -1,0 +1,102 @@
+# ─────────────────────────────────────────────────────────────────
+# Tenant Stack – Caddyfile
+#
+# Single entry point on :{$CADDY_PORT:8888}
+# Path-based reverse proxy to all tenant-stack services.
+#
+# Services NOT routed through Caddy (SPA sub-path limitation):
+#   :9090  → ThingsBoard (accessed directly)
+#   :8086  → InfluxDB / oauth2-proxy (accessed directly)
+#   :8883  → ThingsBoard MQTT TLS (direct, device connections)
+#   :51820 → WireGuard (UDP, direct)
+#   :9000  → step-ca (mTLS CMP/ACME, direct)
+# ─────────────────────────────────────────────────────────────────
+
+:{$CADDY_PORT:8888} {
+  auto_https {$CADDY_AUTO_HTTPS:off}
+
+  # ── Keycloak ────────────────────────────────────────────────────
+  # Works perfectly behind a sub-path because Keycloak respects
+  # KC_HTTP_RELATIVE_PATH=/auth and X-Forwarded-* headers.
+  handle_path /auth/* {
+    reverse_proxy keycloak:8080 {
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-Host  {host}
+      header_up X-Real-IP         {remote_host}
+    }
+  }
+
+  # ── Grafana ─────────────────────────────────────────────────────
+  # GF_SERVER_SERVE_FROM_SUB_PATH=true handles the /grafana prefix.
+  handle_path /grafana/* {
+    reverse_proxy grafana:3000 {
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-Host  {host}
+    }
+  }
+
+  # ── IoT Bridge API (FastAPI, ROOT_PATH=/api) ─────────────────────
+  # strip the /api prefix; FastAPI uses ROOT_PATH=/api to generate
+  # correct Swagger/ReDoc redirect URIs.
+  handle_path /api/* {
+    reverse_proxy iot-bridge-api:8000 {
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-Host  {host}
+      header_up X-Forwarded-Prefix /api
+    }
+  }
+
+  # ── hawkBit ─────────────────────────────────────────────────────
+  # SERVER_SERVLET_CONTEXT_PATH=/hawkbit – no prefix stripping needed.
+  handle /hawkbit/* {
+    reverse_proxy hawkbit:8070 {
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-Host  {host}
+    }
+  }
+
+  # ── step-ca PKI endpoint ─────────────────────────────────────────
+  # step-ca speaks HTTPS; disable TLS verification for self-signed certs.
+  # Strip /pki prefix before forwarding.
+  handle_path /pki/* {
+    reverse_proxy https://step-ca:9000 {
+      transport http {
+        tls_insecure_skip_verify
+      }
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-Host  {host}
+    }
+  }
+
+  # ── Terminal Proxy (WebSocket → ttyd) ───────────────────────────
+  handle_path /terminal/* {
+    reverse_proxy terminal-proxy:8090 {
+      header_up Upgrade    {http.upgrade}
+      header_up Connection {http.connection}
+      header_up X-Forwarded-Proto {scheme}
+      header_up X-Forwarded-Host  {host}
+    }
+  }
+
+  # ── ThingsBoard Widgets & Gateway ───────────────────────────────
+  # Optionally expose TB rule-chain / widget API on a sub-path.
+  # The full SPA is on :9090 directly; only the REST API can be
+  # proxied here if needed.
+  # Uncomment to enable:
+  # handle /tb/api/* {
+  #   reverse_proxy thingsboard:9090
+  # }
+
+  # ── Static landing page ─────────────────────────────────────────
+  handle / {
+    root * /srv/html
+    file_server
+  }
+
+  # Fallback for unmatched paths → landing page
+  handle {
+    root * /srv/html
+    try_files {path} /index.html
+    file_server
+  }
+}

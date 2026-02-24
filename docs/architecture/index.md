@@ -2,11 +2,13 @@
 
 **Complete Device Management** is built around five integration pillars:
 
-1. **Identity & Trust** — Keycloak (SSO) + step-ca (PKI) establish who can connect and which certificates are trusted.
-2. **Device Communication** — ThingsBoard provides the MQTT broker and the single-pane-of-glass UI.
-3. **Software Updates** — hawkBit manages campaigns; RAUC executes them atomically on the device.
-4. **Observability** — Device telemetry flows from ThingsBoard through the IoT Bridge API (`/webhooks/thingsboard/telemetry`) into InfluxDB; hawkBit OTA status is polled by cloud Telegraf; optional MQTT sensor data is collected by Telegraf. Grafana visualises all metrics.
-5. **Remote Access** — WireGuard creates a secure overlay network; ttyd + terminal-proxy deliver a browser shell.
+1. **Identity & Trust** — Keycloak (SSO, realm federation) + step-ca (PKI, two-tier CA hierarchy) establish who can connect and which certificates are trusted.
+2. **Device Communication** — The Tenant-Stack ThingsBoard MQTT broker receives device telemetry and state; the central Provider-Stack RabbitMQ routes data via per-tenant vHosts.
+3. **Software Updates** — hawkBit (Tenant-Stack) manages campaigns; RAUC executes them atomically on the device.
+4. **Observability** — Device telemetry flows into the Tenant-Stack InfluxDB; platform-health metrics flow via RabbitMQ into the Provider-Stack InfluxDB.  Grafana is deployed in both stacks.
+5. **Remote Access** — WireGuard (Tenant-Stack) creates a secure overlay network; ttyd + terminal-proxy deliver a browser shell.
+
+For a complete picture of how the two stacks relate, see [Architecture → Stack Topology](stack-topology.md).
 
 ---
 
@@ -14,49 +16,67 @@
 
 ```mermaid
 graph TB
-    subgraph cloud["Cloud Infrastructure"]
-        KC["Keycloak (IAM)"]
-        TB["ThingsBoard (UI/MQTT Broker)"]
-        HB["hawkBit (OTA Campaigns)"]
-        SCA["step-ca (PKI)"]
-        IBA["IoT Bridge API (FastAPI glue)"]
-        WGS["WireGuard Server"]
-        IDB[InfluxDB]
-        TEL[Telegraf]
-        GRF[Grafana]
-        TXP["Terminal Proxy (WS + JWT)"]
-
-        KC <-->|OIDC/SAML| TB
-        TB <-->|REST| HB
-        TB -->|"Rule Engine (connect + telemetry)"| IBA
-        SCA <-->|sign CSR| IBA
-        IBA <-->|alloc peer| WGS
-        IBA -->|"device telemetry"| IDB
-        HB -->|REST poll| TEL
-        TEL -->|"OTA status + sensor data"| IDB
-        IDB --> GRF
+    subgraph provider["Provider-Stack"]
+        KC_P["Keycloak\n(cdm + provider realms)"]
+        RMQ["RabbitMQ\n(central broker)"]
+        IDB_P["InfluxDB\n(platform metrics)"]
+        GRF_P["Grafana\n(platform dashboards)"]
+        SCA_P["step-ca\n(Root CA)"]
+        IBA["IoT Bridge API"]
     end
 
-    subgraph device["Edge Device (Linux / Yocto / Docker simulation)"]
-        BST["bootstrap (step-cli enroll)"]
-        WGC[wireguard-client]
-        MQC[mqtt-client]
-        TLG[telegraf]
-        RAU[rauc-updater]
-        TTD[ttyd]
+    subgraph tenant["Tenant-Stack  ×N"]
+        KC_T["Keycloak\n(tenant realm)"]
+        TB["ThingsBoard\n(MQTT Broker + UI)"]
+        HB["hawkBit\n(OTA Campaigns)"]
+        SCA_T["step-ca\n(Sub-CA)"]
+        WGS["WireGuard Server"]
+        IDB_T["InfluxDB\n(device telemetry)"]
+        GRF_T["Grafana"]
+        TXP["Terminal Proxy"]
 
+        KC_T <-->|OIDC| TB
+        TB <-->|REST| HB
+        TB -->|Rule Engine| IDB_T
+        IDB_T --> GRF_T
+    end
+
+    subgraph device["Edge Device"]
+        BST["bootstrap"]
+        WGC["wireguard-client"]
+        MQC["mqtt-client"]
+        TLG["telegraf"]
+        RAU["rauc-updater"]
+        TTD["ttyd"]
         BST --> WGC
         BST --> MQC
         BST --> TLG
         BST --> RAU
-        BST --> TTD
     end
 
-    MQC -->|"MQTT TLS (8883)"| TB
-    WGC <-->|WireGuard VPN| WGS
-    TLG -.->|"MQTT subscribe (sensors, optional)"| TB
-    TLG -.->|"sensor data (optional)"| IDB
+    %% PKI chain
+    SCA_P -->|"signs Sub-CA CSR"| SCA_T
+    SCA_T -->|"issues device cert"| BST
+
+    %% Keycloak federation
+    KC_T -->|"Identity Provider federation"| KC_P
+
+    %% Device connections
+    MQC -->|"MQTTS mTLS (8883)"| TB
+    WGC <-->|"WireGuard VPN"| WGS
+    TLG -->|"MQTT / HTTP"| IDB_T
+    RAU -->|"DDI poll"| HB
     TXP -->|"WS → WireGuard IP → ttyd"| TTD
+
+    %% Tenant → Provider
+    TB -.->|"metrics (AMQP)"| RMQ
+    RMQ -->|"cdm-metrics vHost"| IDB_P
+    IDB_P --> GRF_P
+
+    %% Management
+    IBA <-->|"tenant onboarding"| SCA_P
+    IBA <-->|"vHost mgmt"| RMQ
+    IBA <-->|"IdP registration"| KC_P
 ```
 
 ---

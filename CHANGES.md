@@ -159,7 +159,10 @@ Phase-2-Platzhalter mit korrekter Warnung.
 
 ---
 
-### Phase 2 – Tenant-Stack als eigenständige Einheit *(Neuentwicklung)*
+### Phase 2 – Tenant-Stack als eigenständige Einheit *(Neuentwicklung)* ✅
+
+> **Status: abgeschlossen** — `tenant-stack/` ist vollständig implementiert.
+> `mkdocs build --strict` läuft fehlerfrei durch.
 
 | Aufgabe | Betroffene Dateien |
 |---|---|
