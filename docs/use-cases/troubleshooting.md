@@ -183,19 +183,31 @@ journalctl -u ttyd -n 30
 
 ### Tenant-Stack cannot publish to Provider RabbitMQ
 
-**Cause:** RabbitMQ vHost or credentials not yet provisioned on the Provider-Stack.
+**Cause:** RabbitMQ vHost, EXTERNAL user, or mTLS certificates not yet provisioned
+on the Provider-Stack.
 
 **Fix:**
 
 ```bash
-# On the Provider-Stack host
+# Check that the tenant vHost and EXTERNAL user exist on the Provider-Stack
 docker compose -f provider-stack/docker-compose.yml exec rabbitmq \
   rabbitmqctl list_vhosts
-# Should contain the tenant vHost, e.g. /tenant-acme
+docker compose -f provider-stack/docker-compose.yml exec rabbitmq \
+  rabbitmqctl list_users
+# Expected user: <tenant-id>-mqtt-bridge
 
-# If missing, re-run init-tenants.sh:
-bash provider-stack/keycloak/init-tenants.sh
+# Verify the MQTT bridge client certificate on the Tenant-Stack
+docker compose exec ${TENANT_ID}-step-ca \
+  step certificate inspect /home/step/mqtt-bridge/client.crt
+
+# Check the MQTTS port is reachable
+docker compose -f provider-stack/docker-compose.yml exec rabbitmq \
+  rabbitmq-diagnostics listeners
+# Should show: Interface: [::], port: 8883, Protocol: mqtt/ssl
 ```
+
+If the JOIN workflow was completed before the mTLS changes were deployed, re-approve
+the JOIN request to issue a new MQTT bridge certificate.
 
 ### Tenant Keycloak federation login fails
 

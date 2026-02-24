@@ -317,3 +317,97 @@ class StepCAAdminClient:
                     f"step-ca remove provisioner failed HTTP {resp.status_code}: {resp.text}"
                 )
 
+    async def sign_sub_ca_csr(
+        self,
+        csr_pem: str,
+        tenant_id: str,
+        sub_ca_provisioner_name: str,
+        sub_ca_provisioner_password: str,
+    ) -> tuple[str, str]:
+        """Sign a Tenant Sub-CA CSR and return (signed_cert_pem, root_ca_pem).
+
+        The provisioner identified by *sub_ca_provisioner_name* must exist in step-ca
+        and have an x509 template that sets ``isCA: true, maxPathLen: 0`` so that the
+        resulting certificate is a valid Intermediate CA.
+
+        Args:
+            csr_pem:                   PEM-encoded Sub-CA CSR from the Tenant-Stack.
+            tenant_id:                 Tenant identifier (used as subject CN / SAN).
+            sub_ca_provisioner_name:   Name of the sub-CA JWK provisioner in step-ca.
+            sub_ca_provisioner_password: Password protecting that provisioner's key.
+
+        Returns:
+            ``(signed_cert_pem, root_ca_pem)``
+
+        Raises:
+            StepCAError: if the provisioner is not found or signing fails.
+        """
+        # ── 1. Fetch and decrypt the sub-CA provisioner JWK ──────────────────
+        async with httpx.AsyncClient(verify=self._verify_tls) as client:
+            resp = await client.get(f"{self._url}/1.0/provisioners", timeout=10.0)
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+
+        sub_ca_key: jwk.JWK | None = None
+        for prov in data.get("provisioners", []):
+            if prov.get("name") == sub_ca_provisioner_name and prov.get("type") == "JWK":
+                encrypted_key_str: str = prov.get("encryptedKey", "")
+                if not encrypted_key_str:
+                    raise StepCAError(
+                        f"Sub-CA provisioner '{sub_ca_provisioner_name}' has no encryptedKey"
+                    )
+                password_key = jwk.JWK.from_password(sub_ca_provisioner_password.encode())
+                jwe_obj = JWE()
+                jwe_obj.deserialize(encrypted_key_str, password_key)
+                private_key_data: dict[str, Any] = json.loads(jwe_obj.payload.decode())
+                sub_ca_key = jwk.JWK(**private_key_data)
+                break
+
+        if sub_ca_key is None:
+            raise StepCAError(
+                f"JWK provisioner '{sub_ca_provisioner_name}' not found in step-ca"
+            )
+
+        # ── 2. Compute CSR fingerprint (binds OTT to this specific CSR) ───────
+        csr = x509.load_pem_x509_csr(csr_pem.encode())
+        der = csr.public_bytes(Encoding.DER)
+        csr_sha = (
+            base64.urlsafe_b64encode(hashlib.sha256(der).digest())
+            .rstrip(b"=")
+            .decode()
+        )
+
+        # ── 3. Build OTT using the sub-CA provisioner key ─────────────────────
+        now = int(time.time())
+        claims: dict[str, Any] = {
+            "iss": sub_ca_provisioner_name,
+            "sub": tenant_id,
+            "aud": [f"{self._url}/1.0/sign"],
+            "iat": now,
+            "nbf": now,
+            "exp": now + 300,
+            "sans": [tenant_id],
+            "sha": csr_sha,
+        }
+        token = JWT(
+            header={"alg": "ES256", "kid": sub_ca_key.key_id},
+            claims=claims,
+        )
+        token.make_signed_token(sub_ca_key)
+        ott: str = token.serialize()
+
+        # ── 4. Submit to step-ca /1.0/sign ────────────────────────────────────
+        async with httpx.AsyncClient(verify=self._verify_tls) as client:
+            resp = await client.post(
+                f"{self._url}/1.0/sign",
+                json={"csr": csr_pem, "ott": ott},
+                timeout=30.0,
+            )
+            if not resp.is_success:
+                raise StepCAError(
+                    f"step-ca sub-CA sign returned {resp.status_code}: {resp.text}"
+                )
+            result: dict[str, str] = resp.json()
+
+        return result["crt"], result["ca"]
+

@@ -58,7 +58,7 @@ einen passenden Zugang zur Tenant-Instanz.
 
 ## Umsetzungsplan
 
-### Phase 1 – Provider-Stack extrahieren *(Refactoring)*
+### Phase 1 – Provider-Stack extrahieren *(Refactoring)* ✅
 
 Ausgangspunkt: aktueller `cloud-infrastructure/docker-compose.yml`.
 
@@ -78,7 +78,7 @@ Ausgangspunkt: aktueller `cloud-infrastructure/docker-compose.yml`.
 
 ---
 
-### Phase 1.5 – Dokumentation & gh-pages auf neue Architektur anpassen *(Refactoring)*
+### Phase 1.5 – Dokumentation & gh-pages auf neue Architektur anpassen *(Refactoring)* ✅
 
 Die MkDocs-Dokumentation unter `docs/` beschreibt bisher die monolithische
 `cloud-infrastructure/`-Welt.  Sie muss die neue Zwei-Stack-Architektur
@@ -182,20 +182,27 @@ und verbindet sich über MQTT (mTLS) mit dem Provider-Stack.
 
 ---
 
-### Phase 3 – JOIN-Workflow & Onboarding-API *(Neuentwicklung)*
+### Phase 3 – JOIN-Workflow & Onboarding-API *(Neuentwicklung)* ✅
 
 | Aufgabe | Details |
 |---|---|
-| JOIN-Request-Endpunkt in der IoT Bridge API | `POST /api/admin/tenants/{id}/join-request` |
-| Approval-Workflow im Admin Portal | Review + Approve/Reject UI in `admin_portal.py` |
-| Zertifikatsaustausch automatisieren | step-ca: Provider signiert Tenant-Sub-CA-CSR; Tenant erhält Root-CA-Fingerprint |
-| RabbitMQ vHost + User + Permissions automatisch anlegen | bereits teilweise in `admin_portal.py` vorhanden |
-| Keycloak-Federation einrichten | Provider-Realm als Identity Provider im Tenant-Realm registrieren (wie bisher manuell, jetzt per API) |
-| WireGuard-Peer für Tenant-Stack im Provider-Stack registrieren | `glue-services/iot-bridge-api/routers/wireguard.py` erweitern |
-
-**Deliverable:** Ein neuer Tenant kann sich per `docker compose up` am Provider
-registrieren; nach manuellem Approve ist die gesamte Infrastruktur (PKI, MQTT,
-SSO) ohne weiteren Eingriff betriebsbereit.
+| JOIN-Request-Endpunkt in der IoT Bridge API | `POST /portal/admin/join-request/{id}` (unauthenticated) |
+| Approval-Workflow im Admin Portal | Review + Approve/Reject UI in `admin_portal.py` + `admin_dashboard.html` |
+| Zertifikatsaustausch automatisieren | step-ca: Provider signiert Tenant-Sub-CA-CSR via `tenant-sub-ca-signer`-Provisioner; Tenant erhält Root-CA-Zertifikat |
+| **mTLS MQTT Bridge statt Passwort** | Tenant-Stack generiert MQTT-Bridge-Key+CSR, schickt CSR im JOIN-Request mit; Provider API signiert Zertifikat (CN=`{id}-mqtt-bridge`), gibt es im Bundle zurück – kein Passwort mehr |
+| RabbitMQ MQTT+TLS (Port 8883) aktiviert | `provider-stack/rabbitmq/rabbitmq.conf`: MQTT-Plugin, TLS, EXTERNAL-Auth-Mechanismus (CN → Username) |
+| RabbitMQ Server-Cert via step-ca | `provider-stack/rabbitmq/cert-init.sh` + `rabbitmq-cert-init`-Service (one-shot, `smallstep/step-cli`) |
+| RabbitMQ EXTERNAL-User statt Passwort-User | `join.py`: `create_user(rmq_mqtt_user, "", tags="none")` + EXTERNAL auth |
+| RabbitMQ vHost + EXTERNAL-User + Permissions automatisch anlegen | `RabbitMQClient.create_vhost/create_user/set_permissions` via approve-Endpunkt |
+| **Keycloak-Federation Richtung korrigiert** | Provider KC (`cdm`-Realm) wird als IdP beim Tenant KC registriert (nicht umgekehrt) – CDM-Admins können sich damit direkt bei Tenant-Diensten (ThingsBoard, Grafana) per SSO anmelden |
+| Keycloak OIDC-Client anlegen statt IdP registrieren | `join.py`: `_kc_create_federation_client()` erstellt `cdm-federation-{id}`-Client im Provider `cdm`-Realm, gibt Credentials im Bundle zurück |
+| Tenant-Stack konfiguriert Provider KC als IdP | `init-sub-ca.sh` ruft Tenant KC Admin-API auf und registriert `cdm-provider`-IdP; Credentials in `/home/step/join-bundle/keycloak-federation.env` |
+| Persistenter JOIN-Request-Store | JSON-Datei unter `JOIN_REQUESTS_DB_PATH=/data/join_requests.json` (Volume) |
+| `app/clients/join_store.py` | Async-safe Read/Write für den JSON-Store |
+| `app/routers/join.py` | Alle JOIN-Endpunkte inkl. Statuspolling, MQTT-CSR-Signing |
+| `provider-stack/step-ca/` | Neues Dockerfile (Repo-Root als Build-Context) + `init-provisioners.sh` mit Sub-CA-Provisioner (`tenant-sub-ca-signer`) + Template `tenant-sub-ca.tpl` |
+| `tenant-stack/step-ca/init-sub-ca.sh` | Vollständig auf JOIN-API umgestellt; generiert zusätzlich MQTT-Bridge-Key+CSR; installiert empfangenes `mqtt_bridge_cert` in `/home/step/mqtt-bridge/` |
+| `docs/use-cases/tenant-onboarding.md` | Vollständige Dokumentation inkl. API-Referenz und mTLS-Architektur |
 
 ---
 
@@ -234,5 +241,5 @@ bereits entschieden und implementiert:
 | **Proxy** | **Caddy** (löst nginx ab) | Automatisches HTTPS via ACME; kein manuelles Cert-Management; einfacheres Caddyfile vs. nginx.conf |
 | **ThingsBoard** | Im **Tenant-Stack** | Jeder Tenant betreibt eigene ThingsBoard-Instanz → vollständige Datenisolation; Provider-Stack wird schlank gehalten |
 | **RabbitMQ-Isolation** | **vHost pro Tenant** auf zentralem Broker | Ausreichende Isolation; deutlich geringerer Betriebsaufwand als separater Broker; Broker im Provider-Stack, vHosts per API via IoT Bridge provisioniert |
-| **Keycloak Federation** | **Realm-Federation** (Keycloak-Native) | Provider-Stack betreibt `cdm`- und `provider`-Realm; Tenant-Stacks registrieren ihren Realm als Identity Provider im `cdm`-Realm → kein grafana-broker-OIDC-Umweg mehr nötig |
+| **Keycloak Federation** | **Provider KC als IdP beim Tenant** | Tenant KC registriert Provider `cdm`-Realm als OIDC-IdP → CDM-Admins können sich direkt bei Tenant-Diensten anmelden; Tenant-KC bleibt unabhängig für eigene Kunden-User |
 

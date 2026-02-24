@@ -80,3 +80,11 @@ class Settings(BaseSettings):
     step_ca_admin_provisioner: str = "cdm-admin@cdm.local"
     # Password protecting the admin provisioner key (contents of step-ca/password.txt)
     step_ca_admin_password: str = "changeme"
+    # ── step-ca sub-CA signer (for signing Tenant Sub-CA CSRs) ───────────────
+    # JWK provisioner configured with x509 template isCA=true, maxPathLen=0
+    step_ca_sub_ca_provisioner: str = "tenant-sub-ca-signer"
+    step_ca_sub_ca_password: str = "changeme"
+
+    # ── JOIN workflow ─────────────────────────────────────────────────────────
+    # Persistent JSON store for pending/approved/rejected tenant JOIN requests.
+    join_requests_db_path: str = "/data/join_requests.json"

@@ -60,6 +60,8 @@
       background: #0d2416; border: 1px solid #186231; border-radius: 8px;
       padding: 1rem; margin-top: 0.75rem; font-family: monospace; font-size: 0.82rem;
     }
+    .badge-pending { background: #2c1a00; color: #e3b341; border: 1px solid #7c4c00; }
+    .badge-rejected { background: #300; color: #f85149; border: 1px solid #7c0000; }
     .protected-badge {
       font-size: 0.65rem; font-weight: 600; padding: 0.2rem 0.45rem;
       border-radius: 4px; background: #1f3a5f; color: #8b949e;
@@ -91,7 +93,78 @@
 
   <div class="container py-4">
 
-    <!-- ── Existing Tenants ─────────────────────────────────────────────── -->
+    <!-- ── Pending JOIN Requests ───────────────────────────────────────── -->
+    {% set pending_count = join_requests | selectattr('status', 'equalto', 'pending') | list | length %}
+    <div class="section-label">
+      JOIN-Anfragen
+      {% if pending_count > 0 %}
+        <span class="badge-pill badge-pending ms-2">{{ pending_count }} ausstehend</span>
+      {% endif %}
+    </div>
+    {% if join_requests %}
+    <div class="card-dark p-0 mb-4">
+      <table class="table table-dark table-borderless mb-0" style="background:transparent">
+        <thead style="border-bottom:1px solid #30363d">
+          <tr>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500;padding:0.75rem 1rem">Tenant-ID</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Anzeigename</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Status</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Gestellt am</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Sub-CA CSR</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for req in join_requests %}
+          <tr class="tenant-row">
+            <td style="padding:0.7rem 1rem;vertical-align:middle">
+              <code style="color:#79c0ff">{{ req.tenant_id }}</code>
+            </td>
+            <td style="vertical-align:middle;font-size:0.88rem">{{ req.display_name }}</td>
+            <td style="vertical-align:middle">
+              {% if req.status == 'pending' %}
+                <span class="badge-pill badge-pending">⏳ Ausstehend</span>
+              {% elif req.status == 'approved' %}
+                <span class="badge-pill badge-ca">✓ Genehmigt</span>
+              {% else %}
+                <span class="badge-pill badge-rejected">✗ Abgelehnt</span>
+              {% endif %}
+            </td>
+            <td style="vertical-align:middle;font-size:0.8rem;color:#8b949e">
+              {{ req.requested_at[:19] if req.requested_at else '—' }}
+            </td>
+            <td style="vertical-align:middle">
+              <button class="btn btn-sm btn-outline-secondary btn-sm-action"
+                      onclick="showCsr('{{ req.tenant_id }}', {{ req.sub_ca_csr | tojson }})">
+                CSR anzeigen
+              </button>
+            </td>
+            <td style="vertical-align:middle">
+              <div class="d-flex gap-1 flex-wrap">
+                {% if req.status == 'pending' %}
+                  <button class="btn btn-sm btn-outline-success btn-sm-action"
+                          onclick="approveJoin('{{ req.tenant_id }}')">
+                    ✓ Genehmigen
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger btn-sm-action"
+                          onclick="showRejectModal('{{ req.tenant_id }}')">
+                    ✗ Ablehnen
+                  </button>
+                {% else %}
+                  <span style="font-size:0.75rem;color:#6e7681">—</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-dark p-3 mb-4" style="text-align:center;color:#6e7681">
+      Keine JOIN-Anfragen vorhanden. Tenant-Stacks senden Anfragen automatisch beim Start.
+    </div>
+    {% endif %}
     <div class="section-label">Aktive Tenants</div>
     <div class="card-dark p-0 mb-4">
       <table class="table table-dark table-borderless mb-0" style="background:transparent">
@@ -289,6 +362,73 @@
     </div>
   </footer>
 
+  <!-- CSR Viewer Modal -->
+  <div class="modal fade" id="csrModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6" id="csrModalTitle">Sub-CA CSR</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <textarea id="csr-content" class="form-control" rows="12"
+            style="background:#0d1117;border-color:#30363d;color:#4ade80;font-family:monospace;font-size:0.75rem"
+            readonly></textarea>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reject JOIN Modal -->
+  <div class="modal fade" id="rejectJoinModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6" style="color:#f85149">JOIN-Anfrage ablehnen</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="reject-tenant-id" />
+          <div class="mb-3">
+            <label class="form-label" style="font-size:0.82rem">Ablehnungsgrund (optional)</label>
+            <input type="text" id="reject-reason" placeholder="z.B. Ungültige Tenant-ID"
+                   class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+          </div>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="submitReject()">Ablehnen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Approve Result Modal -->
+  <div class="modal fade" id="approveResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6" style="color:#4ade80">✓ Tenant genehmigt – Provisioning-Bundle</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:0.82rem;color:#8b949e">
+            Das Bundle wird automatisch vom Tenant-Stack abgerufen.
+            Die Authentifizierung erfolgt via mTLS (kein Passwort).
+          </p>
+          <div id="approve-bundle" class="cred-box"></div>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal"
+                  onclick="location.reload()">Schließen &amp; Aktualisieren</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
     integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmhYoGr3JuVNPbbbg4YS2ZLMAVQ5"
     crossorigin="anonymous"></script>
@@ -364,8 +504,8 @@
           + 'Admin-User:     ' + data.admin_user + '\n'
           + 'Admin-E-Mail:   ' + data.admin_email + '\n'
           + 'Admin-Passwort: <strong style="color:#ffa657">' + escHtml(data.admin_password) + '</strong>  ← jetzt kopieren!\n'
-          + (data.results.rabbitmq_password
-              ? 'RabbitMQ-PW:    ' + escHtml(data.results.rabbitmq_password) + '\n' : '')
+          + (data.results && data.results.rabbitmq === 'created'
+              ? 'RabbitMQ mTLS:  ' + escHtml(data.realm_id) + '-mqtt-bridge (EXTERNAL auth)\n' : '')
           + '\n<span style="color:#e3b341">Dieses Passwort wird nicht erneut angezeigt.</span>';
 
         setTimeout(() => location.reload(), 3000);
@@ -457,6 +597,79 @@
           return;
         }
         log('OIDC-Provisioner "' + data.provisioner_name + '" erfolgreich registriert.', '#4ade80');
+        setTimeout(() => location.reload(), 1500);
+      } catch(e) {
+        log('Netzwerkfehler: ' + e, '#f85149');
+      }
+    }
+
+    // ── JOIN Workflow ────────────────────────────────────────────────────────
+    var csrModal = new bootstrap.Modal(document.getElementById('csrModal'));
+    var rejectJoinModal = new bootstrap.Modal(document.getElementById('rejectJoinModal'));
+    var approveResultModal = new bootstrap.Modal(document.getElementById('approveResultModal'));
+
+    function showCsr(tenantId, csr) {
+      document.getElementById('csrModalTitle').textContent = 'Sub-CA CSR für ' + tenantId;
+      document.getElementById('csr-content').value = csr;
+      csrModal.show();
+    }
+
+    async function approveJoin(tenantId) {
+      if (!confirm('JOIN-Anfrage von "' + tenantId + '" genehmigen?\n\nDies signiert die Sub-CA CSR, erstellt einen RabbitMQ-vHost und registriert den Keycloak-IdP.')) return;
+      log('Genehmige JOIN-Anfrage für "' + tenantId + '" …', '#e3b341');
+      try {
+        var resp = await fetch('/api/portal/admin/tenants/' + encodeURIComponent(tenantId) + '/approve', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        });
+        var data = await resp.json();
+        if (!resp.ok) {
+          log('Fehler: ' + (JSON.stringify(data)), '#f85149');
+          return;
+        }
+        var errs = Object.keys(data.errors || {});
+        if (errs.length > 0) {
+          log('Teilweise Fehler: ' + JSON.stringify(data.errors), '#e3b341');
+        }
+        log('Tenant "' + tenantId + '" genehmigt. Provisioned: ' + Object.keys(data.results).join(', '), '#4ade80');
+        var b = data.bundle || {};
+        var bundleHtml = '<strong style="color:#4ade80">Provisioning-Bundle für ' + escHtml(tenantId) + ':</strong>\n'
+          + 'RabbitMQ MQTTS:   <strong style="color:#58a6ff">mqtts://provider:8883</strong>\n'
+          + 'RabbitMQ vHost:   ' + escHtml(b.rabbitmq_vhost || '—') + '\n'
+          + 'RabbitMQ User:    ' + escHtml(b.rabbitmq_user || '—') + ' (= Zertifikat-CN)\n'
+          + '<span style="color:#3fb950">✓ mTLS – kein Passwort. Authentifizierung via Client-Zertifikat.</span>\n'
+          + '\n<span style="color:#8b949e">Signiertes MQTT-Bridge-Zertifikat wird über /join-status abgerufen.</span>';
+        document.getElementById('approve-bundle').innerHTML = bundleHtml;
+        approveResultModal.show();
+      } catch(e) {
+        log('Netzwerkfehler: ' + e, '#f85149');
+      }
+    }
+
+    function showRejectModal(tenantId) {
+      document.getElementById('reject-tenant-id').value = tenantId;
+      document.getElementById('reject-reason').value = '';
+      rejectJoinModal.show();
+    }
+
+    async function submitReject() {
+      var tenantId = document.getElementById('reject-tenant-id').value;
+      var reason = document.getElementById('reject-reason').value.trim();
+      rejectJoinModal.hide();
+      log('Lehne JOIN-Anfrage für "' + tenantId + '" ab …', '#e3b341');
+      try {
+        var resp = await fetch('/api/portal/admin/tenants/' + encodeURIComponent(tenantId) + '/reject', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({reason: reason})
+        });
+        var data = await resp.json();
+        if (!resp.ok) {
+          log('Fehler: ' + JSON.stringify(data), '#f85149');
+          return;
+        }
+        log('JOIN-Anfrage für "' + tenantId + '" abgelehnt.', '#f85149');
         setTimeout(() => location.reload(), 1500);
       } catch(e) {
         log('Netzwerkfehler: ' + e, '#f85149');

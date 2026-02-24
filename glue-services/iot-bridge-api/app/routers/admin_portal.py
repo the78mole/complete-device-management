@@ -33,6 +33,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.clients.rabbitmq import RabbitMQClient, RabbitMQError
 from app.clients.step_ca import StepCAAdminClient, StepCAError
+from app.clients.join_store import load_store
 from app.config import Settings
 from app.deps import get_settings
 
@@ -340,6 +341,18 @@ async def admin_dashboard(
         logger.exception("Could not load step-ca provisioners: %s", exc)
         oidc_provisioner_names = set()
 
+    # Load pending JOIN requests (from file-based store)
+    try:
+        join_store = await load_store(settings)
+        join_requests = sorted(
+            join_store.values(),
+            key=lambda e: e.get("requested_at", ""),
+            reverse=True,
+        )
+    except Exception as exc:
+        logger.exception("Could not load JOIN requests: %s", exc)
+        join_requests = []
+
     return templates.TemplateResponse(
         request,
         "portal/admin_dashboard.html",
@@ -352,6 +365,7 @@ async def admin_dashboard(
             "keycloak_url": settings.keycloak_url.replace(
                 "http://keycloak:8080", settings.external_url
             ),
+            "join_requests": join_requests,
         },
     )
 

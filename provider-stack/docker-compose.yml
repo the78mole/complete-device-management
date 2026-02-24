@@ -33,8 +33,10 @@ volumes:
   influxdb-config:
   grafana-data:
   rabbitmq-data:
+  rabbitmq-tls:
   step-ca-data:
   caddy-data:
+  iot-bridge-data:
 
 secrets:
   step-ca-password:
@@ -45,11 +47,13 @@ services:
 
   # ── step-ca (Root PKI) ──────────────────────────────────────────
   # Auto-creates Root CA + Intermediate CA on first boot.
-  # Build context is shared with cloud-infrastructure to avoid duplication.
+  # Build context is repo root so the Dockerfile can copy both
+  # cloud-infrastructure/step-ca/templates (shared) and
+  # provider-stack/step-ca/templates (sub-CA signer template).
   step-ca:
     build:
-      context: ../cloud-infrastructure/step-ca
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: provider-stack/step-ca/Dockerfile
     container_name: provider-step-ca
     restart: unless-stopped
     environment:
@@ -61,6 +65,10 @@ services:
       DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
       DOCKER_STEPCA_INIT_SSH: "${STEP_CA_ENABLE_SSH:-false}"
+      STEP_CA_PROVISIONER_NAME: "${STEP_CA_PROVISIONER_NAME:-iot-bridge}"
+      STEP_CA_PROVISIONER_PASSWORD: "${STEP_CA_PROVISIONER_PASSWORD:-changeme}"
+      STEP_CA_SUB_CA_PROVISIONER: "${STEP_CA_SUB_CA_PROVISIONER:-tenant-sub-ca-signer}"
+      STEP_CA_SUB_CA_PASSWORD: "${STEP_CA_SUB_CA_PASSWORD:-changeme}"
     secrets:
       - step-ca-password
     volumes:
@@ -141,6 +149,30 @@ services:
       retries: 10
       start_period: 90s
 
+  # ── RabbitMQ cert-init (one-shot) ─────────────────────────────────
+  # Uses smallstep/step-cli to fetch a TLS server certificate from the
+  # Provider step-ca and writes it to the rabbitmq-tls volume.
+  # Runs once on each stack start; skips re-issue if cert is still valid.
+  rabbitmq-cert-init:
+    image: smallstep/step-cli:latest
+    container_name: provider-rabbitmq-cert-init
+    restart: "no"
+    user: root
+    entrypoint: ["/bin/sh", "/scripts/cert-init.sh"]
+    environment:
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+    volumes:
+      - rabbitmq-tls:/etc/rabbitmq/tls
+      - ./rabbitmq/cert-init.sh:/scripts/cert-init.sh:ro
+    networks:
+      - provider-net
+    depends_on:
+      step-ca:
+        condition: service_healthy
+
   # ── RabbitMQ (central broker, vHost per tenant) ─────────────────
   # Pre-creates the `cdm-metrics` vHost via definitions.json.
   # Additional tenant vHosts are created by the IoT Bridge API
@@ -154,11 +186,16 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+      - rabbitmq-tls:/etc/rabbitmq/tls:ro
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     ports:
-      - "1883:1883"   # MQTT (plain – for local dev)
+      - "1883:1883"   # MQTT plain (kept for local dev without certs)
       - "5672:5672"   # AMQP
+      - "8883:8883"   # MQTT+TLS (mTLS, EXTERNAL auth)
+    depends_on:
+      rabbitmq-cert-init:
+        condition: service_completed_successfully
     networks:
       - provider-net
     healthcheck:
@@ -317,7 +354,10 @@ services:
       STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
       STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}
       STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
+      STEP_CA_SUB_CA_PROVISIONER: ${STEP_CA_SUB_CA_PROVISIONER:-tenant-sub-ca-signer}
+      STEP_CA_SUB_CA_PASSWORD: ${STEP_CA_SUB_CA_PASSWORD:-changeme}
       STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
+      JOIN_REQUESTS_DB_PATH: /data/join_requests.json
       INFLUX_URL: http://influxdb:8086
       INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
       INFLUX_ORG: cdm-org
@@ -325,6 +365,8 @@ services:
       ROOT_PATH: /api
     ports:
       - "8000:8000"
+    volumes:
+      - iot-bridge-data:/data
     networks:
       - provider-net
     depends_on:

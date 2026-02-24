@@ -5,7 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.deps import get_settings
 from app.routers import enrollment, health, webhooks
-from app.routers import portal, admin_portal
+from app.routers import portal, admin_portal, join
 
 _settings = get_settings()
 
@@ -37,3 +37,4 @@ app.include_router(enrollment.router)
 app.include_router(webhooks.router)
 app.include_router(portal.router)
 app.include_router(admin_portal.router)
+app.include_router(join.router)
