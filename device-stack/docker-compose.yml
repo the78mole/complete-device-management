@@ -1,0 +1,157 @@
+---
+# device-stack/docker-compose.yml
+# Simulates a single IoT edge device for local development / integration testing.
+#
+# Prerequisites:
+#   - cloud-infrastructure is running (docker compose -f ../cloud-infrastructure/docker-compose.yml up -d)
+#   - Copy .env.example to .env and adjust BRIDGE_API_URL / THINGSBOARD_HOST etc.
+#
+# Usage:
+#   cd device-stack
+#   docker compose up
+
+networks:
+  device-net:
+    driver: bridge
+
+volumes:
+  # Shared between all containers: TLS cert, key, CA chain, WireGuard config
+  device-certs:
+
+services:
+  # ── Step 1: PKI Bootstrap ─────────────────────────────────────────────────
+  # Runs ONCE (one-shot). Generates an EC key pair + WireGuard key pair,
+  # sends a CSR to the cloud iot-bridge-api, and writes the signed certificate
+  # + WireGuard client config to the shared `device-certs` volume.
+  # All other services depend on this completing successfully.
+  bootstrap:
+    build:
+      context: .
+      dockerfile: bootstrap/Dockerfile
+    container_name: cdm-device-bootstrap
+    restart: "no"
+    environment:
+      DEVICE_ID: ${DEVICE_ID:-sim-device-001}
+      DEVICE_NAME: ${DEVICE_NAME:-Simulated Device 001}
+      DEVICE_TYPE: ${DEVICE_TYPE:-simulator}
+      # Cloud iot-bridge-api enrollment endpoint
+      BRIDGE_API_URL: ${BRIDGE_API_URL:-http://host.docker.internal:8000}
+      # step-ca root CA fingerprint (for TLS verification of the API call itself)
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+    volumes:
+      - device-certs:/certs
+    networks:
+      - device-net
+
+  # ── Step 2: WireGuard VPN Client ─────────────────────────────────────────
+  # Reads the wg0.conf written by bootstrap and brings up the VPN tunnel to
+  # the cloud-side WireGuard server so the device is reachable at its VPN IP.
+  wireguard-client:
+    build:
+      context: .
+      dockerfile: wireguard-client/Dockerfile
+    container_name: cdm-device-wg
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - device-certs:/certs:ro
+      - /lib/modules:/lib/modules:ro
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - device-net
+
+  # ── Telegraf (optional MQTT sensor data → InfluxDB) ──────────────────────
+  # Subscribes to the tenant-scoped MQTT topic for additional sensor readings.
+  # Primary device metrics (CPU, RAM, OTA status) are sourced from ThingsBoard
+  # and hawkBit via the cloud-side Telegraf and iot-bridge-api telemetry
+  # webhook.  Direct OS metric collection is intentionally disabled.
+  telegraf:
+    image: telegraf:1.37-alpine
+    container_name: cdm-device-telegraf
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - device-certs:/certs:ro
+    environment:
+      INFLUX_URL: ${INFLUX_URL:-http://host.docker.internal:8086}
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: ${INFLUX_ORG:-cdm-org}
+      INFLUX_BUCKET: ${INFLUX_BUCKET:-iot-metrics}
+      DEVICE_ID: ${DEVICE_ID:-sim-device-001}
+      HAWKBIT_TENANT: ${HAWKBIT_TENANT:-DEFAULT}
+      THINGSBOARD_HOST: ${THINGSBOARD_HOST:-host.docker.internal}
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - device-net
+
+  # ── MQTT Client (device state → ThingsBoard via mTLS) ────────────────────
+  # Publishes simulated device telemetry (OTA status, battery, signal) to
+  # ThingsBoard over MQTT TLS using the X.509 certificate issued at enrollment.
+  mqtt-client:
+    build:
+      context: .
+      dockerfile: mqtt-client/Dockerfile
+    container_name: cdm-device-mqtt
+    environment:
+      THINGSBOARD_HOST: ${THINGSBOARD_HOST:-host.docker.internal}
+      THINGSBOARD_MQTT_PORT: ${THINGSBOARD_MQTT_PORT:-8883}
+      DEVICE_ID: ${DEVICE_ID:-sim-device-001}
+      TELEMETRY_INTERVAL_S: ${TELEMETRY_INTERVAL_S:-30}
+    volumes:
+      - device-certs:/certs:ro
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - device-net
+
+  # ── ttyd (Web Terminal) ───────────────────────────────────────────────────
+  # Exposes an interactive shell over WebSocket. The cloud terminal-proxy
+  # routes connections through the WireGuard VPN to this port (7681).
+  ttyd:
+    image: tsl0922/ttyd:alpine
+    container_name: cdm-device-ttyd
+    command:
+      - ttyd
+      - --port
+      - "7681"
+      - --writable
+      - bash
+    ports:
+      - "${TTYD_PORT:-7681}:7681"
+    restart: unless-stopped
+    networks:
+      - device-net
+
+  # ── rauc-hawkbit-updater (OTA agent) ─────────────────────────────────────
+  # Polls the hawkBit DDI API for pending deployments.  In simulation mode
+  # (Docker) the RAUC install step is stubbed out; on a real Yocto device this
+  # container is replaced by the system-level rauc-hawkbit-updater daemon.
+  rauc-hawkbit-updater:
+    build:
+      context: .
+      dockerfile: updater/Dockerfile
+    container_name: cdm-device-rauc
+    environment:
+      HAWKBIT_URL: ${HAWKBIT_URL:-http://host.docker.internal:8070}
+      HAWKBIT_TENANT: ${HAWKBIT_TENANT:-DEFAULT}
+      DEVICE_ID: ${DEVICE_ID:-sim-device-001}
+      POLL_INTERVAL_S: ${POLL_INTERVAL_S:-30}
+    volumes:
+      - ./updater/rauc-hawkbit-updater.conf:/etc/rauc-hawkbit-updater/config.conf:ro
+      - device-certs:/certs:ro
+    restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - device-net

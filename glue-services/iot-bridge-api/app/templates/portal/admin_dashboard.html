@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM Admin – Tenant-Verwaltung</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+  <style>
+    body { background-color: #0d1117; color: #e6edf3; min-height: 100vh; }
+    .hero {
+      background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+      border-bottom: 1px solid #30363d;
+      padding: 1.5rem 0;
+    }
+    .section-label {
+      font-size: 0.7rem; font-weight: 600; letter-spacing: 1.5px;
+      text-transform: uppercase; color: #8b949e;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 0.5rem; margin-bottom: 1.25rem;
+    }
+    .card-dark {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    }
+    .card-dark:hover { border-color: #58a6ff; }
+    .badge-kc   { background: #1f3a5f; color: #58a6ff; border: 1px solid #1d4ed8; }
+    .badge-rmq  { background: #2d1a0e; color: #f97316; border: 1px solid #7c2d12; }
+    .badge-ca   { background: #0d2416; color: #4ade80; border: 1px solid #14532d; }
+    .badge-none { background: #1e1e1e; color: #6e7681; border: 1px solid #30363d; }
+    .badge-pill {
+      font-size: 0.65rem; font-weight: 600; letter-spacing: 0.4px;
+      padding: 0.22rem 0.55rem; border-radius: 20px; display: inline-block;
+    }
+    .tenant-row { transition: background 0.15s; }
+    .tenant-row:hover { background: #1c2128; }
+    .log-area {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+      font-family: monospace; font-size: 0.78rem; color: #7ee787;
+      padding: 0.75rem; min-height: 60px; max-height: 260px; overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    input[type=text], input[type=email] {
+      background: #0d1117; border: 1px solid #30363d; color: #e6edf3;
+      border-radius: 6px; padding: 0.45rem 0.75rem; font-size: 0.88rem;
+    }
+    input[type=text]:focus, input[type=email]:focus {
+      outline: none; border-color: #58a6ff; box-shadow: 0 0 0 2px rgba(88,166,255,.15);
+    }
+    .btn-sm-action {
+      font-size: 0.75rem; padding: 0.25rem 0.6rem; border-radius: 5px;
+    }
+    footer { border-top: 1px solid #21262d; font-size: 0.78rem; color: #484f58; }
+    .spin { display: inline-block; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .cred-box {
+      background: #0d2416; border: 1px solid #186231; border-radius: 8px;
+      padding: 1rem; margin-top: 0.75rem; font-family: monospace; font-size: 0.82rem;
+    }
+    .protected-badge {
+      font-size: 0.65rem; font-weight: 600; padding: 0.2rem 0.45rem;
+      border-radius: 4px; background: #1f3a5f; color: #8b949e;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <span style="font-size:2rem">⚙️</span>
+        <div>
+          <h1 class="mb-0 h5 fw-bold">CDM Admin</h1>
+          <span style="color:#8b949e;font-size:0.85rem">Tenant-Verwaltung</span>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <div class="text-end" style="font-size:0.85rem">
+          <div class="fw-medium">{{ user.name }}</div>
+          <div style="color:#8b949e;font-size:0.78rem">{{ user.email or user.realm }}</div>
+        </div>
+        <a href="/api/portal/dashboard" class="btn btn-sm btn-outline-primary">← Dashboard</a>
+        <a href="/api/portal/logout" class="btn btn-sm btn-outline-secondary">Abmelden</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container py-4">
+
+    <!-- ── Existing Tenants ─────────────────────────────────────────────── -->
+    <div class="section-label">Aktive Tenants</div>
+    <div class="card-dark p-0 mb-4">
+      <table class="table table-dark table-borderless mb-0" style="background:transparent">
+        <thead style="border-bottom:1px solid #30363d">
+          <tr>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500;padding:0.75rem 1rem">Realm</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Anzeigename</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Keycloak</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">RabbitMQ vHost</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">step-ca OIDC</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for realm in tenant_realms %}
+          <tr class="tenant-row" data-realm="{{ realm.realm }}">
+            <td style="padding:0.7rem 1rem;vertical-align:middle">
+              <code style="color:#79c0ff">{{ realm.realm }}</code>
+              {% if realm.realm in ('cdm','provider') %}
+                <span class="protected-badge ms-1">system</span>
+              {% endif %}
+            </td>
+            <td style="vertical-align:middle;font-size:0.88rem">
+              {{ realm.get('displayName', realm.realm) }}
+            </td>
+            <td style="vertical-align:middle">
+              <span class="badge-pill badge-kc">✓ aktiv</span>
+            </td>
+            <td style="vertical-align:middle">
+              {% if realm.realm in vhost_names %}
+                <span class="badge-pill badge-rmq">✓ /{{ realm.realm }}</span>
+              {% else %}
+                <span class="badge-pill badge-none">— fehlt</span>
+              {% endif %}
+            </td>
+            <td style="vertical-align:middle">
+              {% set prov_name = realm.realm ~ '-keycloak' %}
+              {% if prov_name in oidc_provisioner_names %}
+                <span class="badge-pill badge-ca">✓ {{ prov_name }}</span>
+              {% else %}
+                <span class="badge-pill badge-none">— nicht registriert</span>
+              {% endif %}
+            </td>
+            <td style="vertical-align:middle">
+              <div class="d-flex gap-1 flex-wrap">
+                {% if realm.realm not in ('cdm', 'master') %}
+                  <!-- Add step-ca OIDC provisioner -->
+                  {% set prov_name = realm.realm ~ '-keycloak' %}
+                  {% if prov_name not in oidc_provisioner_names %}
+                  <button class="btn btn-sm btn-outline-success btn-sm-action"
+                          onclick="showProvisionerModal('{{ realm.realm }}')">
+                    + step-ca
+                  </button>
+                  {% endif %}
+                  <!-- Add RabbitMQ vhost if missing -->
+                  {% if realm.realm not in vhost_names %}
+                  <button class="btn btn-sm btn-outline-warning btn-sm-action"
+                          onclick="addVHost('{{ realm.realm }}')">
+                    + vHost
+                  </button>
+                  {% endif %}
+                  <!-- Delete tenant -->
+                  <button class="btn btn-sm btn-outline-danger btn-sm-action"
+                          onclick="confirmDelete('{{ realm.realm }}', '{{ realm.get(\"displayName\", realm.realm) }}')">
+                    Löschen
+                  </button>
+                {% else %}
+                  <span style="font-size:0.75rem;color:#6e7681">geschützt</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" style="text-align:center;color:#6e7681;padding:2rem">
+              Keine Tenants gefunden (Keycloak nicht erreichbar?)
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── Create New Tenant ───────────────────────────────────────────── -->
+    <div class="section-label">Neuen Tenant anlegen</div>
+    <div class="card-dark p-3 mb-4">
+      <div class="row g-3">
+        <div class="col-12 col-md-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Realm-ID *</label>
+          <input type="text" id="new-realm-id" placeholder="z.B. tenant3"
+                 class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+          <div style="font-size:0.72rem;color:#6e7681;margin-top:0.25rem">Kleinbuchstaben, keine Sonderzeichen</div>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Anzeigename *</label>
+          <input type="text" id="new-display-name" placeholder="z.B. Muster GmbH"
+                 class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Admin-Benutzername</label>
+          <input type="text" id="new-admin-user" placeholder="admin (optional)"
+                 class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Admin-E-Mail</label>
+          <input type="email" id="new-admin-email" placeholder="admin@firma.example.com"
+                 class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+        </div>
+      </div>
+      <div class="mt-3 d-flex align-items-center gap-3">
+        <button class="btn btn-primary" onclick="createTenant()">
+          <span id="create-spinner" class="spin me-1" style="display:none">⟳</span>
+          Tenant anlegen
+        </button>
+        <div id="create-status" style="font-size:0.82rem;color:#8b949e"></div>
+      </div>
+      <div id="create-result" style="display:none" class="cred-box mt-2"></div>
+    </div>
+
+    <!-- ── Activity Log ────────────────────────────────────────────────── -->
+    <div class="section-label">Aktivitätslog</div>
+    <div class="log-area" id="activity-log">Bereit. Warte auf Aktion...\n</div>
+
+  </div><!-- /container -->
+
+  <!-- ── Modals ──────────────────────────────────────────────────────────── -->
+
+  <!-- step-ca OIDC Provisioner Modal -->
+  <div class="modal fade" id="provisionerModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6">step-ca OIDC Provisioner hinzufügen</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:0.82rem;color:#8b949e">
+            Registriert einen OIDC-Provisioner in step-ca, damit Geräte dieses Tenants
+            Zertifikate via Keycloak-Login erhalten können.
+          </p>
+          <input type="hidden" id="prov-realm-id" />
+          <div class="mb-3">
+            <label class="form-label" style="font-size:0.82rem">OIDC Client-ID in Keycloak</label>
+            <input type="text" id="prov-client-id" value="step-ca"
+                   class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:0.82rem">OIDC Client-Secret</label>
+            <input type="text" id="prov-client-secret" placeholder="changeme"
+                   class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size:0.82rem">Admin-E-Mails (kommagetrennt, optional)</label>
+            <input type="text" id="prov-admin-emails" placeholder="alice@acme.example.com"
+                   class="form-control" style="background:#0d1117;border-color:#30363d;color:#e6edf3" />
+          </div>
+          <div id="prov-error" style="display:none;font-size:0.8rem;color:#f85149"></div>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-success btn-sm" onclick="submitProvisioner()">Hinzufügen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6" style="color:#f85149">⚠️ Tenant löschen</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Soll <strong id="delete-realm-label"></strong> wirklich gelöscht werden?</p>
+          <p style="font-size:0.82rem;color:#f85149">
+            Diese Aktion löscht den Keycloak-Realm und den RabbitMQ-vHost
+            unwiderruflich. Alle Benutzer und Queues werden entfernt.
+          </p>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <input type="hidden" id="delete-realm-id" />
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="doDelete()">Endgültig löschen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="mt-5 py-3">
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span>CDM Admin Portal &mdash; Tenant Management</span>
+      <a href="/api/portal/dashboard" class="text-secondary text-decoration-none">← Zurück zum Dashboard</a>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmhYoGr3JuVNPbbbg4YS2ZLMAVQ5"
+    crossorigin="anonymous"></script>
+
+  <script>
+    // ── Logging ──────────────────────────────────────────────────────────────
+    const logArea = document.getElementById('activity-log');
+    function log(msg, color) {
+      var ts = new Date().toTimeString().slice(0,8);
+      var line = '[' + ts + '] ' + msg + '\n';
+      if (color) {
+        logArea.innerHTML += '<span style="color:' + color + '">' + escHtml(line) + '</span>';
+      } else {
+        logArea.textContent += line;
+      }
+      logArea.scrollTop = logArea.scrollHeight;
+    }
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── Create Tenant ────────────────────────────────────────────────────────
+    async function createTenant() {
+      var realmId    = document.getElementById('new-realm-id').value.trim();
+      var displayName = document.getElementById('new-display-name').value.trim();
+      var adminUser  = document.getElementById('new-admin-user').value.trim();
+      var adminEmail = document.getElementById('new-admin-email').value.trim();
+
+      if (!realmId || !displayName) {
+        document.getElementById('create-status').textContent = 'Realm-ID und Anzeigename sind Pflichtfelder.';
+        return;
+      }
+
+      document.getElementById('create-spinner').style.display = 'inline-block';
+      document.getElementById('create-status').textContent = 'Anlegen…';
+      document.getElementById('create-result').style.display = 'none';
+      log('Erstelle Tenant "' + realmId + '" …');
+
+      try {
+        var resp = await fetch('/api/portal/admin/tenants', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            realm_id: realmId,
+            display_name: displayName,
+            admin_user: adminUser || undefined,
+            admin_email: adminEmail || undefined,
+          })
+        });
+        var data = await resp.json();
+
+        if (!resp.ok) {
+          log('Fehler: ' + (data.error || resp.status), '#f85149');
+          document.getElementById('create-status').textContent = 'Fehler: ' + (data.error || resp.status);
+          return;
+        }
+
+        var errs = Object.keys(data.errors || {});
+        if (errs.length > 0) {
+          log('Teilweise Fehler: ' + JSON.stringify(data.errors), '#e3b341');
+        }
+
+        var ok = Object.keys(data.results || {}).join(', ');
+        log('Tenant "' + realmId + '" angelegt. OK: ' + ok, '#4ade80');
+        document.getElementById('create-status').textContent = 'Erfolgreich angelegt!';
+
+        // Show credentials
+        var box = document.getElementById('create-result');
+        box.style.display = 'block';
+        box.innerHTML = '<strong style="color:#4ade80">Tenant angelegt – Zugangsdaten sichern:</strong>\n'
+          + 'Realm:          ' + data.realm_id + '\n'
+          + 'Anzeigename:    ' + data.display_name + '\n'
+          + 'Admin-User:     ' + data.admin_user + '\n'
+          + 'Admin-E-Mail:   ' + data.admin_email + '\n'
+          + 'Admin-Passwort: <strong style="color:#ffa657">' + escHtml(data.admin_password) + '</strong>  ← jetzt kopieren!\n'
+          + (data.results.rabbitmq_password
+              ? 'RabbitMQ-PW:    ' + escHtml(data.results.rabbitmq_password) + '\n' : '')
+          + '\n<span style="color:#e3b341">Dieses Passwort wird nicht erneut angezeigt.</span>';
+
+        setTimeout(() => location.reload(), 3000);
+      } catch(e) {
+        log('Netzwerkfehler: ' + e, '#f85149');
+        document.getElementById('create-status').textContent = 'Netzwerkfehler';
+      } finally {
+        document.getElementById('create-spinner').style.display = 'none';
+      }
+    }
+
+    // ── Delete Tenant ────────────────────────────────────────────────────────
+    var deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    function confirmDelete(realmId, displayName) {
+      document.getElementById('delete-realm-id').value = realmId;
+      document.getElementById('delete-realm-label').textContent = displayName + ' (' + realmId + ')';
+      deleteModal.show();
+    }
+    async function doDelete() {
+      var realmId = document.getElementById('delete-realm-id').value;
+      deleteModal.hide();
+      log('Lösche Tenant "' + realmId + '" …', '#e3b341');
+      try {
+        var resp = await fetch('/api/portal/admin/tenants/' + encodeURIComponent(realmId), {method: 'DELETE'});
+        var data = await resp.json();
+        if (!resp.ok) {
+          log('Fehler beim Löschen: ' + (data.error || resp.status), '#f85149');
+          return;
+        }
+        log('Tenant "' + realmId + '" gelöscht. OK: ' + Object.keys(data.results).join(', '), '#4ade80');
+        setTimeout(() => location.reload(), 1500);
+      } catch(e) {
+        log('Netzwerkfehler: ' + e, '#f85149');
+      }
+    }
+
+    // ── Add RabbitMQ vHost ───────────────────────────────────────────────────
+    async function addVHost(realmId) {
+      log('Füge RabbitMQ vHost für "' + realmId + '" hinzu …');
+      // Re-use the tenant creation endpoint with just the realm_id
+      // to trigger only the RabbitMQ provisioning part is not directly supported.
+      // Instead, tell the user to re-create via admin, or call create endpoint with existing realm.
+      // Simplest: a dedicated RabbitMQ vHost endpoint (POST /tenants creates both, but realm may exist).
+      // For now: re-POST create which will get 409 on Keycloak but succeed on RabbitMQ.
+      try {
+        var resp = await fetch('/api/portal/admin/tenants', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({realm_id: realmId, display_name: realmId})
+        });
+        var data = await resp.json();
+        var rmqOk = data.results && data.results.rabbitmq;
+        log(rmqOk
+          ? 'RabbitMQ vHost "' + realmId + '" erstellt.'
+          : 'RabbitMQ: ' + JSON.stringify(data.errors && data.errors.rabbitmq), 
+          rmqOk ? '#4ade80' : '#f85149');
+        if (rmqOk) setTimeout(() => location.reload(), 1500);
+      } catch(e) {
+        log('Fehler: ' + e, '#f85149');
+      }
+    }
+
+    // ── step-ca OIDC Provisioner ─────────────────────────────────────────────
+    var provModal = new bootstrap.Modal(document.getElementById('provisionerModal'));
+    function showProvisionerModal(realmId) {
+      document.getElementById('prov-realm-id').value = realmId;
+      document.getElementById('prov-error').style.display = 'none';
+      provModal.show();
+    }
+    async function submitProvisioner() {
+      var realmId     = document.getElementById('prov-realm-id').value;
+      var clientId    = document.getElementById('prov-client-id').value.trim();
+      var clientSecret = document.getElementById('prov-client-secret').value.trim();
+      var adminEmailsRaw = document.getElementById('prov-admin-emails').value.trim();
+      var adminEmails = adminEmailsRaw ? adminEmailsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      log('Füge step-ca OIDC-Provisioner für "' + realmId + '" hinzu …');
+      provModal.hide();
+
+      try {
+        var resp = await fetch('/api/portal/admin/tenants/' + encodeURIComponent(realmId) + '/provisioner', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({client_id: clientId, client_secret: clientSecret, admin_emails: adminEmails})
+        });
+        var data = await resp.json();
+        if (!resp.ok) {
+          log('Fehler step-ca: ' + (data.error || resp.status), '#f85149');
+          return;
+        }
+        log('OIDC-Provisioner "' + data.provisioner_name + '" erfolgreich registriert.', '#4ade80');
+        setTimeout(() => location.reload(), 1500);
+      } catch(e) {
+        log('Netzwerkfehler: ' + e, '#f85149');
+      }
+    }
+  </script>
+
+</body>
+</html>

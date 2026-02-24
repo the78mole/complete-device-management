@@ -1,0 +1,287 @@
+<!--
+  CDM OTA Update Widget
+  ======================
+  ThingsBoard Custom Widget (HTML type).
+
+  Import via:
+    ThingsBoard UI → Widget Library → Create new widget bundle →
+    Import widget → paste this file content → Save
+
+  How it works:
+  1. Reads the device's ThingsBoard attributes (clientId, deviceType) from ctx.
+  2. Queries the hawkBit REST API for available DistributionSets filtered by
+     device type (passed as the device's "deviceType" server attribute).
+  3. Lets the operator select a distribution and assign a single-target
+     deployment via hawkBit's Management REST API.
+
+  Required widget settings:
+    - hawkbitUrl : base URL of hawkBit Management API
+                   (default: http://localhost:8070)
+    - hawkbitUser: hawkBit admin username (default: "admin")
+    - hawkbitPass: hawkBit admin password (default: "admin")
+
+  Security note: In production, the hawkBit credentials should be proxied
+  through iot-bridge-api instead of included directly in the widget settings.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM OTA Update</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Roboto', sans-serif;
+      font-size: 13px;
+      color: #333;
+      padding: 12px;
+      background: #fafafa;
+    }
+    h3 { font-size: 14px; margin-bottom: 10px; color: #1a73e8; }
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    label { min-width: 120px; color: #555; }
+    select, input {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    button {
+      padding: 6px 18px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    #btn-refresh  { background: #e8f0fe; color: #1a73e8; }
+    #btn-deploy   { background: #1a73e8; color: #fff; }
+    #btn-deploy:disabled { background: #bbb; cursor: not-allowed; }
+    #status-msg {
+      margin-top: 10px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
+    }
+    #status-msg.info    { background: #e8f0fe; color: #1a73e8; display: block; }
+    #status-msg.success { background: #e6f4ea; color: #2e7d32; display: block; }
+    #status-msg.error   { background: #fce8e6; color: #c62828; display: block; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    th {
+      background: #e8f0fe;
+      padding: 5px 8px;
+      text-align: left;
+      border-bottom: 2px solid #ccc;
+    }
+    td {
+      padding: 4px 8px;
+      border-bottom: 1px solid #eee;
+    }
+    tr:hover td { background: #f5f5f5; }
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .badge.running    { background: #e8f5e9; color: #2e7d32; }
+    .badge.finished   { background: #e3f2fd; color: #1565c0; }
+    .badge.error      { background: #ffebee; color: #c62828; }
+    .badge.scheduled  { background: #fff8e1; color: #f57f17; }
+  </style>
+</head>
+<body>
+  <h3>&#x1F4E6; OTA Update Manager</h3>
+
+  <div class="field-row">
+    <label>Device:</label>
+    <input id="device-id-display" type="text" readonly placeholder="(no device)" />
+  </div>
+  <div class="field-row">
+    <label>Distribution:</label>
+    <select id="dist-select">
+      <option value="">— click Refresh first —</option>
+    </select>
+    <button id="btn-refresh">&#x21bb; Refresh</button>
+  </div>
+  <div class="field-row">
+    <label>Action type:</label>
+    <select id="action-type">
+      <option value="forced">Forced (immediate)</option>
+      <option value="soft">Soft (device-initiated)</option>
+      <option value="downloadonly">Download only</option>
+    </select>
+  </div>
+  <div class="field-row">
+    <button id="btn-deploy" disabled>&#x1F680; Deploy to Device</button>
+  </div>
+
+  <div id="status-msg"></div>
+
+  <table id="deployments-table" style="display:none">
+    <thead>
+      <tr>
+        <th>Deployment ID</th>
+        <th>Distribution</th>
+        <th>Created</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="deployments-body"></tbody>
+  </table>
+
+  <script>
+    /* ── Config (overridden by widget settings) ───────────────────── */
+    let hawkbitUrl  = 'http://localhost:8070';
+    let hawkbitUser = 'admin';
+    let hawkbitPass = 'admin';
+    let deviceId    = '';
+    let controllerId = '';  // same as deviceId for this integration
+
+    /* ── ThingsBoard widget lifecycle ────────────────────────────── */
+    self.onInit = function () {
+      const ctx = self.ctx;
+      const settings = ctx.settings || {};
+
+      if (settings.hawkbitUrl)  hawkbitUrl  = settings.hawkbitUrl.replace(/\/$/, '');
+      if (settings.hawkbitUser) hawkbitUser = settings.hawkbitUser;
+      if (settings.hawkbitPass) hawkbitPass = settings.hawkbitPass;
+
+      // Get device from datasource
+      if (ctx.datasources && ctx.datasources.length > 0) {
+        const ds = ctx.datasources[0];
+        deviceId     = (ds.entityId && ds.entityId.id)   ? ds.entityId.id   : '';
+        controllerId = (ds.entityName)                    ? ds.entityName    : deviceId;
+      }
+
+      document.getElementById('device-id-display').value =
+        controllerId || '(no device datasource)';
+
+      if (controllerId) loadDeployments();
+    };
+
+    /* ── Helpers ──────────────────────────────────────────────────── */
+    function authHeader() {
+      return 'Basic ' + btoa(hawkbitUser + ':' + hawkbitPass);
+    }
+
+    function setStatus(msg, type) {
+      const el = document.getElementById('status-msg');
+      el.textContent = msg;
+      el.className   = type;
+    }
+
+    /* ── Load available DistributionSets ─────────────────────────── */
+    document.getElementById('btn-refresh').addEventListener('click', loadDistributions);
+
+    async function loadDistributions() {
+      setStatus('Loading distributions…', 'info');
+      try {
+        const resp = await fetch(
+          `${hawkbitUrl}/rest/v1/distributionsets?limit=200&sort=createdAt:DESC`,
+          { headers: { Authorization: authHeader(), Accept: 'application/json' } }
+        );
+        if (!resp.ok) throw new Error(`hawkBit returned ${resp.status}`);
+        const data = await resp.json();
+        const sel  = document.getElementById('dist-select');
+        sel.innerHTML = '<option value="">— select a distribution —</option>';
+        (data.content || []).forEach(function (ds) {
+          const opt = document.createElement('option');
+          opt.value       = ds.id;
+          opt.textContent = `${ds.name} ${ds.version} [${ds.type}]`;
+          sel.appendChild(opt);
+        });
+        document.getElementById('btn-deploy').disabled = false;
+        setStatus(`Loaded ${(data.content || []).length} distribution(s).`, 'success');
+      } catch (err) {
+        setStatus('Error loading distributions: ' + err.message, 'error');
+      }
+    }
+
+    /* ── Assign deployment ────────────────────────────────────────── */
+    document.getElementById('btn-deploy').addEventListener('click', async function () {
+      const distId = document.getElementById('dist-select').value;
+      if (!distId) { setStatus('Select a distribution first.', 'error'); return; }
+      if (!controllerId) { setStatus('No device selected.', 'error'); return; }
+
+      const actionType = document.getElementById('action-type').value;
+      setStatus('Creating deployment…', 'info');
+
+      try {
+        const body = JSON.stringify([{
+          id: parseInt(distId, 10),
+          type: actionType,
+          forcetime: actionType === 'forced' ? Date.now() : undefined,
+          maintenanceWindow: null
+        }]);
+
+        const resp = await fetch(
+          `${hawkbitUrl}/rest/v1/targets/${encodeURIComponent(controllerId)}/assignedDS`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: authHeader(),
+              'Content-Type': 'application/json'
+            },
+            body
+          }
+        );
+        if (!resp.ok) throw new Error(`hawkBit returned ${resp.status} – ${await resp.text()}`);
+        const result = await resp.json();
+        setStatus(
+          `Deployment created: ${result.assigned} assigned, ${result.alreadyAssigned} already assigned.`,
+          'success'
+        );
+        loadDeployments();
+      } catch (err) {
+        setStatus('Deploy error: ' + err.message, 'error');
+      }
+    });
+
+    /* ── Load recent deployments for this device ─────────────────── */
+    async function loadDeployments() {
+      if (!controllerId) return;
+      try {
+        const resp = await fetch(
+          `${hawkbitUrl}/rest/v1/targets/${encodeURIComponent(controllerId)}/actions?limit=10&sort=id:DESC`,
+          { headers: { Authorization: authHeader(), Accept: 'application/json' } }
+        );
+        if (!resp.ok) return;
+        const data  = await resp.json();
+        const tbody = document.getElementById('deployments-body');
+        tbody.innerHTML = '';
+        (data.content || []).forEach(function (action) {
+          const tr = document.createElement('tr');
+          const statusClass =
+            action.status === 'running'   ? 'running'  :
+            action.status === 'finished'  ? 'finished' :
+            action.status === 'error'     ? 'error'    : 'scheduled';
+          tr.innerHTML = `
+            <td>${action.id}</td>
+            <td>${action.distributionSet ? action.distributionSet.name + ' ' + action.distributionSet.version : '—'}</td>
+            <td>${new Date(action.createdAt).toLocaleString()}</td>
+            <td><span class="badge ${statusClass}">${action.status}</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+        document.getElementById('deployments-table').style.display =
+          (data.content && data.content.length > 0) ? 'table' : 'none';
+      } catch (_) { /* silent – table stays hidden */ }
+    }
+  </script>
+</body>
+</html>

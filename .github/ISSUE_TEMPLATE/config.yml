@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Ask a Question / Start a Discussion
+    url: https://github.com/the78mole/complete-device-management/discussions/new?category=q-a
+    about: General questions about setup, configuration, and usage belong in Discussions.
+  - name: 📖 Documentation
+    url: https://the78mole.github.io/complete-device-management/
+    about: Check the full documentation before opening an issue.
+  - name: 🔒 Security Vulnerability
+    url: https://github.com/the78mole/complete-device-management/security/advisories/new
+    about: Report a security vulnerability privately via GitHub Security Advisories.

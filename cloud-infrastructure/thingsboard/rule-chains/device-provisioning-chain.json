@@ -1,0 +1,256 @@
+{
+  "ruleChain": {
+    "id": {
+      "entityType": "RULE_CHAIN",
+      "id": "a1b2c3d4-0001-0001-0001-000000000001"
+    },
+    "createdTime": 0,
+    "name": "CDM Device Provisioning",
+    "type": "CORE",
+    "firstRuleNodeId": {
+      "entityType": "RULE_NODE",
+      "id": "a1b2c3d4-0002-0002-0002-000000000002"
+    },
+    "debugMode": false,
+    "configuration": null,
+    "additionalInfo": {
+      "description": "Handles device first-connect events: calls iot-bridge-api webhook to auto-provision the device in hawkBit and assign a WireGuard IP. Also saves telemetry and raises alarms on low battery."
+    }
+  },
+  "metadata": {
+    "firstNodeIndex": 0,
+    "nodes": [
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0002-0002-0002-000000000002"
+        },
+        "type": "org.thingsboard.rule.engine.filter.TbMsgTypeSwitchNode",
+        "name": "Route by Message Type",
+        "debugMode": false,
+        "configuration": {
+          "version": 0
+        },
+        "additionalInfo": {
+          "description": "Routes messages to different processing branches by type.",
+          "layoutX": 100,
+          "layoutY": 200
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0003-0003-0003-000000000003"
+        },
+        "type": "org.thingsboard.rule.engine.rest.TbRestApiCallNode",
+        "name": "Notify iot-bridge-api",
+        "debugMode": false,
+        "configuration": {
+          "restEndpointUrlPattern": "http://iot-bridge-api:8000/webhooks/thingsboard",
+          "requestMethod": "POST",
+          "enableProxy": false,
+          "useSimpleClientHttpFactory": false,
+          "ignoreRequestBody": false,
+          "readTimeoutMs": 10000,
+          "maxParallelRequestsCount": 100,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "useRedirectStrategy": false,
+          "trimDoubleQuotes": false,
+          "parseToPlainText": false,
+          "bodyTemplate": "{\"msgType\":\"${msgType}\",\"metadata\":${mdToJson(metadata)},\"data\":${msg}}"
+        },
+        "additionalInfo": {
+          "description": "POST the connect event to iot-bridge-api, which creates the hawkBit target and allocates a WireGuard IP.",
+          "layoutX": 380,
+          "layoutY": 100
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0004-0004-0004-000000000004"
+        },
+        "type": "org.thingsboard.rule.engine.telemetry.TbMsgTimeseriesNode",
+        "name": "Save Telemetry",
+        "debugMode": false,
+        "configuration": {
+          "defaultTTL": 0,
+          "useServerTs": false,
+          "skipLatestPersistence": false
+        },
+        "additionalInfo": {
+          "description": "Persists POST_TELEMETRY_REQUEST data to the ThingsBoard time-series store.",
+          "layoutX": 380,
+          "layoutY": 300
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0005-0005-0005-000000000005"
+        },
+        "type": "org.thingsboard.rule.engine.telemetry.TbMsgAttributesNode",
+        "name": "Save Client Attributes",
+        "debugMode": false,
+        "configuration": {
+          "scope": "CLIENT_SCOPE",
+          "notifyDevice": false,
+          "sendAttributesUpdatedNotification": false,
+          "updateAttributesOnlyOnValueChange": false
+        },
+        "additionalInfo": {
+          "description": "Persists POST_ATTRIBUTES_REQUEST data.",
+          "layoutX": 380,
+          "layoutY": 450
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0006-0006-0006-000000000006"
+        },
+        "type": "org.thingsboard.rule.engine.filter.TbCheckMessageNode",
+        "name": "Has OTA Status?",
+        "debugMode": false,
+        "configuration": {
+          "messageNames": ["ota_status", "rauc_slot", "rauc_bundle_version"],
+          "checkAllKeys": false
+        },
+        "additionalInfo": {
+          "description": "Detects rauc-hawkbit-updater OTA status telemetry so it can be surfaced as a device attribute.",
+          "layoutX": 680,
+          "layoutY": 300
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0007-0007-0007-000000000007"
+        },
+        "type": "org.thingsboard.rule.engine.telemetry.TbMsgAttributesNode",
+        "name": "Save OTA Attributes",
+        "debugMode": false,
+        "configuration": {
+          "scope": "SERVER_SCOPE",
+          "notifyDevice": false,
+          "sendAttributesUpdatedNotification": false,
+          "updateAttributesOnlyOnValueChange": false
+        },
+        "additionalInfo": {
+          "description": "Saves OTA status as server-scope attributes for use in dashboards.",
+          "layoutX": 980,
+          "layoutY": 300
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0008-0008-0008-000000000008"
+        },
+        "type": "org.thingsboard.rule.engine.action.TbLogNode",
+        "name": "Log Provision Result",
+        "debugMode": false,
+        "configuration": {
+          "jsScript": "return 'Device provisioned: id=' + metadata.deviceId + ' name=' + metadata.deviceName + ' status=' + JSON.stringify(msg);"
+        },
+        "additionalInfo": {
+          "description": "Logs the result from iot-bridge-api for observability.",
+          "layoutX": 680,
+          "layoutY": 100
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-0009-0009-0009-000000000009"
+        },
+        "type": "org.thingsboard.rule.engine.action.TbLogNode",
+        "name": "Log Error",
+        "debugMode": false,
+        "configuration": {
+          "jsScript": "return 'Error in CDM Device Provisioning chain: ' + metadata.error + ' | msg=' + JSON.stringify(msg);"
+        },
+        "additionalInfo": {
+          "description": "Catches failures from the REST call node and logs them.",
+          "layoutX": 680,
+          "layoutY": 0
+        }
+      },
+      {
+        "id": {
+          "entityType": "RULE_NODE",
+          "id": "a1b2c3d4-000a-000a-000a-00000000000a"
+        },
+        "type": "org.thingsboard.rule.engine.rest.TbRestApiCallNode",
+        "name": "Forward Telemetry to InfluxDB",
+        "debugMode": false,
+        "configuration": {
+          "restEndpointUrlPattern": "http://iot-bridge-api:8000/webhooks/thingsboard/telemetry",
+          "requestMethod": "POST",
+          "enableProxy": false,
+          "useSimpleClientHttpFactory": false,
+          "ignoreRequestBody": false,
+          "readTimeoutMs": 10000,
+          "maxParallelRequestsCount": 100,
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "useRedirectStrategy": false,
+          "trimDoubleQuotes": false,
+          "parseToPlainText": false,
+          "bodyTemplate": "{\"msgType\":\"${msgType}\",\"metadata\":{\"tenantId\":\"${metadata.tenantId}\",\"deviceId\":\"${metadata.deviceId}\",\"deviceName\":\"${metadata.deviceName}\"},\"data\":${msg}}"
+        },
+        "additionalInfo": {
+          "description": "Forwards device telemetry to iot-bridge-api which writes it to InfluxDB with tenant_id and device_id tags for Mandanten-Isolation.",
+          "layoutX": 680,
+          "layoutY": 300
+        }
+      }
+    ],
+    "connections": [
+      {
+        "fromIndex": 0,
+        "toIndex": 1,
+        "type": "Post connect"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 2,
+        "type": "Post telemetry"
+      },
+      {
+        "fromIndex": 0,
+        "toIndex": 3,
+        "type": "Post attributes"
+      },
+      {
+        "fromIndex": 1,
+        "toIndex": 6,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 1,
+        "toIndex": 7,
+        "type": "Failure"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 4,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 2,
+        "toIndex": 8,
+        "type": "Success"
+      },
+      {
+        "fromIndex": 4,
+        "toIndex": 5,
+        "type": "True"
+      }
+    ],
+    "ruleChainConnections": null
+  }
+}

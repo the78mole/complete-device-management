@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM Portal – Dashboard</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+  <style>
+    body { background-color: #0d1117; color: #e6edf3; min-height: 100vh; }
+    .hero {
+      background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+      border-bottom: 1px solid #30363d;
+      padding: 1.5rem 0;
+    }
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #8b949e;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .service-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+    .service-card:hover {
+      border-color: #58a6ff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(88,166,255,.12);
+      color: inherit;
+    }
+    .service-card .icon { font-size: 2rem; line-height: 1; }
+    .service-card h5 { font-size: 1rem; font-weight: 600; color: #e6edf3; margin-bottom: 0.25rem; }
+    .service-card p { font-size: 0.8rem; color: #8b949e; margin-bottom: 0; }
+    .btn-service {
+      font-size: 0.8rem;
+      font-weight: 500;
+      padding: 0.35rem 0.85rem;
+      border-radius: 6px;
+    }
+    .role-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      padding: 0.25rem 0.6rem;
+      border-radius: 20px;
+    }
+    .role-admin    { background: #1f3a5f; color: #58a6ff; border: 1px solid #1d4ed8; }
+    .role-operator { background: #2d3a0e; color: #9bd95b; border: 1px solid #365314; }
+    .role-viewer   { background: #2d2a0e; color: #e3b341; border: 1px solid #533913; }
+    footer {
+      border-top: 1px solid #21262d;
+      font-size: 0.78rem;
+      color: #484f58;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div class="d-flex align-items-center gap-3">
+        <span style="font-size:2rem">🛰️</span>
+        <div>
+          <h1 class="mb-0 h5 fw-bold">CDM Portal</h1>
+          <span style="color:#8b949e;font-size:0.85rem">{{ user.tenant_name }}</span>
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <div class="text-end" style="font-size:0.85rem">
+          <div class="fw-medium">{{ user.name }}</div>
+          <div style="color:#8b949e;font-size:0.78rem">{{ user.email }}</div>
+        </div>
+        <span class="role-badge role-{{ effective_role }}">
+          {% if effective_role == "admin" %}Admin
+          {% elif effective_role == "operator" %}Operator
+          {% else %}Viewer{% endif %}
+        </span>
+        <a href="/api/portal/logout" class="btn btn-sm btn-outline-secondary">Abmelden</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container py-4">
+
+    <!-- ── ADMIN ─────────────────────────────────────────────────────────── -->
+    {% if effective_role == "admin" %}
+
+    <div class="section-label">Administration &amp; Identity</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="{{ keycloak_admin_url }}" target="_blank" rel="noopener">
+          <div class="icon">🔑</div>
+          <div class="flex-grow-1">
+            <h5>Keycloak</h5>
+            <p class="mb-2">Benutzer, Rollen, OIDC-Clients verwalten</p>
+            <span class="btn btn-danger btn-service">Admin Console →</span>
+          </div>
+        </a>
+      </div>
+
+      {% if realm == 'cdm' %}
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/api/portal/admin/">
+          <div class="icon">🏢</div>
+          <div class="flex-grow-1">
+            <h5>Tenant-Verwaltung</h5>
+            <p class="mb-2">Tenants anlegen, RabbitMQ vHosts &amp; step-ca OIDC-Provisioner verwalten</p>
+            <span class="btn btn-primary btn-service">Admin-Portal →</span>
+          </div>
+        </a>
+      </div>
+      {% endif %}
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="#" data-direct-port="9090" target="_blank" rel="noopener">
+          <div class="icon">📡</div>
+          <div class="flex-grow-1">
+            <h5>ThingsBoard</h5>
+            <p class="mb-2">Geräteverwaltung, Dashboards &amp; Rule Chains</p>
+            <span class="btn btn-primary btn-service">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/grafana/" target="_blank" rel="noopener">
+          <div class="icon">📊</div>
+          <div class="flex-grow-1">
+            <h5>Grafana</h5>
+            <p class="mb-2">Telemetrie-Dashboards &amp; Alerting</p>
+            <span class="btn btn-warning btn-service text-dark">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/hawkbit/" target="_blank" rel="noopener">
+          <div class="icon">🚀</div>
+          <div class="flex-grow-1">
+            <h5>hawkBit</h5>
+            <p class="mb-2">OTA-Updates &amp; Rollout-Management</p>
+            <span class="btn btn-success btn-service">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    <div class="section-label">Infrastruktur &amp; Daten</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="#" data-direct-port="8086" target="_blank" rel="noopener">
+          <div class="icon">📦</div>
+          <div class="flex-grow-1">
+            <h5>InfluxDB</h5>
+            <p class="mb-2">Zeitreihendatenbank für Telemetrie</p>
+            <span class="btn btn-outline-info btn-service">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/rabbitmq/" target="_blank" rel="noopener">
+          <div class="icon">🐇</div>
+          <div class="flex-grow-1">
+            <h5>RabbitMQ</h5>
+            <p class="mb-2">Message Broker – Queues &amp; Exchanges</p>
+            <span class="btn btn-outline-warning btn-service">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/api/docs" target="_blank" rel="noopener">
+          <div class="icon">🔌</div>
+          <div class="flex-grow-1">
+            <h5>IoT Bridge API</h5>
+            <p class="mb-2">Geräte-Enrollment, Webhooks &amp; WireGuard</p>
+            <span class="btn btn-info btn-service text-dark">Swagger UI →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/pki/health" target="_blank" rel="noopener">
+          <div class="icon">🔐</div>
+          <div class="flex-grow-1">
+            <h5>step-ca</h5>
+            <p class="mb-2">X.509 PKI – Zertifikate &amp; CA-Verwaltung</p>
+            <span class="btn btn-outline-secondary btn-service">API Health →</span>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    <!-- ── OPERATOR ───────────────────────────────────────────────────────── -->
+    {% elif effective_role == "operator" %}
+
+    <div class="section-label">Fleet-Management</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="#" data-direct-port="9090" target="_blank" rel="noopener">
+          <div class="icon">📡</div>
+          <div class="flex-grow-1">
+            <h5>ThingsBoard</h5>
+            <p class="mb-2">Geräteverwaltung, Dashboards &amp; Rule Chains</p>
+            <span class="btn btn-primary btn-service">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/grafana/" target="_blank" rel="noopener">
+          <div class="icon">📊</div>
+          <div class="flex-grow-1">
+            <h5>Grafana</h5>
+            <p class="mb-2">Telemetrie-Dashboards &amp; Alerting</p>
+            <span class="btn btn-warning btn-service text-dark">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/hawkbit/" target="_blank" rel="noopener">
+          <div class="icon">🚀</div>
+          <div class="flex-grow-1">
+            <h5>hawkBit</h5>
+            <p class="mb-2">OTA-Updates &amp; Rollout-Management</p>
+            <span class="btn btn-success btn-service">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    <!-- ── VIEWER ─────────────────────────────────────────────────────────── -->
+    {% else %}
+
+    <div class="section-label">Monitoring &amp; Berichte</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/grafana/" target="_blank" rel="noopener">
+          <div class="icon">📊</div>
+          <div class="flex-grow-1">
+            <h5>Grafana</h5>
+            <p class="mb-2">Telemetrie-Dashboards &amp; Berichte</p>
+            <span class="btn btn-warning btn-service text-dark">Öffnen →</span>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    {% endif %}
+
+    <!-- ── Immer sichtbar: eigenes Konto ─────────────────────────────────── -->
+    <div class="section-label">Mein Konto</div>
+    <div class="row g-3">
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-card p-3 h-100 d-flex align-items-start gap-3"
+           href="/auth/realms/{{ realm }}/account/"
+           target="_blank" rel="noopener">
+          <div class="icon">👤</div>
+          <div class="flex-grow-1">
+            <h5>Konto-Portal</h5>
+            <p class="mb-2">Passwort ändern, Profil &amp; Sicherheitseinstellungen</p>
+            <span class="btn btn-outline-secondary btn-service">Konto-Portal →</span>
+          </div>
+        </a>
+      </div>
+    </div>
+
+  </div><!-- /container -->
+
+  <!-- Footer -->
+  <footer class="mt-5 py-3">
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span>CDM Portal &mdash; {{ user.tenant_name }}</span>
+      <a href="/api/portal/logout" class="text-secondary text-decoration-none">Abmelden</a>
+    </div>
+  </footer>
+
+  <script>
+    // Build port-based URLs for Codespaces or localhost (same logic as landing page)
+    function buildPortUrl(port) {
+      var h = window.location.hostname;
+      if (h.endsWith('.app.github.dev')) {
+        var base = h.replace(/-\d+\.app\.github\.dev$/, '');
+        return 'https://' + base + '-' + port + '.app.github.dev/';
+      }
+      return 'http://localhost:' + port + '/';
+    }
+    document.querySelectorAll('a[data-direct-port]').forEach(function(a) {
+      a.href   = buildPortUrl(a.dataset.directPort);
+      a.target = '_blank';
+      a.rel    = 'noopener';
+    });
+  </script>
+
+</body>
+</html>
