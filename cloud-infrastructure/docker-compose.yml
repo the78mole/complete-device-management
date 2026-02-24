@@ -248,7 +248,7 @@ services:
   # Even if you only use the DDI (HTTP polling) API, the hawkbit-update-server
   # image unconditionally loads its AmqpConfiguration and needs a live broker.
   rabbitmq:
-    image: rabbitmq:3-management-alpine
+    image: rabbitmq:4-management-alpine
     container_name: cdm-rabbitmq
     restart: unless-stopped
     environment:
