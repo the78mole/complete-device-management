@@ -48,6 +48,31 @@
     "onAutoForward": "silent"
   },
 
-  "features": {},
-  "remoteUser": "root"
+  // ── Features ──────────────────────────────────────────────────────────────
+  // common-utils: creates a consistent non-root "vscode" user, fixes
+  //   Git "dubious ownership" warnings, and installs basic shell tooling.
+  // docker-outside-of-docker: mounts the host Docker socket and installs
+  //   the Docker CLI + Compose plugin. Containers run as siblings on the
+  //   host so all port bindings in docker-compose.yml work unchanged.
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": false,
+      "installOhMyZsh": false,
+      "upgradePackages": false,
+      "username": "vscode",
+      "userUid": "automatic",
+      "userGid": "automatic"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false,
+      "installDockerBuildx": true,
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+
+  // Fix Git "unsafe/dubious ownership" for the mounted workspace
+  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+
+  "remoteUser": "vscode"
 }
