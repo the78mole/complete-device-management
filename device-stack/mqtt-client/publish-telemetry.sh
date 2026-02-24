@@ -1,12 +1,14 @@
 #!/bin/sh
 # publish-telemetry.sh
 #
-# Publishes simulated device telemetry to ThingsBoard via MQTT TLS (mTLS).
-# Uses the X.509 certificate written by the bootstrap container.
+# Publishes simulated device telemetry to Tenant ThingsBoard via MQTT TLS (mTLS).
+# Uses the X.509 certificate written by the bootstrap container during enrollment
+# against the Tenant IoT Bridge API (cert signed by Tenant Sub-CA).
 #
 # ThingsBoard X.509 device authentication: the device sends its certificate
 # as the MQTT username; the password field is unused for certificate auth.
 # Topic: v1/devices/me/telemetry
+# Broker: Tenant ThingsBoard MQTT on port 8883 (direct, not via Caddy)
 
 set -eu
 

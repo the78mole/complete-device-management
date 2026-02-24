@@ -5,15 +5,19 @@
 # config in /etc/rauc-hawkbit-updater/config.conf.  In this Docker simulation
 # the same config values are provided via environment variables so no real RAUC
 # A/B swap is performed; instead the script logs what it "would" install and
-# reports success back to hawkBit.
+# reports success back to Tenant hawkBit.
 #
 # hawkBit DDI (Direct Device Integration) API flow:
-#   1. GET /DEFAULT/controller/v1/{controllerId}          → get action links
-#   2. GET /DEFAULT/controller/v1/{controllerId}/deploymentBase/{actionId}
-#   3. POST /DEFAULT/controller/v1/{controllerId}/deploymentBase/{actionId}/feedback
+#   1. GET /{HAWKBIT_TENANT}/controller/v1/{controllerId}          → get action links
+#   2. GET /{HAWKBIT_TENANT}/controller/v1/{controllerId}/deploymentBase/{actionId}
+#   3. POST .../{actionId}/feedback
 #        { "status": { "execution": "proceeding", "result": { "finished": "none" } } }
 #   4. (simulate download + install)
 #   5. POST .../feedback  { "status": { "execution": "closed", "result": { "finished": "success" } } }
+#
+# HAWKBIT_URL    – Tenant hawkBit URL via Caddy (e.g. http://tenant-host:8888/hawkbit)
+# HAWKBIT_TENANT – hawkBit internal tenant ("DEFAULT"; not the CDM Tenant ID)
+# DEVICE_ID      – must match the hawkBit target registered during enrollment
 
 set -eu
 

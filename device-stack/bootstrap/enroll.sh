@@ -2,14 +2,20 @@
 # enroll.sh – Device PKI bootstrap entrypoint
 #
 # Runs once as a Docker one-shot container.  Generates device credentials,
-# enrolls with the cloud iot-bridge-api, and persists the results to /certs.
+# enrolls with the Tenant IoT Bridge API, and persists the results to /certs.
 #
 # Environment variables (set via docker-compose.yml / .env):
-#   DEVICE_ID        – unique device identifier (e.g. sim-device-001)
-#   DEVICE_NAME      – human-readable device name
-#   DEVICE_TYPE      – device type / model identifier
-#   BRIDGE_API_URL   – base URL of the cloud iot-bridge-api
-#   STEP_CA_FINGERPRINT – root CA fingerprint for TLS verification (optional)
+#   DEVICE_ID            – unique device identifier (e.g. sim-device-001)
+#   DEVICE_NAME          – human-readable device name
+#   DEVICE_TYPE          – device type / model identifier
+#   TENANT_ID            – CDM Tenant ID (must match tenant-stack TENANT_ID)
+#   BRIDGE_API_URL       – base URL of the Tenant IoT Bridge API
+#                          (e.g. http://tenant-host:8888/api)
+#   STEP_CA_FINGERPRINT  – Tenant Sub-CA fingerprint for TLS trust bootstrap.
+#                          Retrieve: docker compose exec ${TENANT_ID}-step-ca step ca fingerprint
+#   STEP_CA_URL          – Tenant step-ca URL for TLS trust bootstrap (optional).
+#                          Only needed when BRIDGE_API_URL uses HTTPS.
+#                          (e.g. https://tenant-host:8888/pki)
 
 set -eu
 
@@ -17,8 +23,10 @@ CERTS_DIR="${CERTS_DIR:-/certs}"
 DEVICE_ID="${DEVICE_ID:-sim-device-001}"
 DEVICE_NAME="${DEVICE_NAME:-Simulated Device 001}"
 DEVICE_TYPE="${DEVICE_TYPE:-simulator}"
-BRIDGE_API_URL="${BRIDGE_API_URL:-http://host.docker.internal:8000}"
+TENANT_ID="${TENANT_ID:-tenant1}"
+BRIDGE_API_URL="${BRIDGE_API_URL:-http://host.docker.internal:8888/api}"
 STEP_CA_FINGERPRINT="${STEP_CA_FINGERPRINT:-}"
+STEP_CA_URL="${STEP_CA_URL:-}"
 
 # Paths inside the shared /certs volume
 TLS_KEY="$CERTS_DIR/device-key.pem"
@@ -37,16 +45,34 @@ if [ -f "$ENROLLED_FLAG" ]; then
 fi
 
 mkdir -p "$CERTS_DIR"
-echo "[enroll] Starting enrollment for device: $DEVICE_ID"
+echo "[enroll] Starting enrollment for device: $DEVICE_ID (tenant: $TENANT_ID)"
 
-# ── 1. Generate TLS EC P-256 key pair ─────────────────────────────────────────
+# ── 1. Bootstrap Tenant Sub-CA TLS trust (HTTPS only) ────────────────────────
+# If STEP_CA_URL and STEP_CA_FINGERPRINT are both set, fetch the Tenant Sub-CA
+# root certificate and install it so that subsequent curl calls to the Tenant
+# Caddy (HTTPS) can verify its TLS certificate (issued by the Sub-CA via ACME).
+if [ -n "$STEP_CA_FINGERPRINT" ] && [ -n "$STEP_CA_URL" ]; then
+    echo "[enroll] Bootstrapping TLS trust from Tenant Sub-CA at ${STEP_CA_URL}…"
+    step ca bootstrap \
+        --ca-url "$STEP_CA_URL" \
+        --fingerprint "$STEP_CA_FINGERPRINT" \
+        --install \
+        --force \
+        2>&1 && echo "[enroll] Tenant Sub-CA trusted." \
+            || echo "[enroll] WARNING: CA bootstrap failed – proceeding with system trust store."
+elif [ -n "$STEP_CA_FINGERPRINT" ] && [ -z "$STEP_CA_URL" ]; then
+    echo "[enroll] STEP_CA_FINGERPRINT set but STEP_CA_URL not set – skipping TLS bootstrap."
+    echo "[enroll] (Set STEP_CA_URL if BRIDGE_API_URL uses HTTPS)"
+fi
+
+# ── 2. Generate TLS EC P-256 key pair ─────────────────────────────────────────
 echo "[enroll] Generating EC P-256 private key…"
 step crypto keypair \
     --no-password --insecure \
     --kty EC --curve P-256 \
     "${TLS_CERT}.pub" "$TLS_KEY"
 
-# ── 2. Generate PKCS#10 CSR ───────────────────────────────────────────────────
+# ── 3. Generate PKCS#10 CSR ───────────────────────────────────────────────────
 echo "[enroll] Creating CSR for CN=${DEVICE_ID}…"
 step certificate create \
     --csr \
@@ -55,13 +81,13 @@ step certificate create \
     --no-password --insecure \
     "$DEVICE_ID" "$TLS_CSR"
 
-# ── 3. Generate WireGuard key pair ────────────────────────────────────────────
+# ── 4. Generate WireGuard key pair ────────────────────────────────────────────
 echo "[enroll] Generating WireGuard key pair…"
 wg genkey | tee "$WG_PRIVKEY" | wg pubkey > "$WG_PUBKEY"
 chmod 600 "$WG_PRIVKEY"
 WG_PUB=$(cat "$WG_PUBKEY")
 
-# ── 4. Submit CSR to iot-bridge-api ───────────────────────────────────────────
+# ── 5. Submit CSR to Tenant IoT Bridge API ────────────────────────────────────
 echo "[enroll] Submitting CSR to ${BRIDGE_API_URL}/devices/${DEVICE_ID}/enroll…"
 
 CSR_PEM=$(cat "$TLS_CSR")
@@ -72,6 +98,7 @@ PAYLOAD=$(jq -n \
     --arg wgpub "$WG_PUB" \
     '{csr: $csr, device_name: $name, device_type: $type, wg_public_key: $wgpub}')
 
+# Use the installed CA trust store for HTTPS verification if bootstrapped above.
 RESPONSE=$(curl -sf \
     --retry 10 --retry-delay 5 --retry-connrefused \
     -X POST \
@@ -80,11 +107,11 @@ RESPONSE=$(curl -sf \
     -d "$PAYLOAD")
 
 if [ -z "$RESPONSE" ]; then
-    echo "[enroll] ERROR: Empty response from iot-bridge-api" >&2
+    echo "[enroll] ERROR: Empty response from Tenant IoT Bridge API" >&2
     exit 1
 fi
 
-# ── 5. Save certificate, CA chain, and WireGuard config ───────────────────────
+# ── 6. Save certificate, CA chain, and WireGuard config ───────────────────────
 echo "[enroll] Parsing enrollment response…"
 
 echo "$RESPONSE" | jq -r '.certificate'    > "$TLS_CERT"
@@ -104,6 +131,6 @@ echo "[enroll] CA chain saved         : $CA_CHAIN"
 echo "[enroll] WireGuard IP assigned  : $WG_IP"
 echo "[enroll] WireGuard config saved : $WG_CONFIG"
 
-# ── 6. Mark enrollment complete ───────────────────────────────────────────────
+# ── 7. Mark enrollment complete ───────────────────────────────────────────────
 echo "$WG_IP" > "$ENROLLED_FLAG"
-echo "[enroll] Device '${DEVICE_ID}' enrolled successfully."
+echo "[enroll] Device '${DEVICE_ID}' enrolled successfully (tenant: ${TENANT_ID})."

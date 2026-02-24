@@ -206,14 +206,16 @@ und verbindet sich über MQTT (mTLS) mit dem Provider-Stack.
 
 ---
 
-### Phase 4 – Device Stack anpassen *(Anpassung)*
+### Phase 4 – Device Stack anpassen *(Anpassung)* ✅
 
 | Aufgabe | Details |
 |---|---|
-| MQTT-Endpunkt auf Tenant-Stack umstellen | `device-stack/telegraf/telegraf.conf`, `mqtt-client/publish-telemetry.sh` |
-| Bootstrap gegen Tenant-step-ca (Sub-CA) | `device-stack/bootstrap/enroll.sh` |
-| WireGuard-Client gegen Tenant-WireGuard-Server | `device-stack/wireguard-client/wg-client.sh` |
-| OTA-Polling gegen Tenant-hawkBit | `device-stack/updater/ddi-poll.sh`, `rauc-hawkbit-updater.conf` |
+| `docker-compose.yml` auf Tenant-Stack umgestellt | Kommentare, Defaults und Abhängigkeiten auf Tenant-Stack angepasst; `HAWKBIT_URL` default auf `…:8888/hawkbit`; `BRIDGE_API_URL` default auf `…:8888/api` |
+| `.env.example` vollständig überarbeitet | `TENANT_ID` als primäre Variable; kommentierte Tenant-Stack-Endpunkte; `STEP_CA_FINGERPRINT` erklärt als Tenant Sub-CA (nicht Provider Root CA) |
+| Bootstrap gegen Tenant Sub-CA | `enroll.sh`: `TENANT_ID` + `STEP_CA_URL` hinzugefügt; TLS-Bootstrap via `step ca bootstrap --fingerprint` wenn `STEP_CA_URL` gesetzt; Enrollment-Endpunkt bleibt `/devices/{id}/enroll` (Tenant IoT Bridge API) |
+| MQTT-Endpunkt auf Tenant ThingsBoard | `telegraf.conf`: `HAWKBIT_TENANT` → `TENANT_ID`; MQTT-Topic `cdm/$TENANT_ID/$DEVICE_ID/sensors`; `publish-telemetry.sh`: Kommentare auf Tenant ThingsBoard aktualisiert |
+| WireGuard-Client | `wg-client.sh` war bereits korrekt (liest `wg0.conf` aus dem Volume, das Bootstrap via Tenant API befüllt) |
+| OTA-Polling gegen Tenant hawkBit | `ddi-poll.sh`: Kommentare auf Tenant hawkBit aktualisiert; `rauc-hawkbit-updater.conf`: TLS aktiviert (`ssl = true`, `ssl_verify = true`), Cert-Pfade auf `/certs/` Volume |
 
 **Deliverable:** Ein simuliertes Gerät (`device-stack/docker-compose.yml`) verbindet
 sich vollständig mit einer Tenant-Instanz (PKI, MQTT, WireGuard, OTA).

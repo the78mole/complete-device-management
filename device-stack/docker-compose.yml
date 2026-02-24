@@ -3,11 +3,14 @@
 # Simulates a single IoT edge device for local development / integration testing.
 #
 # Prerequisites:
-#   - cloud-infrastructure is running (docker compose -f ../cloud-infrastructure/docker-compose.yml up -d)
-#   - Copy .env.example to .env and adjust BRIDGE_API_URL / THINGSBOARD_HOST etc.
+#   - A tenant-stack instance is running and the JOIN workflow has completed (Sub-CA signed).
+#   - Copy .env.example to .env and fill in TENANT_ID, BRIDGE_API_URL, THINGSBOARD_HOST etc.
+#   - Set STEP_CA_FINGERPRINT to the fingerprint of the Tenant Sub-CA
+#     (docker compose exec ${TENANT_ID}-step-ca step ca fingerprint)
 #
 # Usage:
 #   cd device-stack
+#   cp .env.example .env   # edit .env first!
 #   docker compose up
 
 networks:
@@ -34,9 +37,12 @@ services:
       DEVICE_ID: ${DEVICE_ID:-sim-device-001}
       DEVICE_NAME: ${DEVICE_NAME:-Simulated Device 001}
       DEVICE_TYPE: ${DEVICE_TYPE:-simulator}
-      # Cloud iot-bridge-api enrollment endpoint
-      BRIDGE_API_URL: ${BRIDGE_API_URL:-http://host.docker.internal:8000}
-      # step-ca root CA fingerprint (for TLS verification of the API call itself)
+      # Tenant ID (must match TENANT_ID in tenant-stack/.env)
+      TENANT_ID: ${TENANT_ID:-tenant1}
+      # Tenant IoT Bridge API – routed via Caddy: http(s)://<tenant-host>:8888/api
+      BRIDGE_API_URL: ${BRIDGE_API_URL:-http://host.docker.internal:8888/api}
+      # Tenant Sub-CA fingerprint (NOT the Provider Root CA fingerprint!)
+      # Retrieve: docker compose -f ../tenant-stack/docker-compose.yml exec ${TENANT_ID}-step-ca step ca fingerprint
       STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
     volumes:
       - device-certs:/certs
@@ -66,11 +72,11 @@ services:
     networks:
       - device-net
 
-  # ── Telegraf (optional MQTT sensor data → InfluxDB) ──────────────────────
-  # Subscribes to the tenant-scoped MQTT topic for additional sensor readings.
+  # ── Telegraf (optional MQTT sensor data → Tenant InfluxDB) ──────────────
+  # Subscribes to the tenant-scoped MQTT topic for additional sensor readings
+  # (local device sensors) and forwards them to the Tenant InfluxDB.
   # Primary device metrics (CPU, RAM, OTA status) are sourced from ThingsBoard
-  # and hawkBit via the cloud-side Telegraf and iot-bridge-api telemetry
-  # webhook.  Direct OS metric collection is intentionally disabled.
+  # and hawkBit via the Tenant Telegraf pipeline.
   telegraf:
     image: telegraf:1.37-alpine
     container_name: cdm-device-telegraf
@@ -78,12 +84,15 @@ services:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - device-certs:/certs:ro
     environment:
+      # Tenant InfluxDB – port 8086 direct (SPA limitation; authenticated via oauth2-proxy)
       INFLUX_URL: ${INFLUX_URL:-http://host.docker.internal:8086}
       INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
       INFLUX_ORG: ${INFLUX_ORG:-cdm-org}
       INFLUX_BUCKET: ${INFLUX_BUCKET:-iot-metrics}
       DEVICE_ID: ${DEVICE_ID:-sim-device-001}
-      HAWKBIT_TENANT: ${HAWKBIT_TENANT:-DEFAULT}
+      # CDM Tenant ID – used as MQTT topic prefix for isolation
+      TENANT_ID: ${TENANT_ID:-tenant1}
+      # Tenant ThingsBoard – MQTT broker for mTLS device connections (port 8883 direct)
       THINGSBOARD_HOST: ${THINGSBOARD_HOST:-host.docker.internal}
     restart: unless-stopped
     depends_on:
@@ -92,15 +101,17 @@ services:
     networks:
       - device-net
 
-  # ── MQTT Client (device state → ThingsBoard via mTLS) ────────────────────
+  # ── MQTT Client (device state → Tenant ThingsBoard via mTLS) ────────────
   # Publishes simulated device telemetry (OTA status, battery, signal) to
-  # ThingsBoard over MQTT TLS using the X.509 certificate issued at enrollment.
+  # Tenant ThingsBoard over MQTT TLS (port 8883 direct) using the X.509
+  # certificate signed by the Tenant Sub-CA during bootstrap enrollment.
   mqtt-client:
     build:
       context: .
       dockerfile: mqtt-client/Dockerfile
     container_name: cdm-device-mqtt
     environment:
+      # Tenant ThingsBoard MQTT – port 8883 direct (not via Caddy)
       THINGSBOARD_HOST: ${THINGSBOARD_HOST:-host.docker.internal}
       THINGSBOARD_MQTT_PORT: ${THINGSBOARD_MQTT_PORT:-8883}
       DEVICE_ID: ${DEVICE_ID:-sim-device-001}
@@ -133,16 +144,19 @@ services:
       - device-net
 
   # ── rauc-hawkbit-updater (OTA agent) ─────────────────────────────────────
-  # Polls the hawkBit DDI API for pending deployments.  In simulation mode
-  # (Docker) the RAUC install step is stubbed out; on a real Yocto device this
-  # container is replaced by the system-level rauc-hawkbit-updater daemon.
+  # Polls the Tenant hawkBit DDI API for pending deployments.  In simulation
+  # mode (Docker) the RAUC install step is stubbed out; on a real Yocto device
+  # this container is replaced by the system-level rauc-hawkbit-updater daemon.
   rauc-hawkbit-updater:
     build:
       context: .
       dockerfile: updater/Dockerfile
     container_name: cdm-device-rauc
     environment:
-      HAWKBIT_URL: ${HAWKBIT_URL:-http://host.docker.internal:8070}
+      # Tenant hawkBit – routed via Caddy at /hawkbit
+      HAWKBIT_URL: ${HAWKBIT_URL:-http://host.docker.internal:8888/hawkbit}
+      # hawkBit internal tenant (default is "DEFAULT" – this is hawkBit's own tenant
+      # concept, separate from the CDM Tenant ID)
       HAWKBIT_TENANT: ${HAWKBIT_TENANT:-DEFAULT}
       DEVICE_ID: ${DEVICE_ID:-sim-device-001}
       POLL_INTERVAL_S: ${POLL_INTERVAL_S:-30}
