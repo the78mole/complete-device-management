@@ -1,0 +1,374 @@
+---
+# Provider Stack – CDM Platform Infrastructure
+#
+# Manages platform-wide services shared across all tenants:
+#   step-ca      → Root PKI (X.509 certificates)
+#   keycloak     → Identity provider (realms: cdm, provider)
+#   rabbitmq     → Central AMQP broker with per-tenant vHosts
+#   influxdb     → Time-series database (provider metrics)
+#   grafana      → Platform operations dashboards
+#   telegraf     → Metrics aggregation
+#   iot-bridge-api → Platform management API
+#   caddy        → Reverse proxy / entry point
+#
+# NOT included here (→ tenant-stack):
+#   ThingsBoard, hawkBit, WireGuard, Terminal Proxy
+#
+# Bring up:
+#   cp .env.example .env   # fill in secrets
+#   docker compose up -d
+#
+# Port mapping:
+#   8888  → Caddy (entry point, path-based routing)
+#   9000  → step-ca (HTTPS, direct)
+#   8086  → InfluxDB (via oauth2-proxy, direct)
+
+networks:
+  provider-net:
+    driver: bridge
+
+volumes:
+  keycloak-db-data:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
+  rabbitmq-data:
+  step-ca-data:
+  caddy-data:
+
+secrets:
+  step-ca-password:
+    file: ../cloud-infrastructure/step-ca/password.txt
+
+# ─────────────────────────────────────────────────────────────────
+services:
+
+  # ── step-ca (Root PKI) ──────────────────────────────────────────
+  # Auto-creates Root CA + Intermediate CA on first boot.
+  # Build context is shared with cloud-infrastructure to avoid duplication.
+  step-ca:
+    build:
+      context: ../cloud-infrastructure/step-ca
+      dockerfile: Dockerfile
+    container_name: provider-step-ca
+    restart: unless-stopped
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "${STEP_CA_PKI_NAME:-CDM Root CA}"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "${STEP_CA_DNS_NAMES:-step-ca,localhost}"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/step-ca-password
+      DOCKER_STEPCA_INIT_ADDRESS: "${STEP_CA_ADDRESS:-:9000}"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}"
+      DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
+      DOCKER_STEPCA_INIT_SSH: "${STEP_CA_ENABLE_SSH:-false}"
+    secrets:
+      - step-ca-password
+    volumes:
+      - step-ca-data:/home/step
+    ports:
+      - "9000:9000"
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Keycloak ────────────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:18-alpine
+    container_name: provider-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: provider-keycloak
+    restart: unless-stopped
+    command: >
+      start-dev
+      --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      # OIDC client secrets – injected into realm templates by docker-entrypoint.sh
+      GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GRAFANA_BROKER_SECRET: ${GRAFANA_BROKER_SECRET:-changeme}
+      BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      # Bootstrap user passwords
+      PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
+      KC_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KC_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      # External URL for browser-facing redirect URIs in realm templates
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+    ports:
+      - "8080:8080"
+    networks:
+      - provider-net
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /auth/realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 5 grep -q 200 <&3"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+  # ── RabbitMQ (central broker, vHost per tenant) ─────────────────
+  # Pre-creates the `cdm-metrics` vHost via definitions.json.
+  # Additional tenant vHosts are created by the IoT Bridge API
+  # when tenants are onboarded.
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: provider-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    ports:
+      - "1883:1883"   # MQTT (plain – for local dev)
+      - "5672:5672"   # AMQP
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── InfluxDB ─────────────────────────────────────────────────────
+  influxdb:
+    image: influxdb:2.8-alpine
+    container_name: provider-influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-changeme00}
+      DOCKER_INFLUXDB_INIT_ORG: cdm-org
+      DOCKER_INFLUXDB_INIT_BUCKET: iot-metrics
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+      - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
+  # Enforces Keycloak login before the InfluxDB web UI.
+  # API paths bypass auth (service-to-service calls use InfluxDB tokens).
+  influxdb-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.8.1
+    container_name: provider-influxdb-proxy
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/auth/realms/cdm
+      OAUTH2_PROXY_LOGIN_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
+      OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
+      OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://influxdb:8086
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
+      OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
+      OAUTH2_PROXY_SCOPE: "openid profile email roles"
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
+      OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+    ports:
+      - "8086:4180"
+    networks:
+      - provider-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
+  # ── Grafana ──────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:12.3.3
+    container_name: provider-grafana
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email roles
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'cdm-admin') && 'Admin' || contains(roles[*], 'cdm-operator') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_SIGNOUT_REDIRECT_URL: "${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/grafana/login"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - provider-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # ── Telegraf (provider metrics aggregator) ───────────────────────
+  telegraf:
+    image: telegraf:1.37-alpine
+    container_name: provider-telegraf
+    restart: unless-stopped
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: cdm-org
+      INFLUX_BUCKET: iot-metrics
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_ADMIN_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    networks:
+      - provider-net
+    depends_on:
+      - influxdb
+      - rabbitmq
+
+  # ── IoT Bridge API ───────────────────────────────────────────────
+  # Platform management API: device enrollment, provisioning, OIDC portal.
+  # In the provider-stack this service does NOT connect to ThingsBoard or
+  # hawkBit (those live in the tenant-stack); it manages provider-level
+  # resources only (step-ca, Keycloak, RabbitMQ, InfluxDB).
+  iot-bridge-api:
+    build:
+      context: ../glue-services/iot-bridge-api
+      dockerfile: Dockerfile
+    container_name: provider-iot-bridge-api
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_REALM: cdm
+      KEYCLOAK_CLIENT_ID: iot-bridge
+      KEYCLOAK_CLIENT_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-change-this-portal-session-secret}
+      PORTAL_TENANTS_JSON: '${PORTAL_TENANTS_JSON:-{"cdm":{"name":"CDM Platform"}}}' 
+      RABBITMQ_MGMT_URL: http://rabbitmq:15672
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}
+      STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
+      STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      INFLUX_ORG: cdm-org
+      INFLUX_BUCKET: iot-metrics
+      ROOT_PATH: /api
+    ports:
+      - "8000:8000"
+    networks:
+      - provider-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      step-ca:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
+  # ── Caddy (reverse proxy / entry point) ─────────────────────────
+  # Single entry point on port 8888. Path-based routing to all services.
+  # Static landing page served from /srv/html.
+  #
+  # Codespaces: https://<name>-8888.app.github.dev/
+  # Local:      http://localhost:8888/
+  caddy:
+    image: caddy:2-alpine
+    container_name: provider-caddy
+    restart: unless-stopped
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/html:/srv/html:ro
+      - caddy-data:/data
+    ports:
+      - "${CADDY_PORT:-8888}:${CADDY_PORT:-8888}"
+    networks:
+      - provider-net
+    environment:
+      CADDY_PORT: ${CADDY_PORT:-8888}
+      CADDY_AUTO_HTTPS: ${CADDY_AUTO_HTTPS:-off}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      grafana:
+        condition: service_started
+      iot-bridge-api:
+        condition: service_started
+      step-ca:
+        condition: service_healthy
+      influxdb-proxy:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy

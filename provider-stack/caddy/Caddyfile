@@ -1,0 +1,80 @@
+# CDM Provider Stack – Caddyfile
+#
+# Caddy replaces nginx as the reverse proxy.  Out of the box it handles:
+#   - Automatic HTTPS via ACME (Let's Encrypt / ZeroSSL) in production
+#   - HTTP-only mode for local dev / GitHub Codespaces (CADDY_AUTO_HTTPS=off)
+#
+# Port 8888 is the single entry point (same as the legacy nginx setup).
+# Codespaces exposes it as https://<name>-8888.app.github.dev/.
+#
+# Service routing:
+#   /           → Landing page (static)
+#   /auth/      → Keycloak          keycloak:8080
+#   /grafana/   → Grafana           grafana:3000
+#   /api/       → IoT Bridge API    iot-bridge-api:8000  (strips /api prefix)
+#   /rabbitmq/  → RabbitMQ Mgmt     rabbitmq:15672
+#   /pki/       → step-ca           step-ca:9000 (HTTPS upstream)
+
+{
+    # Disable automatic HTTPS for local / Codespaces use.
+    # Set CADDY_AUTO_HTTPS=on and configure {$CADDY_DOMAIN} for production.
+    auto_https {$CADDY_AUTO_HTTPS:off}
+    admin off
+}
+
+:{$CADDY_PORT:8888} {
+
+    # ── Keycloak (/auth/) ─────────────────────────────────────────────────
+    # Keycloak is configured with KC_HTTP_RELATIVE_PATH=/auth so it already
+    # serves everything under /auth/.  We forward the path unchanged.
+    # Large header buffers are required for Keycloak's JWT-bearing Set-Cookie.
+    handle /auth/* {
+        reverse_proxy keycloak:8080 {
+            # Buffer large Keycloak response headers (JWTs, CSP, etc.)
+            header_down -Server
+            flush_interval -1
+        }
+    }
+
+    # ── Grafana (/grafana/) ───────────────────────────────────────────────
+    # GF_SERVER_SERVE_FROM_SUB_PATH=true means Grafana handles the /grafana/
+    # prefix itself; we forward the full path unchanged.
+    handle /grafana/* {
+        reverse_proxy grafana:3000
+    }
+
+    # ── IoT Bridge API (/api/) ────────────────────────────────────────────
+    # FastAPI is configured with ROOT_PATH=/api (affects OpenAPI schema URLs).
+    # The actual HTTP server handles requests at /, so we strip /api before
+    # forwarding.
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy iot-bridge-api:8000
+    }
+
+    # ── RabbitMQ Management (/rabbitmq/) ──────────────────────────────────
+    # management.path_prefix=/rabbitmq in rabbitmq.conf makes the plugin serve
+    # all assets and API calls under /rabbitmq/.
+    handle /rabbitmq/* {
+        reverse_proxy rabbitmq:15672
+    }
+
+    # ── step-ca PKI API (/pki/) ───────────────────────────────────────────
+    # step-ca exposes a pure HTTPS API; there is no web UI.
+    # Useful endpoints: GET /pki/health  GET /pki/root/<fingerprint>
+    handle /pki/* {
+        uri strip_prefix /pki
+        reverse_proxy https://step-ca:9000 {
+            transport http {
+                tls_insecure_skip_verify  # step-ca root CA not in Caddy trust store
+            }
+        }
+    }
+
+    # ── Landing page (/) ─────────────────────────────────────────────────
+    handle {
+        root * /srv/html
+        file_server
+        try_files {path} /index.html
+    }
+}
