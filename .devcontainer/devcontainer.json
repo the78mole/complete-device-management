@@ -1,0 +1,53 @@
+{
+  "name": "CDM Platform Dev",
+  // Re-use whichever image the Codespace / devcontainer spins up;
+  // adjust if you add a custom Dockerfile later.
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+
+  // ── Port forwarding ────────────────────────────────────────────────────────
+  // VS Code / Codespaces will automatically forward these ports and show them
+  // in the Ports panel with the labels defined below.
+  //
+  // Rules:
+  //   8888  – nginx reverse proxy (main entry point for almost everything)
+  //   9090  – ThingsBoard  (SPA: can't be sub-path proxied, needs direct port)
+  //   8086  – InfluxDB UI  (behind oauth2-proxy, same SPA limitation)
+  //   1883  – MQTT broker  (plain TCP – for device/tool connections)
+  //   8883  – MQTT TLS     (optional: TLS MQTT)
+  "forwardPorts": [8888, 9090, 8086, 1883, 8883],
+
+  "portsAttributes": {
+    "8888": {
+      "label": "CDM – nginx (Main)",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    },
+    "9090": {
+      "label": "ThingsBoard",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    },
+    "8086": {
+      "label": "InfluxDB (OAuth2 Proxy)",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    },
+    "1883": {
+      "label": "MQTT (plain)",
+      "onAutoForward": "silent"
+    },
+    "8883": {
+      "label": "MQTT TLS",
+      "onAutoForward": "silent"
+    }
+  },
+
+  // Make the main UI public in Codespaces so the landing page opens without
+  // an additional authentication step. Adjust to "private" for sensitive envs.
+  "otherPortsAttributes": {
+    "onAutoForward": "silent"
+  },
+
+  "features": {},
+  "remoteUser": "root"
+}

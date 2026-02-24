@@ -366,7 +366,7 @@ services:
       OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
       OAUTH2_PROXY_UPSTREAMS: http://influxdb:8086
       # Permit any Keycloak-verified identity; roles claim gates access
-      OAUTH2_PROXY_EMAIL_DOMAIN: "*"
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       # The influxdb-proxy Keycloak client has a realm-roles ProtocolMapper
       # that injects a flat "roles" array claim. cdm-viewer is excluded –
       # Grafana already covers read-only dashboard access.
