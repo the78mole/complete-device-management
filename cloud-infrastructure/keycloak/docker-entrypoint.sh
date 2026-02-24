@@ -45,6 +45,7 @@ for tpl in "$TEMPLATE_DIR"/*.json.tpl; do
       -e "s|\${TENANT2_VIEWER_PASSWORD}|${TENANT2_VIEWER_PASSWORD:-changeme}|g" \
       -e "s|\${PORTAL_OIDC_SECRET}|${PORTAL_OIDC_SECRET:-changeme}|g" \
       -e "s|\${INFLUX_PROXY_OIDC_SECRET}|${INFLUX_PROXY_OIDC_SECRET:-changeme}|g" \
+      -e "s|\${GRAFANA_BROKER_SECRET}|${GRAFANA_BROKER_SECRET:-changeme}|g" \
       -e "s|\${EXTERNAL_URL}|${EXTERNAL_URL:-http://localhost:8888}|g" \
       "$tpl" > "$dest"
 

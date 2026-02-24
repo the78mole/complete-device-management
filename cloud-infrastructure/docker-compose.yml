@@ -129,6 +129,7 @@ services:
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
       INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      GRAFANA_BROKER_SECRET: ${GRAFANA_BROKER_SECRET:-changeme}
       # Realm bootstrap user passwords
       PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
       TENANT1_ADMIN_PASSWORD: ${TENANT1_ADMIN_PASSWORD:-changeme}
@@ -293,6 +294,8 @@ services:
       # RabbitMQ connection for the hawkBit DMF event bus
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_ADMIN_USER:-admin}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
       # server.port in application.properties is overridden by the bundled default;
       # env vars have the highest precedence in Spring Boot.
       SERVER_PORT: "8070"
@@ -357,7 +360,16 @@ services:
     restart: unless-stopped
     environment:
       OAUTH2_PROXY_PROVIDER: oidc
+      # Internal URL for server-side OIDC discovery, token exchange and JWKS.
+      # The browser never sees this hostname.
       OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/auth/realms/cdm
+      # Override the authorization endpoint with the external (browser-facing) URL.
+      # Without this, oauth2-proxy would hand the browser the internal
+      # keycloak:8080 URL from OIDC discovery → ERR_NAME_NOT_RESOLVED.
+      OAUTH2_PROXY_LOGIN_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
+      # Keep token redemption and JWKS on the internal network.
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
       OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
       OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
       # Browser-facing callback URL – uses port 8086 (not 8888) like ThingsBoard

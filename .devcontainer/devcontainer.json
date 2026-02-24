@@ -71,6 +71,15 @@
     }
   },
 
+  // ── Environment ───────────────────────────────────────────────────────────
+  // DOCKER_API_VERSION: pin the client to the host daemon's max supported API.
+  // Without this, a newer Docker CLI (e.g. 1.52) will be rejected by an older
+  // daemon (e.g. Engine 23.x, API 1.43) with "client version too new".
+  // Adjust the value if the host daemon is upgraded.
+  "remoteEnv": {
+    "DOCKER_API_VERSION": "1.43"
+  },
+
   // Fix Git "unsafe/dubious ownership" for the mounted workspace
   "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
 

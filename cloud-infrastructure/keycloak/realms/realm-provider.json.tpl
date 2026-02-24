@@ -51,7 +51,39 @@
       ]
     }
   ],
-  "clients": [],
+  "clients": [
+    {
+      "clientId": "grafana-broker",
+      "name": "Grafana Identity Broker",
+      "description": "Used by the cdm realm to broker provider-realm logins into Grafana.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${GRAFANA_BROKER_SECRET}",
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": { "post.logout.redirect.uris": "*" },
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
   "identityProviders": [],
   "defaultDefaultClientScopes": ["profile", "email", "roles", "web-origins"],
   "defaultOptionalClientScopes": ["offline_access", "address", "phone"],

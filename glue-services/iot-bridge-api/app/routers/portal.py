@@ -126,6 +126,12 @@ async def portal_login(
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
 
+    # Clear any existing session before starting a new auth flow.
+    # The id_token stored after a previous login can be 1-2 KB; combined with
+    # the new oauth_* keys the total session easily exceeds the 4 KB browser
+    # cookie limit and gets silently truncated → state mismatch on callback.
+    request.session.clear()
+
     request.session["oauth_state"]  = state
     request.session["oauth_nonce"]  = nonce
     request.session["oauth_tenant"] = tenant_id
