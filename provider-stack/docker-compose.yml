@@ -316,6 +316,9 @@ services:
     image: telegraf:1.37-alpine
     container_name: provider-telegraf
     restart: unless-stopped
+    # Suppress "strict env handling" deprecation warning – all env vars are
+    # explicitly set in the environment block so strict mode is safe to use.
+    command: ["telegraf", "--non-strict-env-handling"]
     environment:
       INFLUX_URL: http://influxdb:8086
       INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
