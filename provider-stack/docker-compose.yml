@@ -128,6 +128,7 @@ services:
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
       INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
+      RABBITMQ_MANAGEMENT_OIDC_SECRET: ${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}
       # Bootstrap user passwords
       PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
       KC_ADMIN_USER: ${KC_ADMIN_USER:-admin}
@@ -173,21 +174,29 @@ services:
         condition: service_healthy
 
   # ── RabbitMQ (central broker, vHost per tenant) ─────────────────
-  # Pre-creates the `cdm-metrics` vHost via definitions.json.
+  # Pre-creates the `cdm-metrics` vHost and admin user via definitions.json.tpl
+  # (templated at container start by rabbitmq/docker-entrypoint.sh).
   # Additional tenant vHosts are created by the IoT Bridge API
   # when tenants are onboarded.
   rabbitmq:
     image: rabbitmq:4-management-alpine
     container_name: provider-rabbitmq
     restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/docker-entrypoint.sh"]
+    command: ["rabbitmq-server"]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:-admin}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+      RABBITMQ_MANAGEMENT_OIDC_SECRET: ${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
       - rabbitmq-tls:/etc/rabbitmq/tls:ro
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/definitions.json.tpl:/etc/rabbitmq/definitions.json.tpl:ro
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./rabbitmq/advanced.config.tpl:/etc/rabbitmq/advanced.config.tpl:ro
+      - ./rabbitmq/docker-entrypoint.sh:/scripts/docker-entrypoint.sh:ro
     ports:
       - "1883:1883"   # MQTT plain (kept for local dev without certs)
       - "5672:5672"   # AMQP

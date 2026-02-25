@@ -82,7 +82,7 @@ All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic
 
 ### 2.3 provider — Platform Operations
 
-Realm for the platform operations team.  Has no OIDC clients; purely for human operator identity.
+Realm for the platform operations team.
 
 | Role | Description |
 |---|---|
@@ -95,6 +95,30 @@ Realm for the platform operations team.  Has no OIDC clients; purely for human o
 |---|---|---|---|
 | `${KC_ADMIN_USER}` | `platform-admin` | `${KC_ADMIN_PASSWORD}` (non-temporary) | Same credentials as master admin — true superadmin |
 | `provider-operator` | `platform-operator` | `${PROVIDER_OPERATOR_PASSWORD}` (temporary) | — |
+
+**OIDC clients**
+
+| Client ID | Service | Type | Secret env var |
+|---|---|---|---|
+| `grafana-broker` | Grafana identity-broker (cdm realm federation) | confidential | `GRAFANA_BROKER_SECRET` |
+| `rabbitmq-management` | RabbitMQ Management UI (OAuth2 SSO) | confidential | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
+
+**RabbitMQ OAuth2 integration — `rabbitmq-management` client**
+
+The `rabbitmq-management` client enables single-sign-on into the RabbitMQ management UI
+for `provider` realm users.  The following Keycloak client scopes are registered in the
+`provider` realm and assigned as *default* scopes on `rabbitmq-management`:
+
+| Scope name | Grants |
+|---|---|
+| `rabbitmq.tag:administrator` | Full management UI access |
+| `rabbitmq.read:*/*` | Read all vhosts/queues |
+| `rabbitmq.write:*/*` | Write all vhosts/queues |
+| `rabbitmq.configure:*/*` | Configure all vhosts/queues |
+| `rabbitmq.tag:monitoring` | Read-only UI access (optional scope) |
+
+An **audience mapper** (`oidc-audience-mapper`) adds `rabbitmq` as a custom `aud` claim to
+every access token issued for this client — required by RabbitMQ's OAuth2 backend.
 
 **Admin console**: `/auth/admin/provider/console/`  
 **Account portal**: `/auth/realms/provider/account/`  

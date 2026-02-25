@@ -112,5 +112,12 @@
   // Fix Git "unsafe/dubious ownership" for the mounted workspace
   "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
 
-  "remoteUser": "vscode"
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.makefile-tools"
+      ]
+    }
+  }
 }

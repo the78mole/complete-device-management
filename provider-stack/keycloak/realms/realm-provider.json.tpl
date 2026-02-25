@@ -51,7 +51,119 @@
       ]
     }
   ],
+  "clientScopes": [
+    {
+      "name": "rabbitmq.tag:administrator",
+      "description": "RabbitMQ management tag: administrator",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "rabbitmq.tag:monitoring",
+      "description": "RabbitMQ management tag: monitoring (read-only UI)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "rabbitmq.read:*/*",
+      "description": "RabbitMQ: read access on all vhosts/resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "rabbitmq.write:*/*",
+      "description": "RabbitMQ: write access on all vhosts/resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "rabbitmq.configure:*/*",
+      "description": "RabbitMQ: configure access on all vhosts/resources",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    }
+  ],
   "clients": [
+    {
+      "clientId": "rabbitmq-management",
+      "name": "RabbitMQ Management",
+      "description": "OAuth2/OIDC login for the RabbitMQ management UI (provider-realm admins)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${RABBITMQ_MANAGEMENT_OIDC_SECRET}",
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "attributes": { "post.logout.redirect.uris": "*" },
+      "defaultClientScopes": [
+        "rabbitmq.tag:administrator",
+        "rabbitmq.read:*/*",
+        "rabbitmq.write:*/*",
+        "rabbitmq.configure:*/*"
+      ],
+      "optionalClientScopes": [
+        "rabbitmq.tag:monitoring"
+      ],
+      "protocolMappers": [
+        {
+          "name": "rabbitmq-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "rabbitmq",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "preferred-username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "preferred_username",
+            "user.attribute": "username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
     {
       "clientId": "grafana-broker",
       "name": "Grafana Identity Broker",
