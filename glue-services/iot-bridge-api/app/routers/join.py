@@ -25,14 +25,15 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.clients.join_store import load_store, save_store
-from app.clients.step_ca import StepCAClient, StepCAError
+from app.clients.rabbitmq import RabbitMQClient
+from app.clients.step_ca import StepCAAdminClient, StepCAClient, StepCAError
 from app.config import Settings
 from app.deps import get_settings
 from app.models import (
@@ -44,8 +45,8 @@ from app.models import (
 from app.routers.admin_portal import (
     _get_cdm_admin,
     _kc_admin_token,
-    _random_password,
     _rabbitmq,
+    _random_password,
     _step_ca_admin,
 )
 
@@ -63,8 +64,10 @@ async def _get_request(tenant_id: str, settings: Settings) -> dict[str, Any]:
     store = await load_store(settings)
     entry = store.get(tenant_id)
     if not entry:
-        raise HTTPException(status_code=404, detail=f"No JOIN request found for tenant '{tenant_id}'")
-    return entry
+        raise HTTPException(
+            status_code=404, detail=f"No JOIN request found for tenant '{tenant_id}'"
+        )
+    return cast(dict[str, Any], entry)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +119,9 @@ async def _kc_create_federation_client(
     payload = {
         "clientId": client_id,
         "name": f"CDM Federation – {tenant_id}",
-        "description": "OIDC client used by the Tenant Keycloak to federate against the CDM Provider.",
+        "description": (
+            "OIDC client used by the Tenant Keycloak to federate against the CDM Provider."
+        ),
         "enabled": True,
         "protocol": "openid-connect",
         "publicClient": False,
@@ -146,7 +151,10 @@ async def _kc_create_federation_client(
     if not resp.is_success:
         raise HTTPException(
             status_code=502,
-            detail=f"Keycloak federation client creation failed HTTP {resp.status_code}: {resp.text[:300]}",
+            detail=(
+                f"Keycloak federation client creation failed HTTP"
+                f" {resp.status_code}: {resp.text[:300]}"
+            ),
         )
     logger.info(
         "Keycloak federation client '%s' created in Provider cdm realm.", client_id
@@ -168,7 +176,7 @@ async def _fetch_root_ca_cert(settings: Settings) -> str:
         if not resp.is_success:
             logger.warning("Could not fetch root CA cert from step-ca: HTTP %s", resp.status_code)
             return ""
-    return resp.json().get("ca", "")
+    return str(resp.json().get("ca", ""))
 
 
 def _step_ca_client(settings: Settings) -> StepCAClient:
@@ -347,7 +355,11 @@ async def approve_join_request(
         await rmq.create_user(rmq_mqtt_user, "", tags="none")
         await rmq.set_permissions(rmq_mqtt_user, rmq_vhost)
         results["rabbitmq"] = "provisioned"
-        logger.info("RabbitMQ tenant '%s' provisioned (user: %s, EXTERNAL auth).", tenant_id, rmq_mqtt_user)
+        logger.info(
+            "RabbitMQ tenant '%s' provisioned (user: %s, EXTERNAL auth).",
+            tenant_id,
+            rmq_mqtt_user,
+        )
     except Exception as exc:  # noqa: BLE001
         errors["rabbitmq"] = str(exc)
         logger.error("RabbitMQ provisioning failed for '%s': %s", tenant_id, exc)
@@ -364,7 +376,9 @@ async def approve_join_request(
                 sans=[rmq_mqtt_user],
             )
             results["mqtt_bridge_cert"] = "signed"
-            logger.info("MQTT bridge cert for tenant '%s' signed (CN=%s).", tenant_id, rmq_mqtt_user)
+            logger.info(
+                "MQTT bridge cert for tenant '%s' signed (CN=%s).", tenant_id, rmq_mqtt_user
+            )
         except StepCAError as exc:
             errors["mqtt_bridge_cert"] = str(exc)
             logger.error("MQTT bridge cert signing failed for '%s': %s", tenant_id, exc)

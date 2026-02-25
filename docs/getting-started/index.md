@@ -9,12 +9,12 @@ Device enrollment and Tenant-Stack setup are covered in the follow-on pages.
 
 ```mermaid
 graph LR
-    PS[\"Provider-Stack\nCaddy · Keycloak · RabbitMQ\nInfluxDB · Grafana · step-ca\"]
-    TS[\"Tenant-Stack (Phase 2)\nThingsBoard · hawkBit\nWireGuard · Terminal Proxy\"]
-    DS[\"Device-Stack\nmqtt-client · telegraf\nrauc-updater · wireguard-client\"]
+    PS["Provider-Stack<br/>Caddy, Keycloak, RabbitMQ<br/>InfluxDB, Grafana, step-ca"]
+    TS["Tenant-Stack<br/>ThingsBoard, hawkBit<br/>WireGuard, Terminal Proxy"]
+    DS["Device-Stack<br/>mqtt-client, telegraf<br/>rauc-updater, wireguard-client"]
 
-    PS -- &quot;JOIN workflow&quot; --> TS
-    TS -- &quot;enroll + connect&quot; --> DS
+    PS -- "JOIN workflow" --> TS
+    TS -- "enroll + connect" --> DS
 ```
 
 ---
@@ -54,7 +54,7 @@ open http://localhost:8888/api/docs
 The Tenant-Stack (ThingsBoard, hawkBit, WireGuard) is deployed per customer in Phase 2 via
 the JOIN workflow.
 
-\u2192 See [Tenant-Stack Setup](../installation/tenant-stack.md) and [Tenant Onboarding](../use-cases/tenant-onboarding.md).
+→ See [Tenant-Stack Setup](../installation/tenant-stack.md) and [Tenant Onboarding](../use-cases/tenant-onboarding.md).
 
 ---
 

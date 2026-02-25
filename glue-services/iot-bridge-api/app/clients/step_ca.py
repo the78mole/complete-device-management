@@ -18,7 +18,7 @@ import base64
 import hashlib
 import json
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from cryptography import x509
@@ -239,14 +239,14 @@ class StepCAAdminClient:
             claims=claims,
         )
         token.make_signed_token(key)
-        return token.serialize()
+        return str(token.serialize())
 
     async def list_provisioners(self) -> list[dict]:
         """Return all provisioners registered in step-ca."""
         async with httpx.AsyncClient(verify=self._verify_tls) as client:
             resp = await client.get(f"{self._url}/1.0/provisioners", timeout=10.0)
             resp.raise_for_status()
-        return resp.json().get("provisioners", [])
+        return cast(list[dict], resp.json().get("provisioners", []))
 
     async def add_oidc_provisioner(
         self,
@@ -291,7 +291,7 @@ class StepCAAdminClient:
                 raise StepCAError(
                     f"step-ca add OIDC provisioner failed HTTP {resp.status_code}: {resp.text}"
                 )
-        return resp.json()
+        return cast(dict, resp.json())
 
     async def remove_provisioner(self, name: str) -> None:
         """Remove a provisioner by name (all types)."""

@@ -21,19 +21,19 @@ Tenant creation does the following in one call:
 
 from __future__ import annotations
 
-import json
 import logging
 import secrets
 import string
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from app.clients.join_store import load_store
 from app.clients.rabbitmq import RabbitMQClient, RabbitMQError
 from app.clients.step_ca import StepCAAdminClient, StepCAError
-from app.clients.join_store import load_store
 from app.config import Settings
 from app.deps import get_settings
 
@@ -56,7 +56,7 @@ def _get_cdm_admin(request: Request) -> dict | None:
         return None
     if not (set(user.get("roles", [])) & ADMIN_ROLES):
         return None
-    return user
+    return cast(dict[Any, Any], user)
 
 
 # ── Helper factories ─────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ async def _kc_admin_token(settings: Settings) -> str:
         )
     if not resp.is_success:
         raise RuntimeError(f"KC admin token failed HTTP {resp.status_code}: {resp.text[:200]}")
-    return resp.json()["access_token"]
+    return str(resp.json()["access_token"])
 
 
 async def _kc_realm_exists(realm_id: str, token: str, settings: Settings) -> bool:
@@ -163,12 +163,22 @@ async def _kc_fix_account_console(realm_id: str, token: str, settings: Settings)
             timeout=10,
         )
     if resp.status_code not in (201, 409):
-        logger.warning("Could not add account-audience mapper to realm '%s': HTTP %s", realm_id, resp.status_code)
+        logger.warning(
+            "Could not add account-audience mapper to realm '%s': HTTP %s",
+            realm_id,
+            resp.status_code,
+        )
     else:
-        logger.info("account-audience mapper added to realm '%s' account-console (HTTP %s)", realm_id, resp.status_code)
+        logger.info(
+            "account-audience mapper added to realm '%s' account-console (HTTP %s)",
+            realm_id,
+            resp.status_code,
+        )
 
 
-async def _kc_create_realm(realm_id: str, display_name: str, token: str, settings: Settings) -> None:
+async def _kc_create_realm(
+    realm_id: str, display_name: str, token: str, settings: Settings
+) -> None:
     """Create a Keycloak realm with standard CDM roles and the portal OIDC client."""
     realm_payload = {
         "id": realm_id,
@@ -228,7 +238,13 @@ async def _kc_create_realm(realm_id: str, display_name: str, token: str, setting
 
 
 async def _kc_create_user(
-    realm_id: str, username: str, email: str, password: str, roles: list[str], token: str, settings: Settings
+    realm_id: str,
+    username: str,
+    email: str,
+    password: str,
+    roles: list[str],
+    token: str,
+    settings: Settings,
 ) -> None:
     """Create a user in a Keycloak realm and assign realm roles."""
     user_payload = {

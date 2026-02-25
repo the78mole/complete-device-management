@@ -26,6 +26,7 @@ import base64
 import json
 import logging
 import secrets
+from typing import cast
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -49,7 +50,7 @@ VIEWER_ROLES   = {"cdm-viewer"}
 
 def _parse_tenants(settings: Settings) -> dict:
     try:
-        return json.loads(settings.portal_tenants_json)
+        return cast(dict, json.loads(settings.portal_tenants_json))
     except (json.JSONDecodeError, ValueError):
         logger.error("PORTAL_TENANTS_JSON is not valid JSON – using empty tenant list")
         return {}
@@ -65,7 +66,7 @@ def _decode_jwt_payload(token: str) -> dict:
     try:
         part = token.split(".")[1]
         part += "=" * (-len(part) % 4)  # pad base64
-        return json.loads(base64.urlsafe_b64decode(part))
+        return cast(dict, json.loads(base64.urlsafe_b64decode(part)))
     except Exception as exc:
         logger.warning("Failed to decode JWT payload: %s", exc)
         return {}

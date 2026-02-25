@@ -17,6 +17,7 @@ Access model
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import httpx
 
@@ -41,7 +42,7 @@ class RabbitMQClient:
         async with httpx.AsyncClient(verify=False) as client:
             resp = await client.get(f"{self._base}/vhosts", auth=self._auth, timeout=10)
             self._raise_for_status(resp, "list vhosts")
-        return resp.json()
+        return cast(list[dict], resp.json())
 
     async def create_vhost(self, name: str) -> None:
         """Create a virtual host.  Idempotent – no error if it already exists."""
@@ -75,7 +76,7 @@ class RabbitMQClient:
         async with httpx.AsyncClient(verify=False) as client:
             resp = await client.get(f"{self._base}/users", auth=self._auth, timeout=10)
             self._raise_for_status(resp, "list users")
-        return resp.json()
+        return cast(list[dict], resp.json())
 
     async def create_user(
         self,
@@ -145,7 +146,7 @@ class RabbitMQClient:
         if resp.status_code == 404:
             return []
         self._raise_for_status(resp, f"get permissions for '{username}'")
-        return resp.json()
+        return cast(list[dict], resp.json())
 
     # ── Convenience: full tenant setup ──────────────────────────────────────
 

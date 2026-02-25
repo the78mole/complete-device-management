@@ -4,8 +4,7 @@ from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.deps import get_settings
-from app.routers import enrollment, health, webhooks
-from app.routers import portal, admin_portal, join
+from app.routers import admin_portal, enrollment, health, join, portal, webhooks
 
 _settings = get_settings()
 

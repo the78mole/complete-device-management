@@ -40,7 +40,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from app.config import Settings
 
@@ -57,7 +57,7 @@ async def load_store(settings: Settings) -> dict[str, Any]:
     if not path.exists():
         return {}
     async with _store_lock:
-        return json.loads(path.read_text())
+        return cast(dict[str, Any], json.loads(path.read_text()))
 
 
 async def save_store(data: dict[str, Any], settings: Settings) -> None:
