@@ -78,14 +78,16 @@ step ca certificate "rabbitmq" \
   --provisioner "$STEP_CA_PROVISIONER_NAME" \
   --provisioner-password-file /tmp/provisioner-password.txt \
   --not-after 8760h \
-  --no-password \
-  --insecure \
   --force
 
 rm -f /tmp/provisioner-password.txt
 
-chmod 600 "$SERVER_KEY"
+chmod 640 "$SERVER_KEY"
 chmod 644 "$SERVER_CERT" "$CA_CERT"
+# RabbitMQ runs as GID 101 (rabbitmq) in the official alpine image.
+# Allow group-read so the key is accessible when the tls volume is
+# mounted read-only by the rabbitmq container.
+chown 0:101 "$SERVER_KEY" 2>/dev/null || true
 
 echo ">>> RabbitMQ TLS certificates written:"
 echo "    CA:  $CA_CERT"

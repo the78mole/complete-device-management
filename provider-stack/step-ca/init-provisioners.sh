@@ -43,16 +43,19 @@ step ca bootstrap \
 
 echo ""
 echo ">>> Adding JWK provisioner (leaf certs): $PROVISIONER_NAME ..."
-echo "$PROVISIONER_PASSWORD" | step ca provisioner add "$PROVISIONER_NAME" \
+printf '%s' "$PROVISIONER_PASSWORD" > /tmp/provisioner-password.txt
+step ca provisioner add "$PROVISIONER_NAME" \
   --type JWK \
   --create \
-  --password-file /dev/stdin \
+  --password-file /tmp/provisioner-password.txt \
+  --admin-subject step \
   --admin-provisioner "$ADMIN_PROVISIONER" \
   --admin-password-file /run/secrets/step-ca-password
 
 echo ">>> Attaching device-leaf template to $PROVISIONER_NAME ..."
 step ca provisioner update "$PROVISIONER_NAME" \
   --x509-template "$DEVICE_TEMPLATE" \
+  --admin-subject step \
   --admin-provisioner "$ADMIN_PROVISIONER" \
   --admin-password-file /run/secrets/step-ca-password
 
@@ -60,18 +63,23 @@ step ca provisioner update "$PROVISIONER_NAME" \
 
 echo ""
 echo ">>> Adding JWK provisioner (Sub-CA signer): $SUB_CA_PROVISIONER ..."
-echo "$SUB_CA_PASSWORD" | step ca provisioner add "$SUB_CA_PROVISIONER" \
+printf '%s' "$SUB_CA_PASSWORD" > /tmp/sub-ca-password.txt
+step ca provisioner add "$SUB_CA_PROVISIONER" \
   --type JWK \
   --create \
-  --password-file /dev/stdin \
+  --password-file /tmp/sub-ca-password.txt \
+  --admin-subject step \
   --admin-provisioner "$ADMIN_PROVISIONER" \
   --admin-password-file /run/secrets/step-ca-password
 
 echo ">>> Attaching tenant-sub-ca template to $SUB_CA_PROVISIONER ..."
 step ca provisioner update "$SUB_CA_PROVISIONER" \
   --x509-template "$SUB_CA_TEMPLATE" \
+  --admin-subject step \
   --admin-provisioner "$ADMIN_PROVISIONER" \
   --admin-password-file /run/secrets/step-ca-password
+
+rm -f /tmp/provisioner-password.txt /tmp/sub-ca-password.txt
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 

@@ -18,7 +18,9 @@
 
 - Workflow-Unterstützung für Tenant Commissioning/Shutdown/Suspend/Unsuspend/Decommissioning
 
+## Allgemeine Anmerkungen
 
+- step-ca soll auf ein TPM oder HSM zugreifen, um Schlüssel zu speichern oder die Key-Files zu verschlüsseln -> Audit-Log
 
 ## Allgemeine Fragen
 

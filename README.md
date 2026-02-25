@@ -9,6 +9,9 @@
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/the78mole/complete-device-management)
+[![Open in Dev Containers](https://img.shields.io/static/v1?label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/the78mole/complete-device-management)
+
 ---
 
 ## What Is This?
@@ -117,7 +120,6 @@ flowchart BT
 │   ├── monitoring/         # InfluxDB init, Grafana provisioning
 │   ├── rabbitmq/           # RabbitMQ config, vHost definitions
 │   └── step-ca/            # Root CA + ICA Dockerfile, cert templates
-├── cloud-infrastructure/   # Legacy monolithic stack – superseded by provider-stack/ + tenant-stack/; kept for reference
 ├── glue-services/
 │   ├── iot-bridge-api/     # FastAPI: PKI enrollment, TB webhook, WireGuard alloc
 │   └── terminal-proxy/     # Node.js/TS: JWT-validated WebSocket → ttyd proxy
@@ -135,9 +137,102 @@ flowchart BT
 
 ---
 
+## Development Environment
+
+The repository ships a fully configured **Dev Container** so you can explore and develop without installing anything locally — either in the browser via GitHub Codespaces or in your local VS Code.
+
+### GitHub Codespaces
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/the78mole/complete-device-management)
+
+Clicking the button above (or the one in the header) provisions a cloud VM with everything pre-installed:
+
+1. GitHub spins up an **Ubuntu 24.04** container with Docker CLI, Compose v2, and Python.
+2. Ports **8888**, **9090**, **8086**, **1883** and **8883** are forwarded automatically — the Ports panel in VS Code shows them with friendly labels.
+3. Port 8888 opens a browser tab automatically as soon as Caddy is reachable.
+4. Construct service URLs as:
+   ```
+   https://<codespace-name>-<port>.app.github.dev
+   ```
+   **Example:** `https://fuzzy-fishstick-abc123-8888.app.github.dev/`
+5. The environment variable `CODESPACE_NAME` is available inside the Codespace, so scripts can build URLs dynamically.
+
+> Port visibility is set to **public** for port 8888 by default so the landing page opens without an extra login step. Adjust `.devcontainer/devcontainer.json` → `portsAttributes` to `"visibility": "private"` in sensitive environments.
+
+### Local Dev Container (VS Code)
+
+[![Open in Dev Containers](https://img.shields.io/static/v1?label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/the78mole/complete-device-management)
+
+#### Linux
+
+Linux is the recommended host OS — Docker runs natively, volumes are fast, and no extra virtualisation layer is involved.
+
+1. Install [Docker Engine](https://docs.docker.com/engine/install/) (or Docker Desktop) and ensure your user is in the `docker` group:
+   ```bash
+   sudo usermod -aG docker $USER   # log out and back in afterwards
+   ```
+2. Install the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension in VS Code.
+3. Clone the repository:
+   ```bash
+   git clone https://github.com/the78mole/complete-device-management.git
+   code complete-device-management
+   ```
+4. Click **Reopen in Container** when prompted (or run **Dev Containers: Reopen in Container** from the Command Palette).
+5. VS Code builds the container from [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) and reopens the workspace inside it.
+
+#### macOS
+
+macOS works well with Docker Desktop. Performance is slightly lower than Linux due to the internal VM, but fully sufficient for development.
+
+1. Install [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/) (Apple Silicon and Intel both supported).
+2. Install the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension in VS Code.
+3. Clone the repository and open it in VS Code (same as Linux above).
+4. Click **Reopen in Container** when prompted.
+
+> **Tip:** In Docker Desktop → Settings → Resources, assign at least **6 GB RAM** and **4 CPUs** to the VM to keep the Provider-Stack responsive.
+
+#### Windows
+
+On Windows, Docker containers run inside WSL 2. The Dev Container setup handles this transparently, but a few extra steps are required first.
+
+1. Enable **WSL 2** and install a Linux distribution (Ubuntu 24.04 recommended):
+   ```powershell
+   wsl --install -d Ubuntu-24.04
+   ```
+2. Install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) and enable **Use the WSL 2 based engine** in Settings → General.
+3. In Docker Desktop → Settings → Resources → WSL Integration, enable Docker for your Ubuntu distribution.
+4. Install the [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension in VS Code.
+5. Open **VS Code** and run **WSL: Open Folder in WSL** to work inside your Ubuntu distribution (this avoids slow cross-filesystem I/O).
+6. Clone the repository inside WSL:
+   ```bash
+   git clone https://github.com/the78mole/complete-device-management.git
+   code complete-device-management   # opens VS Code connected to WSL
+   ```
+7. Click **Reopen in Container** when prompted.
+
+> **Important:** Always clone and open the repository from the WSL filesystem (`/home/<user>/...`), **not** from a Windows path (`/mnt/c/...`). Cross-filesystem mounts are significantly slower and can cause permission issues with Docker volumes.
+
+---
+
+The Dev Container provides the same tooling on all platforms:
+
+| Tool | Purpose |
+|---|---|
+| Docker CLI + Compose v2 | Build and run all Compose stacks (Docker-outside-of-Docker) |
+| Python (latest stable) | IoT Bridge API development, `ruff`, `mypy`, `pytest` |
+| Node.js (from PATH) | Terminal Proxy development |
+| Git (latest, built from source) | Version control |
+| `curl`, `wget`, `step` (via apt/path) | PKI operations, debugging |
+
+All port forwarding rules defined above apply identically to the local Dev Container.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
+
+> **Tip:** Skip all prerequisites by using the [Dev Container or Codespaces](#development-environment) above — Docker, Git and Python are already available.
 
 - Docker ≥ 24 + Docker Compose ≥ 2.20
 - `git`
@@ -204,7 +299,8 @@ then all other services start automatically.
 | InfluxDB | http://localhost:8086/ | admin / from `.env` |
 | step-ca | https://localhost:9000/health | — |
 
-> **Codespaces:** Replace `http://localhost:8888` with `https://<codespace-name>-8888.app.github.dev`.
+> **Codespaces:** Replace `http://localhost:8888` with `https://<codespace-name>-8888.app.github.dev`  
+> (your `CODESPACE_NAME` appears in the terminal as part of the shell prompt; ports are listed in the VS Code **Ports** panel).
 
 ---
 
