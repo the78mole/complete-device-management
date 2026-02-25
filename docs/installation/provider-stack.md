@@ -56,7 +56,8 @@ Open `.env` and set every value marked `# [CHANGE ME]`.  At a minimum:
 | `GRAFANA_OIDC_SECRET` | Grafana OIDC client secret (set after first Keycloak boot) |
 | `BRIDGE_OIDC_SECRET` | IoT Bridge API OIDC client secret |
 | `PROVIDER_OPERATOR_PASSWORD` | Initial password for `provider-operator` user |
-| `RABBITMQ_DEFAULT_PASS` | RabbitMQ admin password |
+| `RABBITMQ_ADMIN_PASSWORD` | RabbitMQ admin password |
+| `RABBITMQ_MANAGEMENT_OIDC_SECRET` | RabbitMQ Management OIDC client secret — copy from the `rabbitmq-management` client in the **`provider`** realm after first Keycloak boot |
 
 !!! danger "Secrets"
     Never commit your `.env` file.  It is listed in `.gitignore`.
@@ -123,17 +124,26 @@ boot, retrieve the auto-generated OIDC client secrets and add them to your `.env
 1. Open **http://localhost:8888/auth/admin/cdm/console/** and log in.
 2. For each client (`grafana`, `iot-bridge`, `portal`, `influxdb-proxy`):  
    **Clients → \<client\> → Credentials → copy Secret**.
-3. Update `.env`:
+3. Switch to the **`provider`** realm (**http://localhost:8888/auth/admin/provider/console/**).
+4. Navigate to **Clients → `rabbitmq-management` → Credentials → copy Secret**.
+5. Update `.env`:
    ```
-   GRAFANA_OIDC_SECRET=<from Keycloak>
-   BRIDGE_OIDC_SECRET=<from Keycloak>
-   PORTAL_OIDC_SECRET=<from Keycloak>
-   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak>
+   GRAFANA_OIDC_SECRET=<from Keycloak cdm realm>
+   BRIDGE_OIDC_SECRET=<from Keycloak cdm realm>
+   PORTAL_OIDC_SECRET=<from Keycloak cdm realm>
+   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak cdm realm>
+   RABBITMQ_MANAGEMENT_OIDC_SECRET=<from Keycloak provider realm>
    ```
-4. Restart the affected services:
+6. Restart the affected services:
    ```bash
-   docker compose restart iot-bridge-api grafana
+   docker compose restart iot-bridge-api grafana rabbitmq keycloak
    ```
+
+!!! info "RabbitMQ Management UI — SSO"
+    After setting `RABBITMQ_MANAGEMENT_OIDC_SECRET` and restarting, the RabbitMQ Management UI
+    at `/rabbitmq/` offers a **Sign in with Keycloak** button.  Users in the `provider` realm
+    with the `rabbitmq.tag:administrator` scope can log in via SSO without a separate local
+    RabbitMQ password.
 
 ### Grant superadmin cross-realm access
 
@@ -155,7 +165,7 @@ realms so you can manage them from the Keycloak Admin Console with a single logi
 | Keycloak Admin (cdm) | http://localhost:8888/auth/admin/cdm/console/ | `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` |
 | Keycloak Admin (provider) | http://localhost:8888/auth/admin/provider/console/ | same |
 | Grafana | http://localhost:8888/grafana/ | `admin` / `GRAFANA_ADMIN_PASSWORD` |
-| RabbitMQ Management | http://localhost:8888/rabbitmq/ | `admin` / `RABBITMQ_DEFAULT_PASS` |
+| RabbitMQ Management | http://localhost:8888/rabbitmq/ | SSO via Keycloak `provider` realm **or** `admin` / `RABBITMQ_ADMIN_PASSWORD` (Basic Auth) |
 | IoT Bridge API (Swagger) | http://localhost:8888/api/docs | — (requires OIDC JWT) |
 | InfluxDB | http://localhost:8086 | `admin` / `INFLUXDB_ADMIN_PASSWORD` |
 | step-ca | https://localhost:9000/health | — |

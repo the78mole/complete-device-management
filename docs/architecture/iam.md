@@ -14,7 +14,7 @@ Manages two realms:
 | Realm | Purpose | OIDC Clients |
 |---|---|---|
 | `cdm` | Platform services and cross-tenant SSO | `grafana`, `iot-bridge`, `portal`, `influxdb-proxy` |
-| `provider` | Platform operations staff | `grafana-broker` (Identity Provider link) |
+| `provider` | Platform operations staff | `grafana-broker` (Identity Provider link), `rabbitmq-management` (RabbitMQ SSO) |
 
 **`cdm` realm roles:**
 
@@ -82,6 +82,26 @@ When a tenant JOIN request is approved, the IoT Bridge API automatically:
 
 All `redirectUris` and `webOrigins` are set to `*` to support dynamic Codespaces hostnames.
 
+## OIDC Client Configuration (Provider `provider` realm)
+
+| Client ID | Service | Type | Secret env var |
+|---|---|---|---|
+| `rabbitmq-management` | RabbitMQ Management UI | confidential, standard flow | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
+
+The `rabbitmq-management` client provides five custom client scopes that map directly to
+RabbitMQ permissions:
+
+| Scope | RabbitMQ permission |
+|---|---|
+| `rabbitmq.tag:administrator` | Management UI admin tag |
+| `rabbitmq.read:*/*` | Read all resources |
+| `rabbitmq.write:*/*` | Write all resources |
+| `rabbitmq.configure:*/*` | Configure all resources |
+| `rabbitmq.tag:monitoring` | Read-only monitoring tag |
+
+All four non-monitoring scopes are assigned as default scopes so that `provider` realm users
+receive full administrator access to RabbitMQ on SSO login.
+
 > **Grafana — realm-roles mapper**: The `grafana` client has an `oidc-usermodel-realm-role-mapper`
 > that injects all realm roles as a flat array into the `roles` claim.  Grafana maps this to
 > its internal role via `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`.
@@ -106,15 +126,16 @@ All `redirectUris` and `webOrigins` are set to `*` to support dynamic Codespaces
 2. For each client, go to **Credentials** → copy or regenerate the **Secret**.
 3. Update `provider-stack/.env`:
    ```
-   GRAFANA_OIDC_SECRET=<from Keycloak>
-   BRIDGE_OIDC_SECRET=<from Keycloak>
-   PORTAL_OIDC_SECRET=<from Keycloak>
-   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak>
+   GRAFANA_OIDC_SECRET=<from Keycloak cdm realm>
+   BRIDGE_OIDC_SECRET=<from Keycloak cdm realm>
+   PORTAL_OIDC_SECRET=<from Keycloak cdm realm>
+   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak cdm realm>
+   RABBITMQ_MANAGEMENT_OIDC_SECRET=<from Keycloak provider realm → rabbitmq-management>
    ```
 4. Restart affected services:
    ```bash
    cd provider-stack
-   docker compose restart iot-bridge-api grafana
+   docker compose restart iot-bridge-api grafana rabbitmq keycloak
    ```
 
 ---
