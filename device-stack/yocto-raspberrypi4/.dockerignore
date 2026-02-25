@@ -1,0 +1,9 @@
+# Yocto build artefacts — never send to Docker daemon
+deploy/
+
+# Downloaded source archives and sstate-cache if stored locally
+downloads/
+sstate-cache/
+
+# Local env overrides
+.env

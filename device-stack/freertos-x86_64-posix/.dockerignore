@@ -1,0 +1,6 @@
+# CMake build directory and binary output — never send to daemon
+build/
+deploy/
+
+# Local env overrides
+.env

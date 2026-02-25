@@ -1,0 +1,56 @@
+#!/bin/sh
+# overlay/etc/init.d/S99cdm-enroll
+# SysV init script – runs CDM enrollment on first boot.
+#
+# Reads CDM parameters from the kernel command line (/proc/cmdline),
+# exports them as environment variables, then runs /usr/bin/enroll.sh
+# followed by a basic mTLS MQTT connectivity test (mosquitto_pub).
+
+case "$1" in
+start)
+    echo "Starting CDM enrollment..."
+
+    # Parse cdm.KEY=VALUE from /proc/cmdline
+    for param in $(cat /proc/cmdline); do
+        case "$param" in
+            cdm.device_id=*)          export DEVICE_ID="${param#cdm.device_id=}" ;;
+            cdm.device_type=*)        export DEVICE_TYPE="${param#cdm.device_type=}" ;;
+            cdm.tenant_id=*)          export TENANT_ID="${param#cdm.tenant_id=}" ;;
+            cdm.bridge_api_url=*)     export BRIDGE_API_URL="${param#cdm.bridge_api_url=}" ;;
+            cdm.step_ca_fingerprint=*)export STEP_CA_FINGERPRINT="${param#cdm.step_ca_fingerprint=}" ;;
+            cdm.thingsboard_host=*)   export THINGSBOARD_HOST="${param#cdm.thingsboard_host=}" ;;
+            cdm.thingsboard_mqtt_port=*) export THINGSBOARD_MQTT_PORT="${param#cdm.thingsboard_mqtt_port=}" ;;
+        esac
+    done
+
+    export CERTS_DIR="/persist/certs"
+    /usr/bin/enroll.sh
+
+    if [ $? -ne 0 ]; then
+        echo "CDM enrollment FAILED. Check logs." >&2
+        exit 1
+    fi
+
+    echo "CDM enrollment OK. Testing mTLS MQTT connectivity..."
+
+    # Minimal mTLS connectivity test: publish one message and exit.
+    mosquitto_pub \
+        --cafile "$CERTS_DIR/ca-chain.pem" \
+        --cert   "$CERTS_DIR/device.pem" \
+        --key    "$CERTS_DIR/device-key.pem" \
+        -h "$THINGSBOARD_HOST" \
+        -p "${THINGSBOARD_MQTT_PORT:-8883}" \
+        --tls-version tlsv1.2 \
+        -t "v1/devices/me/telemetry" \
+        -m "{\"enrolled\":true,\"platform\":\"qemu-x86_64\"}" \
+        -q 0 \
+        && echo "mTLS MQTT publish: OK" \
+        || echo "mTLS MQTT publish: FAILED (network not ready yet?)" >&2
+    ;;
+stop)
+    ;;
+*)
+    echo "Usage: $0 {start|stop}"
+    exit 1
+    ;;
+esac

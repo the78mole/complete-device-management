@@ -1,0 +1,5 @@
+# CMake out-of-tree build directory (native)
+build/
+
+# Build artefacts (written by 'make build' or 'docker run ... cdm-freertos-builder')
+deploy/

@@ -1,0 +1,4 @@
+deploy/
+downloads/
+sstate-cache/
+.env

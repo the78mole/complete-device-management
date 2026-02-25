@@ -1,0 +1,11 @@
+# Build artefacts (written by 'make image' or 'docker run ... cdm-qemu-builder')
+deploy/
+
+# Native Buildroot out-of-tree build directory
+output/
+
+# Downloaded Buildroot source tree
+buildroot-*/
+
+# Local env overrides
+.env
