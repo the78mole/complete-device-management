@@ -1,4 +1,8 @@
-# Cloud Infrastructure Setup
+# Cloud Infrastructure Setup (Archiv)
+
+!!! warning "Archiviert"
+    Diese Installationsanleitung beschreibt den veralteten monolithischen Stack (`cloud-infrastructure/`).
+    Er wurde durch [Provider-Stack](../installation/provider-stack.md) + [Tenant-Stack](../installation/tenant-stack.md) abgelöst.
 
 This guide walks you through starting all cloud-side services using Docker Compose.
 

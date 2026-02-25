@@ -55,6 +55,10 @@ nav = [
     { "Security Incident Response" = "use-cases/security-incident-response.md" },
     { "Troubleshooting" = "use-cases/troubleshooting.md" },
   ]},
+  { "Archive" = [
+    { "Legacy: cloud-infrastructure" = "archive/cloud-infrastructure.md" },
+    { "Legacy: Setup Guide" = "archive/cloud-infrastructure-setup.md" },
+  ]},
 ]
 
 # ── Theme ────────────────────────────────────────────────────────────────────
