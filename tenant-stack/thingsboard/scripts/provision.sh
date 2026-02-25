@@ -7,11 +7,11 @@
 #   3. Create an X.509 certificate-based device profile that uses the rule chain.
 #
 # Prerequisites:
-#   - All containers in cloud-infrastructure/docker-compose.yml are running.
-#   - This script is run from the cloud-infrastructure/ directory.
+#   - All containers in tenant-stack/docker-compose.yml are running.
+#   - This script is run from the tenant-stack/ directory.
 #
 # Usage:
-#   cd cloud-infrastructure
+#   cd tenant-stack
 #   ./thingsboard/scripts/provision.sh
 #
 # Environment variables (override via export or inline):

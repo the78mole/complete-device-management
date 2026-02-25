@@ -40,16 +40,15 @@ volumes:
 
 secrets:
   step-ca-password:
-    file: ../cloud-infrastructure/step-ca/password.txt
+    file: ./step-ca/password.txt
 
 # ─────────────────────────────────────────────────────────────────
 services:
 
   # ── step-ca (Root PKI) ──────────────────────────────────────────
   # Auto-creates Root CA + Intermediate CA on first boot.
-  # Build context is repo root so the Dockerfile can copy both
-  # cloud-infrastructure/step-ca/templates (shared) and
-  # provider-stack/step-ca/templates (sub-CA signer template).
+  # Build context is repo root so the Dockerfile can copy
+  # provider-stack/step-ca/templates/ (leaf cert + sub-CA signer templates).
   step-ca:
     build:
       context: ..

@@ -222,14 +222,19 @@ sich vollständig mit einer Tenant-Instanz (PKI, MQTT, WireGuard, OTA).
 
 ---
 
-### Phase 5 – Altstack entfernen & CI *(Abschluss)*
+### Phase 5 – Altstack entfernen & CI *(Abschluss)* ✅
+
+> **Status: abgeschlossen** — `cloud-infrastructure/` mit Deprecation-`README.md` versehen;
+> `README.md` auf neue Stack-Struktur umgestellt (Phase-2-Kennzeichnungen entfernt, Tenant-Stack
+> als vollständig dokumentiert); CI-Workflow auf `provider-stack/` + `tenant-stack/` +
+> `device-stack/` Compose-Validierung umgestellt (cloud-infrastructure entfernt).
 
 | Aufgabe | Details |
 |---|---|
-| `cloud-infrastructure/` auf Kompatibilitäts-Shim reduzieren oder entfernen | Nach erfolgreichem E2E-Test beider neuen Stacks |
-| README.md auf neue Stack-Struktur umstellen | `README.md` |
-| GitHub Actions / CI für beide Stacks (Lint, Build, Smoke-Test) | `.github/workflows/` |
-| Abschluss `docs/` (Phase-2-Platzhalter durch echte Inhalte ersetzen) | `docs/installation/tenant-stack.md`, `docs/use-cases/tenant-onboarding.md` |
+| `cloud-infrastructure/` auf Kompatibilitäts-Shim reduzieren oder entfernen | `cloud-infrastructure/README.md` mit Deprecation-Hinweis und Migrationsleitfaden erstellt |
+| README.md auf neue Stack-Struktur umstellen | Phase-2-Kennzeichnungen entfernt; Tenant-Stack-Quickstart-Schritt ergänzt; Mermaid-Diagram bereinigt |
+| GitHub Actions / CI für beide Stacks (Lint, Build, Smoke-Test) | `.github/workflows/ci.yml`: `validate-docker-compose` prüft jetzt `provider-stack/`, `tenant-stack/` und `device-stack/` (je mit `cp .env.example .env`) |
+| Abschluss `docs/` (Phase-2-Platzhalter durch echte Inhalte ersetzen) | `docs/installation/tenant-stack.md` und `docs/use-cases/tenant-onboarding.md` wurden in Phase 2 & 3 vollständig ausgefüllt |
 
 ---
 

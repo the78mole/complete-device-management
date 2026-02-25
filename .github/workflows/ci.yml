@@ -56,10 +56,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Validate cloud-infrastructure compose
-        run: docker compose -f cloud-infrastructure/docker-compose.yml config --quiet
+      - name: Validate provider-stack compose
+        working-directory: provider-stack
+        run: cp .env.example .env && docker compose config --quiet
+      - name: Validate tenant-stack compose
+        working-directory: tenant-stack
+        run: cp .env.example .env && docker compose config --quiet
       - name: Validate device-stack compose
-        run: docker compose -f device-stack/docker-compose.yml config --quiet
+        working-directory: device-stack
+        run: cp .env.example .env && docker compose config --quiet
 
   validate-configs:
     name: Validate configuration files

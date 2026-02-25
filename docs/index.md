@@ -143,12 +143,14 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 ├── .github/
 │   ├── workflows/          # CI + gh-pages deploy
 │   └── ISSUE_TEMPLATE/     # Bug & feature templates
-├── cloud-infrastructure/   # All cloud-side service configs & Dockerfiles
+├── provider-stack/         # Provider-side Compose stack (PKI, IAM, broker, management API)
+├── tenant-stack/           # Tenant-side Compose stack (ThingsBoard, hawkBit, WireGuard, ...)
+├── cloud-infrastructure/   # Legacy monolithic stack – superseded; kept for reference
 ├── glue-services/
 │   ├── iot-bridge-api/     # FastAPI: PKI enrollment, TB webhook, WireGuard allocation
 │   └── terminal-proxy/     # Node.js: JWT-validated WebSocket → ttyd proxy
 ├── device-stack/           # Edge device simulation (Docker Compose)
-└── docs/                   # This documentation (MkDocs source)
+└── docs/                   # This documentation (MkDocs/Zensical source)
 ```
 
 ---

@@ -283,7 +283,7 @@ services:
       TENANT_ADMIN_EMAIL: ${TENANT_ADMIN_EMAIL:-admin@tenant.example.com}
       TENANT_ADMIN_PASSWORD: ${TENANT_ADMIN_PASSWORD:-changeme}
     volumes:
-      - ../cloud-infrastructure/thingsboard/scripts:/provision:ro
+      - ./thingsboard/scripts:/provision:ro
     networks:
       - tenant-net
     depends_on:

@@ -77,19 +77,19 @@ npm run lint
 npm test
 ```
 
-#### Cloud infrastructure (Docker Compose)
+#### Provider-Stack & Tenant-Stack (Docker Compose)
 
 ```bash
-cd cloud-infrastructure
-cp .env.example .env   # fill in passwords
-docker compose up -d
+cd provider-stack && cp .env.example .env && docker compose up -d
+cd ../tenant-stack && cp .env.example .env && docker compose up -d
 ```
 
 Validate compose files without starting containers:
 
 ```bash
-docker compose -f cloud-infrastructure/docker-compose.yml config --quiet
-docker compose -f device-stack/docker-compose.yml config --quiet
+(cd provider-stack && cp .env.example .env && docker compose config --quiet)
+(cd tenant-stack  && cp .env.example .env && docker compose config --quiet)
+(cd device-stack  && cp .env.example .env && docker compose config --quiet)
 ```
 
 #### Documentation (MkDocs)
@@ -155,7 +155,9 @@ Keep the summary line under 72 characters. Use the body to explain *why*, not *w
    # Node
    npm run lint && npm test
    # Compose
-   docker compose -f cloud-infrastructure/docker-compose.yml config --quiet
+   (cd provider-stack && cp .env.example .env && docker compose config --quiet)
+   (cd tenant-stack  && cp .env.example .env && docker compose config --quiet)
+   (cd device-stack  && cp .env.example .env && docker compose config --quiet)
    # JSON
    find . -name "*.json" -not -path '*/.git/*' | xargs -I{} python3 -m json.tool {} > /dev/null
    ```

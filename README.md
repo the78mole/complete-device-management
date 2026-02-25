@@ -18,7 +18,7 @@
 The platform is split into two independently deployable stacks:
 
 - **Provider-Stack** — operated by the CDM platform team. Provides the trust anchor (Root CA, Keycloak `cdm` realm), central message broker (RabbitMQ) and platform-wide observability (InfluxDB, Grafana).
-- **Tenant-Stack** *(Phase 2)* — one stack per customer. Provides device-facing services: ThingsBoard MQTT, hawkBit OTA, WireGuard VPN, Terminal Proxy, and tenant-scoped telemetry.
+- **Tenant-Stack** — one stack per customer. Provides device-facing services: ThingsBoard MQTT, hawkBit OTA, WireGuard VPN, Terminal Proxy, and tenant-scoped telemetry.
 
 Key capabilities:
 
@@ -47,7 +47,7 @@ flowchart BT
         RMQ --> IDB_P --> GRF_P
     end
 
-    subgraph tenant[Tenant-Stack  Phase 2]
+    subgraph tenant[Tenant-Stack]
         KC_T[Keycloak\ntenant realm]
         TB[ThingsBoard MQTT]
         HB[hawkBit OTA]
@@ -117,7 +117,7 @@ flowchart BT
 │   ├── monitoring/         # InfluxDB init, Grafana provisioning
 │   ├── rabbitmq/           # RabbitMQ config, vHost definitions
 │   └── step-ca/            # Root CA + ICA Dockerfile, cert templates
-├── cloud-infrastructure/   # Legacy monolithic stack (pre-Phase 1.5, kept for reference)
+├── cloud-infrastructure/   # Legacy monolithic stack – superseded by provider-stack/ + tenant-stack/; kept for reference
 ├── glue-services/
 │   ├── iot-bridge-api/     # FastAPI: PKI enrollment, TB webhook, WireGuard alloc
 │   └── terminal-proxy/     # Node.js/TS: JWT-validated WebSocket → ttyd proxy
@@ -169,22 +169,30 @@ docker compose exec provider-step-ca step certificate fingerprint /home/step/cer
 
 Save this value — the Device-Stack needs it for enrollment.
 
-### 4. Simulate a Device *(requires Tenant-Stack)*
+### 4. Start a Tenant-Stack
 
-The Device-Stack enrolls against a Tenant step-ca Sub-CA.  Until the Tenant-Stack is
-available (Phase 2), you can run the bootstrap in demo mode:
+```bash
+cd ../tenant-stack
+cp .env.example .env
+# Edit .env – set TENANT_ID, TENANT_DISPLAY_NAME, EXTERNAL_URL at minimum
+docker compose up -d
+```
+
+See [Tenant-Stack Setup](https://the78mole.github.io/complete-device-management/installation/tenant-stack/) for the full step-by-step guide including Sub-CA initialisation and the JOIN workflow.
+
+### 5. Simulate a Device
 
 ```bash
 cd ../device-stack
 cp .env.example .env
-# Edit .env – DEVICE_ID=device-001, TENANT_API_URL=<tenant-iot-bridge-api>
+# Edit .env – DEVICE_ID=device-001, TENANT_API_URL=<tenant-iot-bridge-api-url>
 docker compose up
 ```
 
 The `bootstrap` container enrolls the device (generates key, signs cert via Tenant Sub-CA),
 then all other services start automatically.
 
-### 5. Access the Provider-Stack UIs
+### 6. Access the Provider-Stack UIs
 
 | Service | URL | Default Credentials |
 |---|---|---|

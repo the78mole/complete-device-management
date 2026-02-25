@@ -1,8 +1,7 @@
 FROM smallstep/step-ca:latest
 
 # Build context: repo root (set in docker-compose.yml)
-# Copy shared leaf templates from cloud-infrastructure, then provider-specific templates on top
-COPY --chown=step:step cloud-infrastructure/step-ca/templates/ /home/step/templates/
+# Copy all step-ca certificate templates (leaf certs + sub-CA signer template)
 COPY --chown=step:step provider-stack/step-ca/templates/ /home/step/templates/
 
 # Copy consolidated init script that adds both leaf-cert AND sub-CA provisioners

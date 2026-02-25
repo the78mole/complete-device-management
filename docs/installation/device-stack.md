@@ -6,8 +6,8 @@ The device stack simulates a Linux IoT device using Docker Compose. It models th
 
 ## Prerequisites
 
-- The [cloud infrastructure](cloud-infrastructure.md) must be running and healthy.
-- The `root_ca.crt` exported from step-ca must be available (see the cloud setup guide).
+- Either a [Provider-Stack](provider-stack.md) or a [Tenant-Stack](tenant-stack.md) must be running and healthy.
+- The `root_ca.crt` exported from the Tenant step-ca must be available (see the Tenant-Stack setup guide).
 - Docker and Docker Compose installed on the device (or simulation host).
 
 ---
