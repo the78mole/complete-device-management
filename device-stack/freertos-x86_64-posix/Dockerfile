@@ -16,7 +16,7 @@
 # ── Run the built binary directly ───────────────────────────────────────────
 #   BRIDGE_API_URL=http://... THINGSBOARD_HOST=... ./deploy/cdm-freertos-device
 
-FROM debian:12-slim
+FROM debian:13-slim
 
 # Host build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
