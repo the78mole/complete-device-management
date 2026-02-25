@@ -17,21 +17,21 @@ For a complete picture of how the two stacks relate, see [Architecture → Stack
 ```mermaid
 graph TB
     subgraph provider["Provider-Stack"]
-        KC_P["Keycloak\n(cdm + provider realms)"]
-        RMQ["RabbitMQ\n(central broker)"]
-        IDB_P["InfluxDB\n(platform metrics)"]
-        GRF_P["Grafana\n(platform dashboards)"]
-        SCA_P["step-ca\n(Root CA)"]
+        KC_P["Keycloak<br>(cdm + provider realms)"]
+        RMQ["RabbitMQ<br>(central broker)"]
+        IDB_P["InfluxDB<br>(platform metrics)"]
+        GRF_P["Grafana<br>(platform dashboards)"]
+        SCA_P["step-ca<br>(Root CA)"]
         IBA["IoT Bridge API"]
     end
 
     subgraph tenant["Tenant-Stack  ×N"]
-        KC_T["Keycloak\n(tenant realm)"]
-        TB["ThingsBoard\n(MQTT Broker + UI)"]
-        HB["hawkBit\n(OTA Campaigns)"]
-        SCA_T["step-ca\n(Sub-CA)"]
+        KC_T["Keycloak<br>(tenant realm)"]
+        TB["ThingsBoard<br>(MQTT Broker + UI)"]
+        HB["hawkBit<br>(OTA Campaigns)"]
+        SCA_T["step-ca<br>(Sub-CA)"]
         WGS["WireGuard Server"]
-        IDB_T["InfluxDB\n(device telemetry)"]
+        IDB_T["InfluxDB<br>(device telemetry)"]
         GRF_T["Grafana"]
         TXP["Terminal Proxy"]
 

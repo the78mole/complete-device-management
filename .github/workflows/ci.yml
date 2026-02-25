@@ -62,8 +62,8 @@ jobs:
       - name: Validate tenant-stack compose
         working-directory: tenant-stack
         run: cp .env.example .env && docker compose config --quiet
-      - name: Validate device-stack compose
-        working-directory: device-stack
+      - name: Validate device-stack (docker-based) compose
+        working-directory: device-stack/docker-based
         run: cp .env.example .env && docker compose config --quiet
 
   validate-configs:

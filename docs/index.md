@@ -145,7 +145,6 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 │   └── ISSUE_TEMPLATE/     # Bug & feature templates
 ├── provider-stack/         # Provider-side Compose stack (PKI, IAM, broker, management API)
 ├── tenant-stack/           # Tenant-side Compose stack (ThingsBoard, hawkBit, WireGuard, ...)
-├── cloud-infrastructure/   # Legacy monolithic stack – superseded; kept for reference
 ├── glue-services/
 │   ├── iot-bridge-api/     # FastAPI: PKI enrollment, TB webhook, WireGuard allocation
 │   └── terminal-proxy/     # Node.js: JWT-validated WebSocket → ttyd proxy

@@ -8,36 +8,64 @@
   // VS Code / Codespaces will automatically forward these ports and show them
   // in the Ports panel with the labels defined below.
   //
-  // Rules:
-  //   8888  – nginx reverse proxy (main entry point for almost everything)
-  //   9090  – ThingsBoard  (SPA: can't be sub-path proxied, needs direct port)
-  //   8086  – InfluxDB UI  (behind oauth2-proxy, same SPA limitation)
-  //   1883  – MQTT broker  (plain TCP – for device/tool connections)
-  //   8883  – MQTT TLS     (optional: TLS MQTT)
-  "forwardPorts": [8888, 9090, 8086, 1883, 8883],
+  // Port → Service mapping (both stacks share some port numbers):
+  //   8888  – Caddy reverse proxy     (provider-stack + tenant-stack, main entry)
+  //   8080  – Keycloak                (provider-stack + tenant-stack)
+  //   9000  – step-ca PKI             (provider-stack + tenant-stack)
+  //   8000  – IoT Bridge API          (provider-stack + tenant-stack, FastAPI)
+  //   9090  – ThingsBoard UI          (tenant-stack, direct port — SPA limitation)
+  //   8086  – InfluxDB / OAuth2 Proxy (provider-stack + tenant-stack, direct port)
+  //   1883  – RabbitMQ MQTT plain     (provider-stack)
+  //   5672  – RabbitMQ AMQP          (provider-stack)
+  //   8883  – MQTT TLS               (provider-stack RabbitMQ + tenant-stack ThingsBoard)
+  //   8090  – Terminal Proxy          (tenant-stack, WebSocket)
+  "forwardPorts": [8888, 8080, 9000, 8000, 9090, 8086, 1883, 5672, 8883, 8090],
 
   "portsAttributes": {
     "8888": {
-      "label": "CDM – nginx (Main)",
+      "label": "CDM – Caddy (Main Entrypoint)",
       "onAutoForward": "openBrowser",
       "protocol": "http"
     },
+    "8080": {
+      "label": "Keycloak",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    },
+    "9000": {
+      "label": "step-ca PKI",
+      "onAutoForward": "silent",
+      "protocol": "https"
+    },
+    "8000": {
+      "label": "IoT Bridge API (FastAPI)",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    },
     "9090": {
-      "label": "ThingsBoard",
+      "label": "ThingsBoard UI (tenant)",
       "onAutoForward": "notify",
       "protocol": "http"
     },
     "8086": {
-      "label": "InfluxDB (OAuth2 Proxy)",
+      "label": "InfluxDB / OAuth2 Proxy",
       "onAutoForward": "notify",
       "protocol": "http"
     },
     "1883": {
-      "label": "MQTT (plain)",
+      "label": "RabbitMQ MQTT (plain)",
+      "onAutoForward": "silent"
+    },
+    "5672": {
+      "label": "RabbitMQ AMQP",
       "onAutoForward": "silent"
     },
     "8883": {
-      "label": "MQTT TLS",
+      "label": "MQTT TLS (RabbitMQ / ThingsBoard)",
+      "onAutoForward": "silent"
+    },
+    "8090": {
+      "label": "Terminal Proxy (WebSocket, tenant)",
       "onAutoForward": "silent"
     }
   },
