@@ -11,28 +11,28 @@ the network boundaries between stacks, the trust relationships, and all communic
 graph TB
     subgraph provider["Provider-Stack  (CDM operator)"]
         CADDY_P["Caddy :8888 (entry point)"]
-        KC_P["Keycloak\n(realms: cdm, provider)"]
-        RMQ["RabbitMQ\n(vHost per tenant)"]
-        IDB_P["InfluxDB\n(provider metrics)"]
-        GRF_P["Grafana\n(platform dashboards)"]
-        SCA_P["step-ca\n(Root CA + Intermediate CA)"]
-        IBA["IoT Bridge API\n(management API)"]
+        KC_P["Keycloak<br>(realms: cdm, provider)"]
+        RMQ["RabbitMQ<br>(vHost per tenant)"]
+        IDB_P["InfluxDB<br>(provider metrics)"]
+        GRF_P["Grafana<br>(platform dashboards)"]
+        SCA_P["step-ca<br>(Root CA + Intermediate CA)"]
+        IBA["IoT Bridge API<br>(management API)"]
     end
 
     subgraph tenant["Tenant-Stack  (customer)  ×N"]
         CADDY_T["Caddy :8888 (entry point)"]
-        KC_T["Keycloak\n(tenant realm)"]
-        TB["ThingsBoard\n(device mgmt + MQTT)"]
-        HB["hawkBit\n(OTA campaigns)"]
-        SCA_T["step-ca\n(Issuing Sub-CA)"]
+        KC_T["Keycloak<br>(tenant realm)"]
+        TB["ThingsBoard<br>(device mgmt + MQTT)"]
+        HB["hawkBit<br>(OTA campaigns)"]
+        SCA_T["step-ca<br>(Issuing Sub-CA)"]
         WGS["WireGuard Server"]
         TXP["Terminal Proxy"]
-        IDB_T["InfluxDB\n(device telemetry)"]
-        GRF_T["Grafana\n(tenant dashboards)"]
+        IDB_T["InfluxDB<br>(device telemetry)"]
+        GRF_T["Grafana<br>(tenant dashboards)"]
     end
 
     subgraph device["Device-Stack  (edge)"]
-        BST["bootstrap\n(enroll.sh)"]
+        BST["bootstrap<br>(enroll.sh)"]
         MQC["mqtt-client"]
         WGC["wireguard-client"]
         TLG["telegraf"]
@@ -48,7 +48,7 @@ graph TB
     KC_T -->|"Identity Provider federation"| KC_P
 
     %% Tenant JOIN
-    IBA -->|"creates vHost + user,\nsigns Sub-CA CSR,\nregisters IdP"| tenant
+    IBA -->|"creates vHost + user,<br>signs Sub-CA CSR,<br>registers IdP"| tenant
 
     %% Device → Tenant-Stack
     MQC -->|"MQTTS mTLS"| TB
@@ -84,12 +84,12 @@ graph TB
 
 ```mermaid
 graph TD
-    RCA["Root CA\n(Provider-Stack step-ca)\n10-year · offline-safe"]
-    ICA["Intermediate CA\n(Provider-Stack step-ca)\n5-year · online"]
-    TSCA["Tenant Issuing Sub-CA\n(Tenant-Stack step-ca)\n2-year · per tenant"]
-    SVC["Provider Service Certs\n(serverAuth + clientAuth · 1-year)"]
-    DEV["Device Certs\n(clientAuth only · 24h–90d)"]
-    TSVC["Tenant Service Certs\n(serverAuth + clientAuth · 1-year)"]
+    RCA["Root CA<br>(Provider-Stack step-ca)<br>10-year · offline-safe"]
+    ICA["Intermediate CA<br>(Provider-Stack step-ca)<br>5-year · online"]
+    TSCA["Tenant Issuing Sub-CA<br>(Tenant-Stack step-ca)<br>2-year · per tenant"]
+    SVC["Provider Service Certs<br>(serverAuth + clientAuth · 1-year)"]
+    DEV["Device Certs<br>(clientAuth only · 24h–90d)"]
+    TSVC["Tenant Service Certs<br>(serverAuth + clientAuth · 1-year)"]
 
     RCA --> ICA
     ICA --> TSCA

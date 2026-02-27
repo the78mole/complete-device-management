@@ -64,14 +64,14 @@ ThingsBoard expects telemetry on topic `v1/devices/me/telemetry`:
 
 ```mermaid
 graph TD
-    OP["Operator (hawkBit UI)\ncreates Distribution Set + Rollout"]
+    OP["Operator (hawkBit UI)<br>creates Distribution Set + Rollout"]
     HB["hawkBit (Tenant-Stack)"]
     UPD[rauc-hawkbit-updater]
     DL[downloads artefact]
     INST["rauc install (inactive slot)"]
     REBOOT[reboot into new slot]
     RPT[reports success]
-    MQTT["MQTT publish → ThingsBoard\nsw_version · rauc_slot"]
+    MQTT["MQTT publish → ThingsBoard<br>sw_version · rauc_slot"]
 
     OP --> HB
     HB -->|"DDI poll (every 30 s)"| UPD
@@ -87,7 +87,7 @@ graph TD
 ```mermaid
 graph TD
     BR["Browser (ThingsBoard Terminal Widget)"]
-    TXP["Terminal Proxy (Tenant-Stack Node.js)\nvalidates JWT · resolves WireGuard IP"]
+    TXP["Terminal Proxy (Tenant-Stack Node.js)<br>validates JWT · resolves WireGuard IP"]
     TTD["ttyd on device (ws://10.8.0.2:7681)"]
     SH["/bin/bash (PTY)"]
 

@@ -52,9 +52,9 @@ Expected response:
 ```json
 {
   "device_id": "device-001",
-  "certificate_pem": "-----BEGIN CERTIFICATE-----\n...",
-  "ca_chain_pem": "-----BEGIN CERTIFICATE-----\n...",
-  "wireguard_config": "[Interface]\nPrivateKey = ...\n..."
+  "certificate_pem": "-----BEGIN CERTIFICATE-----<br>...",
+  "ca_chain_pem": "-----BEGIN CERTIFICATE-----<br>...",
+  "wireguard_config": "[Interface]<br>PrivateKey = ...<br>..."
 }
 ```
 

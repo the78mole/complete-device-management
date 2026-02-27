@@ -29,7 +29,7 @@ sequenceDiagram
     TA->>TS: docker compose up -d
     TS->>TS: generate Sub-CA key pair + CSR
     TS->>TS: generate MQTT bridge key pair + CSR
-    TS->>API: POST /portal/admin/join-request/{id}\n{ sub_ca_csr, mqtt_bridge_csr, wg_pubkey, display_name, keycloak_url }
+    TS->>API: POST /portal/admin/join-request/{id}<br>{ sub_ca_csr, mqtt_bridge_csr, wg_pubkey, display_name, keycloak_url }
     API-->>TS: HTTP 202 Accepted (status=pending)
     note over TS: polls /portal/admin/tenants/{id}/join-status every 60 s
     API->>PA: JOIN request visible in Admin Portal
@@ -41,11 +41,11 @@ sequenceDiagram
     API->>RMQ: create vHost /{id}, EXTERNAL user {id}-mqtt-bridge, permissions
     API->>KC: create OIDC client cdm-federation-{id} in Provider cdm realm
     KC-->>API: client_id + client_secret
-    API-->>TS: JOIN status = approved\n{ signed_cert, root_ca_cert, mqtt_bridge_cert, rabbitmq_*, cdm_idp_* }
+    API-->>TS: JOIN status = approved<br>{ signed_cert, root_ca_cert, mqtt_bridge_cert, rabbitmq_*, cdm_idp_* }
     TS->>TS: install Sub-CA cert + Root CA
     TS->>TS: install MQTT bridge cert+key → /home/step/mqtt-bridge/
     TS->>TS: write MQTTS connection config to join-bundle/rabbitmq.env
-    TS->>KC: POST /admin/realms/{id}/identity-provider/instances\nalias=cdm-provider (Provider cdm realm as OIDC IdP)
+    TS->>KC: POST /admin/realms/{id}/identity-provider/instances<br>alias=cdm-provider (Provider cdm realm as OIDC IdP)
     TS-->>TA: Tenant-Stack fully operational
 ```
 
@@ -196,8 +196,8 @@ docker compose exec ${TENANT_ID:-tenant}-step-ca \
 ```json
 {
   "display_name": "Acme Devices GmbH",
-  "sub_ca_csr": "-----BEGIN CERTIFICATE REQUEST-----\n...",
-  "mqtt_bridge_csr": "-----BEGIN CERTIFICATE REQUEST-----\n...",
+  "sub_ca_csr": "-----BEGIN CERTIFICATE REQUEST-----<br>...",
+  "mqtt_bridge_csr": "-----BEGIN CERTIFICATE REQUEST-----<br>...",
   "wg_pubkey": "<base64 WireGuard public key>",
   "keycloak_url": "https://acme-devices.example.com/auth"
 }
@@ -209,9 +209,9 @@ docker compose exec ${TENANT_ID:-tenant}-step-ca \
 {
   "tenant_id": "acme-devices",
   "status": "approved",
-  "signed_cert": "-----BEGIN CERTIFICATE-----\n...",
-  "root_ca_cert": "-----BEGIN CERTIFICATE-----\n...",
-  "mqtt_bridge_cert": "-----BEGIN CERTIFICATE-----\n...",
+  "signed_cert": "-----BEGIN CERTIFICATE-----<br>...",
+  "root_ca_cert": "-----BEGIN CERTIFICATE-----<br>...",
+  "mqtt_bridge_cert": "-----BEGIN CERTIFICATE-----<br>...",
   "rabbitmq_url": "http://rabbitmq:15672",
   "rabbitmq_vhost": "acme-devices",
   "rabbitmq_user": "acme-devices-mqtt-bridge",

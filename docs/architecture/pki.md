@@ -10,12 +10,12 @@ operational CAs.
 
 ```mermaid
 graph TD
-    RCA["Root CA\nProvider-Stack · self-signed · 10-year validity"]
-    ICA["Intermediate CA\nProvider-Stack · online · 5-year validity"]
-    TSCA["Tenant Issuing Sub-CA  ×N\nTenant-Stack · signed by Provider ICA · 2-year"]
-    SVC["Provider Service Certs\nserverAuth + clientAuth · 1-year"]
-    TSVC["Tenant Service Certs\nserverAuth + clientAuth · 1-year"]
-    DEV["Device Certs\nclientAuth only · configurable TTL"]
+    RCA["Root CA<br>Provider-Stack · self-signed · 10-year validity"]
+    ICA["Intermediate CA<br>Provider-Stack · online · 5-year validity"]
+    TSCA["Tenant Issuing Sub-CA  ×N<br>Tenant-Stack · signed by Provider ICA · 2-year"]
+    SVC["Provider Service Certs<br>serverAuth + clientAuth · 1-year"]
+    TSVC["Tenant Service Certs<br>serverAuth + clientAuth · 1-year"]
+    DEV["Device Certs<br>clientAuth only · configurable TTL"]
 
     RCA --> ICA
     ICA --> TSCA

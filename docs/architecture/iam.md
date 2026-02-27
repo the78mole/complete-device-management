@@ -62,7 +62,7 @@ graph LR
 
     TR1 -->|"Identity Provider federation"| CDM
     TR2 -->|"Identity Provider federation"| CDM
-    PROV -->|"grafana-broker client\n(Grafana provider login)"| CDM
+    PROV -->|"grafana-broker client<br>(Grafana provider login)"| CDM
 ```
 
 When a tenant JOIN request is approved, the IoT Bridge API automatically:
