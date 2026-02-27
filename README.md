@@ -36,10 +36,42 @@ Key capabilities:
 
 ## Architecture Overview
 
+### High Level Stack Architecture
+
+The Provider is running a provider instance, managing the Chain of trust, providing services and operations to tenants.
+
+```mermaid
+flowchart RL
+   subgraph provider[Provider Systems]
+      P[Provider-Stack]
+   end
+
+   subgraph tg1[Tentant ACME Controls]
+      T1[Tentant<br>Stack]
+      DA1[Device A1]
+      DA2[Device A2]
+      DA1 --> T1
+      DA2 --> T1
+   end
+   
+   subgraph tg2[Tentant XYZ Robotics]
+      T2[Tenant<br>Stack]
+      DB1[Device B1]
+      DB2[Device B2]
+      DB1 --> T2
+      DB2 --> T2
+   end
+
+   T1 --> P
+   T2 --> P
+```
+
+### Service Architecture
+
 ```mermaid
 flowchart BT
     subgraph provider[Provider-Stack]
-        KC[Keycloak IAM\ncdm + provider realms]
+        KC[Keycloak IAM<br>cdm + provider realms]
         SCA[step-ca Root CA]
         RMQ[RabbitMQ]
         IDB_P[InfluxDB]
@@ -51,7 +83,7 @@ flowchart BT
     end
 
     subgraph tenant[Tenant-Stack]
-        KC_T[Keycloak\ntenant realm]
+        KC_T[Keycloak<br>tenant realm]
         TB[ThingsBoard MQTT]
         HB[hawkBit OTA]
         SCA_T[step-ca Sub-CA]

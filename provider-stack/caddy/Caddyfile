@@ -33,6 +33,12 @@
             # Buffer large Keycloak response headers (JWTs, CSP, etc.)
             header_down -Server
             flush_interval -1
+            # Ensure Keycloak sees the correct external protocol/port,
+            # even when VS Code port-forwarding or Codespaces sets its own
+            # X-Forwarded-Port / X-Forwarded-Proto headers upstream.
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host  {host}
+            header_up -X-Forwarded-Port
         }
     }
 

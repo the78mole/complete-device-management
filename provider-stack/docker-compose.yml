@@ -119,6 +119,7 @@ services:
       KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
       KC_HTTP_PORT: 8080
+      KC_HOSTNAME: "${EXTERNAL_URL:-http://localhost:8888}/auth"
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_RELATIVE_PATH: /auth
       KC_PROXY_HEADERS: xforwarded
@@ -238,6 +239,25 @@ services:
       retries: 5
       start_period: 30s
 
+  # ── InfluxDB Token Injector ─────────────────────────────────────
+  # Caddy sidecar between oauth2-proxy and InfluxDB.
+  # Injects "Authorization: Token <INFLUX_TOKEN>" so InfluxDB accepts every
+  # request that already passed the oauth2-proxy without its own login screen.
+  influxdb-token-injector:
+    image: caddy:2-alpine
+    container_name: provider-influxdb-token-injector
+    restart: unless-stopped
+    command: caddy run --config /etc/caddy/Caddyfile
+    environment:
+      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+    volumes:
+      - ./monitoring/influxdb/token-injector/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - provider-net
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
   # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
   # Enforces Keycloak login before the InfluxDB web UI.
   # API paths bypass auth (service-to-service calls use InfluxDB tokens).
@@ -247,21 +267,28 @@ services:
     restart: unless-stopped
     environment:
       OAUTH2_PROXY_PROVIDER: oidc
-      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/auth/realms/cdm
+      # OIDC issuer URL must match the "iss" claim in tokens.
+      # Tokens are issued via Caddy (X-Forwarded headers) → external URL.
+      # --skip-oidc-discovery prevents the proxy from fetching the discovery
+      # document (which would return the internal keycloak:8080 hostname and
+      # override LOGIN_URL with an unreachable address for the browser).
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
       OAUTH2_PROXY_LOGIN_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
       OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
       OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
       OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
       OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
       OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
-      OAUTH2_PROXY_UPSTREAMS: http://influxdb:8086
+      OAUTH2_PROXY_UPSTREAMS: http://influxdb-token-injector:8087
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
       OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
       OAUTH2_PROXY_SCOPE: "openid profile email roles"
       OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
       OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
-      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_COOKIE_SECURE: "${INFLUX_PROXY_COOKIE_SECURE:-false}"
+      OAUTH2_PROXY_COOKIE_SAMESITE: "${INFLUX_PROXY_COOKIE_SAMESITE:-lax}"
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
       OAUTH2_PROXY_REVERSE_PROXY: "true"
     ports:
@@ -271,8 +298,8 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
-      influxdb:
-        condition: service_healthy
+      influxdb-token-injector:
+        condition: service_started
 
   # ── Grafana ──────────────────────────────────────────────────────
   grafana:
@@ -280,7 +307,7 @@ services:
     container_name: provider-grafana
     restart: unless-stopped
     environment:
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_ROOT_URL: "${EXTERNAL_URL:-http://localhost:8888}/grafana/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
       GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
