@@ -109,6 +109,12 @@ The `rabbitmq-management` client enables single-sign-on into the RabbitMQ manage
 for `provider` realm users.  The following Keycloak client scopes are registered in the
 `provider` realm and assigned as *default* scopes on `rabbitmq-management`:
 
+> **Important:** The standard OIDC scopes `openid`, `profile`, and `email` **must** exist
+> in the `provider` realm as client scopes (they are not auto-created by Keycloak on import).
+> Without them RabbitMQ shows `ErrorResponse: Invalid scopes: openid profile` when attempting
+> SSO login.  `realm-provider.json.tpl` defines these scopes; if they are missing from a
+> running deployment run the quick-fix below (→ Section 9).
+
 | Scope name | Grants |
 |---|---|
 | `rabbitmq.tag:administrator` | Full management UI access |
@@ -359,6 +365,64 @@ curl -sf -X POST -H "Authorization: Bearer $TOKEN" \
 | `"postLogoutRedirectUris": ["*"]` in a client | `Unrecognized field "postLogoutRedirectUris"` → crash | Use `"attributes": { "post.logout.redirect.uris": "*" }` |
 | System client (`account-console`, `account`, `broker`, …) included in `clients[]` | `ERROR: duplicate key value violates unique constraint` → crash loop | Remove from template; use `kcadm.sh` post-boot hook for custom config |
 | Using `jq` in KC container | `jq: command not found` | Use `python3 -c "import json…"` or `kcadm.sh` instead |
+
+### 7.5 `KC_HOSTNAME` must include the sub-path when using `KC_HTTP_RELATIVE_PATH`
+
+When `KC_HTTP_RELATIVE_PATH=/auth` is set (as in the provider-stack), `KC_HOSTNAME`
+**must** include the full path prefix:
+
+```yaml
+# docker-compose.yml — Keycloak service
+KC_HOSTNAME: "${EXTERNAL_URL:-http://localhost:8888}/auth"
+```
+
+If `KC_HOSTNAME` is set to the bare origin (`https://host:8888`) without `/auth`,
+Keycloak generates all static asset URLs and form-action targets without the prefix:
+
+- Asset URLs become `/resources/…` instead of `/auth/resources/…` → **404** → login page renders unstyled (black screen)
+- Form actions point to `/realms/…` instead of `/auth/realms/…` → POST fails
+
+In GitHub Codespaces the external URL changes per workspace.  Always set `EXTERNAL_URL`
+to the exact Codespaces origin, including the correct port segment
+(`https://<CODESPACE_NAME>-8888.app.github.dev`).
+
+### 7.6 Standard OIDC scopes (`openid`, `profile`, `email`) are not auto-created
+
+Keycloak does **not** automatically create the standard OIDC scopes when a realm is
+imported from JSON.  Services that request `scope=openid profile` (most standard OAuth2
+clients, including RabbitMQ Management) will fail with `Invalid scopes` if these scopes
+have not been explicitly defined in the realm's `clientScopes` list.
+
+`realm-provider.json.tpl` now includes full definitions for `openid`, `profile`, and
+`email` with the standard protocol mappers.  If they are missing from a running deployment:
+
+```bash
+source provider-stack/.env
+TOKEN=$(curl -sf -X POST \
+  "${EXTERNAL_URL}/auth/realms/master/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password&client_id=admin-cli&username=${KC_ADMIN_USER}&password=${KC_ADMIN_PASSWORD}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Create the scopes in the provider realm
+for SCOPE in openid profile email; do
+  curl -sf -X POST "${EXTERNAL_URL}/auth/admin/realms/provider/client-scopes" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"${SCOPE}\",\"protocol\":\"openid-connect\"}"
+done
+```
+
+Then assign the newly created scopes as default scopes to the `rabbitmq-management` client
+(see Section 5 — REST API patterns).
+
+### 7.7 python3 not available in the Keycloak container
+
+`provider-stack/keycloak/docker-entrypoint.sh` includes a background hook that uses
+`python3` for idempotent post-boot operations.  The Keycloak image (`quay.io/keycloak/keycloak`)
+does **not** ship `python3`; the warning `python3: command not found` in the container logs
+is harmless — the relevant operations are performed via `kcadm.sh` instead.  Do not add
+`python3` to the Keycloak image; use `kcadm.sh` for all in-container operations.
 
 ### 7.2 Account Console — 403 on `/account/?userProfileMetadata=true`
 

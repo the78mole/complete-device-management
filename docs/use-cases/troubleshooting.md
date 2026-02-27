@@ -78,7 +78,168 @@ If `STEP_CA_VERIFY_TLS=true`, set it to `false` for local dev, or mount the Root
 
 ---
 
-### Keycloak returns `Connection refused` from other services
+### Keycloak login page shows no CSS — black unstyled page
+
+**Cause:** `KC_HOSTNAME` is set to the bare origin (e.g. `https://host:8888`) without the `/auth` path suffix.  When `KC_HTTP_RELATIVE_PATH=/auth` is configured, Keycloak uses `KC_HOSTNAME` as the base for all generated URLs.  Without the path prefix, static assets are served at `/resources/…` (404) instead of `/auth/resources/…`, and form actions also lose the prefix.
+
+**Fix:** Ensure `KC_HOSTNAME` in `docker-compose.yml` includes `/auth`:
+
+```yaml
+# provider-stack/docker-compose.yml  — keycloak service
+KC_HOSTNAME: "${EXTERNAL_URL:-http://localhost:8888}/auth"
+```
+
+Rebuild and restart after the change:
+
+```bash
+cd provider-stack
+docker compose build keycloak
+docker compose up -d keycloak
+```
+
+---
+
+### oauth2-proxy "Rejecting invalid redirect" / "domain / port not in whitelist"
+
+**Cause:** `EXTERNAL_URL` or `INFLUX_EXTERNAL_URL` is set to `http://localhost:…` but the
+browser is accessing the service via a GitHub Codespaces URL (`*.app.github.dev`).
+oauth2-proxy validates redirect URIs against the configured allow-list.
+
+**Fix:** Update `.env` to the full Codespaces URLs:
+
+```dotenv
+EXTERNAL_URL=https://<CODESPACE_NAME>-8888.app.github.dev
+INFLUX_EXTERNAL_URL=https://<CODESPACE_NAME>-8086.app.github.dev
+INFLUX_PROXY_COOKIE_SECURE=true
+INFLUX_PROXY_COOKIE_SAMESITE=none
+```
+
+Then restart the affected proxies:
+
+```bash
+docker compose restart influxdb-proxy caddy
+```
+
+---
+
+### InfluxDB shows its own login screen after Keycloak authentication
+
+**Cause:** `oauth2-proxy` proxies to InfluxDB directly without providing an API token.
+InfluxDB has its own independent authentication layer and shows a native login form for
+unauthenticated requests.
+
+**Fix:** Ensure `OAUTH2_PROXY_UPSTREAMS` in `docker-compose.yml` points to the
+`influxdb-token-injector` sidecar, **not** to `influxdb:8086` directly:
+
+```yaml
+OAUTH2_PROXY_UPSTREAMS: http://influxdb-token-injector:8087
+```
+
+Also verify that the `influxdb-token-injector` container is running:
+
+```bash
+docker compose ps influxdb-token-injector
+# Should show: running
+docker compose logs influxdb-token-injector
+```
+
+---
+
+### RabbitMQ `bootstrap.js` returns HTTP 500
+
+**Error in browser console:**
+
+```
+GET /rabbitmq/js/bootstrap.js 500 Internal Server Error
+```
+
+**Error in RabbitMQ logs:**
+
+```
+no case clause matching <<"sp_initiated">>
+```
+
+**Cause:** The `oauth_initiated_logon_type` setting was removed in RabbitMQ 4.0.  If
+`advanced.config.tpl` still contains `{oauth_initiated_logon_type, <<"sp_initiated">>}`,
+the Erlang management plugin crashes on any request.
+
+**Fix:** Remove the line from `provider-stack/rabbitmq/advanced.config.tpl` and restart:
+
+```bash
+# Verify the option is gone
+grep -n "oauth_initiated_logon_type" provider-stack/rabbitmq/advanced.config.tpl
+# Should return nothing
+
+docker compose restart rabbitmq
+```
+
+---
+
+### RabbitMQ SSO: "ErrorResponse: Invalid scopes: openid profile"
+
+**Cause:** The `provider` Keycloak realm is missing the standard OIDC client scopes
+(`openid`, `profile`, `email`).  These are not auto-created on realm import — they must be
+explicitly defined in the realm JSON template.
+
+**Symptom:** After clicking the **Sign in with Keycloak** button, the login flow fails:
+
+```
+ErrorResponse: Invalid scopes: openid profile
+```
+
+**Fix (permanent — requires Keycloak rebuild):** Ensure `realm-provider.json.tpl` contains
+full definitions for `openid`, `profile`, and `email` in its `clientScopes` array and that
+these are listed in the `rabbitmq-management` client's `defaultClientScopes`.
+
+**Fix (live — without restarting Keycloak):** Create the scopes via the Admin REST API:
+
+```bash
+source provider-stack/.env
+
+TOKEN=$(curl -sf -X POST \
+  "${EXTERNAL_URL}/auth/realms/master/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password&client_id=admin-cli&username=${KC_ADMIN_USER}&password=${KC_ADMIN_PASSWORD}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+for SCOPE in openid profile email; do
+  curl -sf -X POST "${EXTERNAL_URL}/auth/admin/realms/provider/client-scopes" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"${SCOPE}\",\"protocol\":\"openid-connect\"}"
+  echo "Created: ${SCOPE}"
+done
+```
+
+Then assign the new scopes as default scopes to the `rabbitmq-management` client in the
+Keycloak Admin Console: **Realms → provider → Clients → rabbitmq-management → Client Scopes → Add client scope**.
+
+---
+
+### RabbitMQ SSO: "Unable to get OIDC configuration from …/keycloak:8080"
+
+**Cause:** In RabbitMQ 4.x, `oauth_provider_url` is forwarded directly to the browser for
+OIDC discovery.  An internal Docker hostname (`keycloak:8080`) cannot be resolved by the
+browser.
+
+**Fix:** Set `oauth_provider_url` to the browser-reachable external URL in
+`advanced.config.tpl`:
+
+```erlang
+{oauth_provider_url, "EXTERNAL_URL_PLACEHOLDER/auth/realms/provider"}
+```
+
+Also ensure the `issuer` in `rabbitmq_auth_backend_oauth2` matches the external URL (because
+`KC_HOSTNAME` stamps that URL into the `iss` claim of issued JWTs):
+
+```erlang
+{issuer, "EXTERNAL_URL_PLACEHOLDER/auth/realms/provider"}
+```
+
+The `EXTERNAL_URL_PLACEHOLDER` is replaced with `${EXTERNAL_URL}` by the RabbitMQ
+`docker-entrypoint.sh` at container start.
+
+---
 
 **Cause:** Services use the internal Docker hostname `provider-keycloak` (or `tenant-keycloak`), but the redirect URI was set to `localhost`.
 

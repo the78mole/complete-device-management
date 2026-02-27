@@ -77,4 +77,6 @@ running as Docker Compose stacks.
 ## Skill files
 
 - **Keycloak**: `.github/skills/cdm-keycloak/SKILL.md`
+- **RabbitMQ OAuth2/OIDC**: `.github/skills/cdm-rabbitmq/SKILL.md`
+- **InfluxDB OAuth2-Proxy & Token Injection**: `.github/skills/cdm-influxdb-proxy/SKILL.md`
 - **Zensical (docs)**: `.github/skills/zensical/SKILL.md`
