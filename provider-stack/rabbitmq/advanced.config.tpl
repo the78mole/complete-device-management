@@ -21,15 +21,15 @@
   %% Validates access tokens issued by the Keycloak provider realm.
   %% jwks_url: JWKS endpoint used to verify token signatures (server-to-server,
   %%           internal Docker hostname – avoids TLS issues).
-  %% issuer:   Expected "iss" claim in tokens for additional validation.
-  %%           Note: cuttlefish (rabbitmq.conf) enforces HTTPS on this setting;
-  %%           advanced.config bypasses that restriction for HTTP dev setups.
+  %% issuer:   Expected "iss" claim in JWTs. Since KC_HOSTNAME is set to the
+  %%           external URL, Keycloak stamps tokens with the external issuer
+  %%           (not the internal keycloak:8080) → must match EXTERNAL_URL here.
   {rabbitmq_auth_backend_oauth2, [
     {resource_server_id, <<"rabbitmq">>},
     {key_config, [
       {jwks_url, <<"http://keycloak:8080/auth/realms/provider/protocol/openid-connect/certs">>}
     ]},
-    {issuer, <<"http://keycloak:8080/auth/realms/provider">>},
+    {issuer, <<"EXTERNAL_URL_PLACEHOLDER/auth/realms/provider">>},
     {algorithms, [<<"RS256">>]},
     %% Use preferred_username from the JWT payload as the RabbitMQ user name
     %% so the management UI shows the Keycloak username instead of the sub UUID.
@@ -37,17 +37,22 @@
   ]},
 
   %% ── Management UI – OAuth2/OIDC single-sign-on ──────────────────────────
-  %% oauth_provider_url            → internal Keycloak URL for OIDC discovery
-  %%                                 (token/JWKS endpoint, server-to-server)
-  %% oauth_authorization_endpoint  → browser-facing Keycloak auth URL via Caddy
-  %%                                 (external URL, supports Codespaces forwarding)
+  %% oauth_provider_url:           → browser-facing Keycloak URL via Caddy
+  %%                                 (external URL with /auth prefix, supports
+  %%                                 Codespaces forwarding). RabbitMQ 4.x uses
+  %%                                 this URL directly for OIDC discovery and
+  %%                                 the authorization redirect – must be the
+  %%                                 URL the browser can actually reach.
+  %%                                 Note: token validation (JWKS) stays on the
+  %%                                 internal keycloak:8080 via rabbitmq_auth_
+  %%                                 backend_oauth2 → key_config above.
   {rabbitmq_management, [
     {oauth_enabled,                 true},
     {oauth_client_id,               <<"rabbitmq-management">>},
     {oauth_client_secret,           <<"RABBITMQ_MANAGEMENT_OIDC_SECRET_PLACEHOLDER">>},
-    {oauth_provider_url,            <<"http://keycloak:8080/auth/realms/provider">>},
-    {oauth_authorization_endpoint,  <<"EXTERNAL_URL_PLACEHOLDER/auth/realms/provider/protocol/openid-connect/auth">>},
-    {oauth_scopes,                  <<"openid profile">>},
-    {oauth_initiated_logon_type,    <<"sp_initiated">>}
+    {oauth_provider_url,            <<"EXTERNAL_URL_PLACEHOLDER/auth/realms/provider">>},
+    {oauth_scopes,                  <<"openid profile">>}
+    %% Note: oauth_initiated_logon_type was removed in RabbitMQ 4.x
+    %% (SP-initiated flow is now the default and only supported mode).
   ]}
 ].

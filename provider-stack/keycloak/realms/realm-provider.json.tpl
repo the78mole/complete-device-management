@@ -53,6 +53,45 @@
   ],
   "clientScopes": [
     {
+      "name": "openid",
+      "description": "OpenID Connect built-in scope – signals that an ID token should be returned",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "profile",
+      "description": "OpenID Connect built-in scope – adds standard profile claims (name, username, etc.)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" },
+      "protocolMappers": [
+        { "name": "username", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": { "claim.name": "preferred_username", "user.attribute": "username",
+                      "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "jsonType.label": "String" }},
+        { "name": "full name", "protocol": "openid-connect", "protocolMapper": "oidc-full-name-mapper",
+          "config": { "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true" }},
+        { "name": "given name", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": { "claim.name": "given_name", "user.attribute": "firstName",
+                      "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "jsonType.label": "String" }},
+        { "name": "family name", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": { "claim.name": "family_name", "user.attribute": "lastName",
+                      "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "jsonType.label": "String" }}
+      ]
+    },
+    {
+      "name": "email",
+      "description": "OpenID Connect built-in scope – adds email claim",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" },
+      "protocolMappers": [
+        { "name": "email", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": { "claim.name": "email", "user.attribute": "email",
+                      "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "jsonType.label": "String" }},
+        { "name": "email verified", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": { "claim.name": "email_verified", "user.attribute": "emailVerified",
+                      "id.token.claim": "true", "access.token.claim": "true", "userinfo.token.claim": "true", "jsonType.label": "boolean" }}
+      ]
+    },
+    {
       "name": "rabbitmq.tag:administrator",
       "description": "RabbitMQ management tag: administrator",
       "protocol": "openid-connect",
@@ -114,6 +153,9 @@
       "directAccessGrantsEnabled": true,
       "attributes": { "post.logout.redirect.uris": "*" },
       "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email",
         "rabbitmq.tag:administrator",
         "rabbitmq.read:*/*",
         "rabbitmq.write:*/*",
