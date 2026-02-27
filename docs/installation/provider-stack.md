@@ -1,20 +1,24 @@
 # Provider-Stack Setup
 
-This guide walks you through starting all provider-side services using Docker Compose.
 The Provider-Stack is the **trust anchor** of the entire CDM platform: it hosts the Root CA,
-the central MQTT broker, and the management API that tenant stacks register against.
+the central MQTT broker, and the management API that Tenant-Stacks register against.
 
-!!! tip "GitHub Codespaces"
-    The fastest way to evaluate the platform is via the **Open in Codespaces** button in
-    the repository README.  Codespaces automatically forwards all required ports through
-    the `CODESPACE_NAME` URL scheme.  All scripts default to `http://localhost:8888`; in
-    Codespaces replace that with the forwarded URL shown in the **Ports** tab.
+This guide covers three deployment modes.  Choose the one that matches your situation:
+
+| Mode | When to use |
+|---|---|
+| [A — Development (DevContainer / Codespaces)](#mode-a-development-devcontainer--codespaces) | Evaluating, developing, running demos — no real domain needed |
+| [B — Test / On-Prem (no public domain)](#mode-b-test--on-prem-no-public-domain) | Internal server, team testing — domain is optional |
+| [C — Production (real domain + Let's Encrypt)](#mode-c-production-real-domain--lets-encrypt) | Public deployment, customer-facing — HTTPS via Let's Encrypt |
+
+All three modes share the same [common post-setup steps](#common-post-setup-steps) once the
+containers are running.
 
 ---
 
 ## Prerequisites
 
-| Requirement | Minimum Version | Notes |
+| Requirement | Min version | Notes |
 |---|---|---|
 | Docker | 24.x | |
 | Docker Compose | 2.20 | Ships with Docker Desktop |
@@ -22,75 +26,80 @@ the central MQTT broker, and the management API that tenant stacks register agai
 | Disk | 10 GB free | InfluxDB data grows over time |
 | OS | Linux (amd64) | macOS works for development; Windows via WSL 2 |
 | `git` | 2.40+ | |
-| `step` CLI | 0.25+ | Required on the host only if you manage certs manually |
+| `step` CLI | 0.25+ | Host-side cert inspection only; not required inside containers |
 
 ---
 
-## 1. Clone the Repository
+## Mode A — Development (DevContainer / Codespaces)
+
+The fastest path.  No domain, no TLS — Caddy runs on plain HTTP port 8888.  In GitHub
+Codespaces the port is automatically forwarded via a `*.app.github.dev` URL.
+
+### A1 — Clone and enter the stack
 
 ```bash
 git clone https://github.com/the78mole/complete-device-management.git
 cd complete-device-management/provider-stack
 ```
 
----
-
-## 2. Configure Environment Variables
+### A2 — Create `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and set every value marked `# [CHANGE ME]`.  At a minimum:
+Minimal changes for **localhost**:
 
-| Variable | Description |
-|---|---|
-| `EXTERNAL_URL` | Browser-facing base URL (e.g. `http://localhost:8888`). **In GitHub Codespaces** set to the full forwarded URL: `https://<CODESPACE_NAME>-8888.app.github.dev` |
-| `INFLUX_EXTERNAL_URL` | Browser-facing URL for the InfluxDB port. **In GitHub Codespaces:** `https://<CODESPACE_NAME>-8086.app.github.dev` |
-| `POSTGRES_PASSWORD` | Password for the Keycloak PostgreSQL instance |
-| `KC_ADMIN_USER` | Keycloak bootstrap admin username (default: `admin`) |
-| `KC_ADMIN_PASSWORD` | Keycloak bootstrap admin password |
-| `GRAFANA_ADMIN_PASSWORD` | Grafana admin password |
-| `INFLUXDB_ADMIN_PASSWORD` | InfluxDB admin password |
-| `INFLUXDB_ADMIN_TOKEN` | InfluxDB API token — also used by `influxdb-token-injector` for transparent backend auth |
-| `STEP_CA_PASSWORD` | step-ca Root CA key encryption password |
-| `STEP_CA_PROVISIONER_PASSWORD` | Password for the JWK provisioner |
-| `GRAFANA_OIDC_SECRET` | Grafana OIDC client secret (set after first Keycloak boot) |
-| `BRIDGE_OIDC_SECRET` | IoT Bridge API OIDC client secret |
-| `INFLUXDB_PROXY_OIDC_SECRET` | InfluxDB oauth2-proxy OIDC client secret — copy from the `influxdb-proxy` client in the **`cdm`** realm after first Keycloak boot |
-| `PROVIDER_OPERATOR_PASSWORD` | Initial password for `provider-operator` user |
-| `RABBITMQ_ADMIN_PASSWORD` | RabbitMQ admin password (local fallback; SSO is preferred) |
-| `RABBITMQ_MANAGEMENT_OIDC_SECRET` | RabbitMQ Management OIDC client secret — copy from the `rabbitmq-management` client in the **`provider`** realm after first Keycloak boot |
-| `INFLUX_PROXY_COOKIE_SECURE` | `false` (localhost) / `true` (HTTPS/Codespaces) — controls the `Secure` flag on oauth2-proxy session cookies |
-| `INFLUX_PROXY_COOKIE_SAMESITE` | `lax` (localhost) / `none` (HTTPS/Codespaces) — must be `none` for cross-origin Codespaces redirects |
+```dotenv
+EXTERNAL_URL=http://localhost:8888
+INFLUX_EXTERNAL_URL=http://localhost:8086
+CADDY_SITE_ADDRESS=       # empty → Caddy listens on :8888
+CADDY_AUTO_HTTPS=off
+# Change all secrets:
+KC_ADMIN_PASSWORD=<strong-password>
+KC_DB_PASSWORD=<strong-password>
+STEP_CA_PASSWORD=<strong-password>
+STEP_CA_PROVISIONER_PASSWORD=<strong-password>
+RABBITMQ_ADMIN_PASSWORD=<strong-password>
+INFLUX_ADMIN_PASSWORD=<strong-password>    # min 8 chars
+INFLUX_TOKEN=<random-token>
+INFLUX_PROXY_COOKIE_SECRET=$(openssl rand -hex 32)
+```
 
-!!! tip "GitHub Codespaces"
-    When running in Codespaces, `EXTERNAL_URL` and `INFLUX_EXTERNAL_URL` **must** be set to
-    the Codespaces-forwarded URLs (`*.app.github.dev`).  Using `localhost` causes `oauth2-proxy`
-    to reject redirects and Keycloak to generate broken asset URLs.  Also set
-    `INFLUX_PROXY_COOKIE_SECURE=true` and `INFLUX_PROXY_COOKIE_SAMESITE=none`.
+For **GitHub Codespaces**, additionally:
 
-!!! danger "Secrets"
-    Never commit your `.env` file.  It is listed in `.gitignore`.
+```dotenv
+EXTERNAL_URL=https://<CODESPACE_NAME>-8888.app.github.dev
+INFLUX_EXTERNAL_URL=https://<CODESPACE_NAME>-8086.app.github.dev
+INFLUX_PROXY_COOKIE_SECURE=true
+INFLUX_PROXY_COOKIE_SAMESITE=none
+```
 
----
+!!! tip "Find your Codespace name"
+    Run `echo $CODESPACE_NAME` in the terminal, or read the forwarded URLs from the
+    **Ports** tab in the VS Code sidebar.
 
-## 3. Start the Stack
+!!! info "OIDC secrets on first boot"
+    `GRAFANA_OIDC_SECRET`, `BRIDGE_OIDC_SECRET`, `INFLUXDB_PROXY_OIDC_SECRET`, and
+    `RABBITMQ_MANAGEMENT_OIDC_SECRET` can remain as `changeme` for the initial start.
+    You will copy the real Keycloak-generated values in step [A5](#a5----retrieve-oidc-secrets).
+
+!!! danger "Never commit `.env`"
+    The file is listed in `.gitignore`.  Keep it out of version control.
+
+### A3 — Start the stack
 
 ```bash
 docker compose up -d
 ```
 
-Services start in dependency order.  `step-ca` initialises first (generates Root CA and
-Intermediate CA on first boot), then the remaining services start.
-
-Check that all containers are running:
+Wait ~60 s (Keycloak needs up to 90 s on first boot), then check:
 
 ```bash
 docker compose ps
 ```
 
-Expected output — every service should show `healthy` or `running`:
+Every container should show `healthy` or `running`:
 
 ```
 NAME                                STATUS
@@ -107,103 +116,221 @@ provider-iot-bridge-api             running (healthy)
 provider-caddy                      running (healthy)
 ```
 
----
-
-## 4. Retrieve the step-ca Root CA Fingerprint
-
-Tenant-Stacks and devices need to trust the Root CA.  Export the fingerprint with:
+### A4 — Initialise PKI provisioners (run once)
 
 ```bash
-docker compose exec step-ca step ca fingerprint
+docker compose exec step-ca /usr/local/bin/init-provisioners.sh
 ```
 
-Save this value as `STEP_CA_FINGERPRINT` — you will need it when setting up Tenant-Stacks
-and enrolling devices.
+The script prints the Root CA fingerprint at the end.  Save it in `.env`:
 
-To export the PEM certificate:
+```dotenv
+STEP_CA_FINGERPRINT=<printed value>
+```
+
+### A5 — Retrieve OIDC secrets
+
+1. Open `${EXTERNAL_URL}/auth/admin/cdm/console/` and log in with `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD`.
+2. Copy the client secret for each entry below (**Clients → `<id>` → Credentials → copy Secret**):
+
+   | Realm | Client ID | `.env` variable |
+   |---|---|---|
+   | `cdm` | `grafana` | `GRAFANA_OIDC_SECRET` |
+   | `cdm` | `iot-bridge` | `BRIDGE_OIDC_SECRET` |
+   | `cdm` | `portal` | `PORTAL_OIDC_SECRET` |
+   | `cdm` | `influxdb-proxy` | `INFLUXDB_PROXY_OIDC_SECRET` |
+   | `provider` | `rabbitmq-management` | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
+
+3. Update `.env` and restart affected services:
 
 ```bash
-docker compose exec step-ca step ca root /tmp/root_ca.crt
-docker compose cp step-ca:/tmp/root_ca.crt ./root_ca.crt
+docker compose restart keycloak grafana iot-bridge-api rabbitmq
 ```
 
----
-
-## 5. Finalise Keycloak Configuration
-
-Keycloak is pre-seeded with the `cdm` and `provider` realms from templates.  After first
-boot, retrieve the auto-generated OIDC client secrets and add them to your `.env`:
-
-1. Open **`${EXTERNAL_URL}/auth/admin/cdm/console/`** and log in.
-2. For each client (`grafana`, `iot-bridge`, `portal`, `influxdb-proxy`):  
-   **Clients → \<client\> → Credentials → copy Secret**.
-3. Switch to the **`provider`** realm (**`${EXTERNAL_URL}/auth/admin/provider/console/`**).
-4. Navigate to **Clients → `rabbitmq-management` → Credentials → copy Secret**.
-5. Update `.env`:
-   ```
-   GRAFANA_OIDC_SECRET=<from Keycloak cdm realm>
-   BRIDGE_OIDC_SECRET=<from Keycloak cdm realm>
-   PORTAL_OIDC_SECRET=<from Keycloak cdm realm>
-   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak cdm realm>
-   RABBITMQ_MANAGEMENT_OIDC_SECRET=<from Keycloak provider realm>
-   ```
-6. Restart the affected services:
-   ```bash
-   docker compose restart iot-bridge-api grafana rabbitmq keycloak
-   ```
-
-!!! info "RabbitMQ Management UI — SSO"
-    After setting `RABBITMQ_MANAGEMENT_OIDC_SECRET` and restarting, the RabbitMQ Management UI
-    at `/rabbitmq/` offers a **Sign in with Keycloak** button.  Users in the `provider` realm
-    with the `rabbitmq.tag:administrator` scope can log in via SSO without a separate local
-    RabbitMQ password.
-
-### Grant superadmin cross-realm access
+### A6 — Grant superadmin cross-realm access
 
 ```bash
 source .env
 bash keycloak/init-tenants.sh
 ```
 
-This grants the `${KC_ADMIN_USER}` account `realm-admin` rights on the `cdm` and `provider`
-realms so you can manage them from the Keycloak Admin Console with a single login.
+✅ The stack is fully operational.  Jump to [Verify Service Health](#verify-service-health).
 
 ---
 
-## 6. Verify Service Health
+## Mode B — Test / On-Prem (no public domain)
 
-| Service | URL | Default credentials |
+Running on a bare server (VM, NUC, cloud instance) without a public FQDN.
+Caddy serves plain HTTP on a configurable port; TLS is not required.
+
+### B1 — Clone, create `.env`
+
+Follow [A1](#a1----clone-and-enter-the-stack) and [A2](#a2----create-env), then set:
+
+```dotenv
+# Replace with the actual server IP or internal DNS name
+EXTERNAL_URL=http://192.168.1.100:8888      # or http://cdm.internal:8888
+INFLUX_EXTERNAL_URL=http://192.168.1.100:8086
+CADDY_SITE_ADDRESS=       # empty → plain HTTP :8888
+CADDY_AUTO_HTTPS=off
+```
+
+Use `openssl rand -hex 16` / `openssl rand -hex 32` for every secret — never use
+`changeme` in a shared environment.
+
+### B2 — Open firewall ports
+
+```bash
+ufw allow 8888/tcp   # CDM Dashboard / Caddy
+ufw allow 8086/tcp   # InfluxDB proxy (direct)
+ufw allow 9000/tcp   # step-ca (optional; needed by Tenant-Stacks connecting from another host)
+```
+
+### B3 — Start, PKI, OIDC, init-tenants
+
+Follow steps [A3](#a3----start-the-stack) → [A4](#a4----initialise-pki-provisioners-run-once) → [A5](#a5----retrieve-oidc-secrets) → [A6](#a6----grant-superadmin-cross-realm-access),
+substituting `localhost` with your server IP or hostname.
+
+---
+
+## Mode C — Production (real domain + Let's Encrypt)
+
+Caddy obtains a TLS certificate from Let's Encrypt automatically.  Requirements:
+
+- A publicly reachable FQDN pointing to the server (e.g. `cdm.example.com`)
+- Ports **80** and **443** open from the internet (for ACME HTTP-01 challenge)
+- A valid e-mail address for Let's Encrypt expiry notifications
+
+!!! warning "Port 80 must be reachable"
+    Caddy uses ACME HTTP-01 to prove domain ownership.  Port 80 must be reachable from
+    Let's Encrypt servers even if you redirect HTTP → HTTPS afterwards.
+
+### C1 — Clone and enter the stack
+
+Follow [A1](#a1----clone-and-enter-the-stack).
+
+### C2 — Override Caddy port mapping for 80 + 443
+
+Create `docker-compose.override.yml` next to `docker-compose.yml` (keeps the base file
+clean and easier to update from upstream):
+
+```yaml
+# provider-stack/docker-compose.override.yml
+services:
+  caddy:
+    ports:
+      - "80:80"
+      - "443:443"
+```
+
+### C3 — Create `.env`
+
+```bash
+cp .env.example .env
+```
+
+Production-specific settings:
+
+```dotenv
+# ── URLs ─────────────────────────────────────────────────────────────────────
+EXTERNAL_URL=https://cdm.example.com          # your FQDN, no trailing slash
+INFLUX_EXTERNAL_URL=https://influx.example.com  # see note below
+
+# ── Caddy ─────────────────────────────────────────────────────────────────────
+CADDY_SITE_ADDRESS=cdm.example.com   # Caddy requests LE cert for this domain
+CADDY_AUTO_HTTPS=on
+CADDY_ACME_EMAIL=ops@example.com     # Let's Encrypt notifications
+
+# ── oauth2-proxy (HTTPS cookies required) ────────────────────────────────────
+INFLUX_PROXY_COOKIE_SECURE=true
+INFLUX_PROXY_COOKIE_SAMESITE=none
+
+# ── Generate all secrets fresh ───────────────────────────────────────────────
+KC_ADMIN_PASSWORD=$(openssl rand -hex 16)
+KC_DB_PASSWORD=$(openssl rand -hex 16)
+STEP_CA_PASSWORD=$(openssl rand -hex 32)
+STEP_CA_PROVISIONER_PASSWORD=$(openssl rand -hex 32)
+RABBITMQ_ADMIN_PASSWORD=$(openssl rand -hex 16)
+INFLUX_ADMIN_PASSWORD=$(openssl rand -hex 16)
+INFLUX_TOKEN=$(openssl rand -hex 32)
+INFLUX_PROXY_COOKIE_SECRET=$(openssl rand -hex 32)
+PORTAL_SESSION_SECRET=$(openssl rand -hex 32)
+```
+
+!!! note "InfluxDB TLS in production"
+    InfluxDB is exposed on a separate port (SPA webpack limitation).  For production
+    TLS, add `influx.example.com` as a second DNS record pointing to the same server
+    and extend `docker-compose.override.yml` with a second Caddy site block:
+    ```yaml
+    # In the caddy container's volumes, mount an extended Caddyfile that adds:
+    # influx.example.com {
+    #     reverse_proxy influxdb-proxy:4180
+    # }
+    ```
+    A simpler alternative is to terminate TLS for port 8086 at a separate load
+    balancer or cloud ingress.
+
+### C4 — Start and verify TLS
+
+```bash
+docker compose up -d
+docker compose logs caddy -f   # watch for "certificate obtained successfully"
+```
+
+Then:
+
+```bash
+curl -sv https://cdm.example.com/auth/realms/master/.well-known/openid-configuration \
+  2>&1 | grep -E "SSL|issuer|subject"
+```
+
+### C5 — PKI, OIDC, init-tenants
+
+Follow steps [A4](#a4----initialise-pki-provisioners-run-once) → [A5](#a5----retrieve-oidc-secrets) → [A6](#a6----grant-superadmin-cross-realm-access),
+replacing `localhost:8888` with `https://cdm.example.com`.
+
+---
+
+## Common post-setup steps
+
+### Export Root CA certificate (for Tenant-Stacks and devices)
+
+```bash
+docker compose exec step-ca step ca root /tmp/root_ca.crt
+docker compose cp step-ca:/tmp/root_ca.crt ./root_ca.crt
+step certificate inspect root_ca.crt   # verify on host
+```
+
+Distribute `root_ca.crt` and `STEP_CA_FINGERPRINT` to every Tenant-Stack and Device-Stack.
+
+---
+
+## Verify service health
+
+| Service | Dev URL (localhost) | Credentials |
 |---|---|---|
-| CDM Dashboard (Caddy) | `http://localhost:8888` | — |
-| Keycloak Admin (cdm) | `http://localhost:8888/auth/admin/cdm/console/` | `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` |
-| Keycloak Admin (provider) | `http://localhost:8888/auth/admin/provider/console/` | same |
-| Grafana | `http://localhost:8888/grafana/` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
-| RabbitMQ Management | `http://localhost:8888/rabbitmq/` | SSO via Keycloak **`provider`** realm (`KC_ADMIN_USER` / `KC_ADMIN_PASSWORD`) **or** local `admin` / `RABBITMQ_ADMIN_PASSWORD` |
-| IoT Bridge API (Swagger) | `http://localhost:8888/api/docs` | — (requires OIDC JWT) |
-| InfluxDB | `http://localhost:8086` | Authenticated transparently via oauth2-proxy + token-injector; Keycloak login uses `cdm-admin` / `changeme` (temporary) |
-| step-ca | `https://localhost:9000/health` | — |
+| **CDM Dashboard** | `http://localhost:8888` | — |
+| **Keycloak Admin (cdm)** | `/auth/admin/cdm/console/` | `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` |
+| **Keycloak Admin (provider)** | `/auth/admin/provider/console/` | same |
+| **Grafana** | `/grafana/` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
+| **RabbitMQ Management** | `/rabbitmq/` | SSO: Keycloak **`provider`** realm (`KC_ADMIN_USER`) **or** local `admin` / `RABBITMQ_ADMIN_PASSWORD` |
+| **IoT Bridge API (Swagger)** | `/api/docs` | requires OIDC JWT |
+| **InfluxDB** | `http://localhost:8086` | SSO via Keycloak `cdm` realm; token-injector handles InfluxDB auth transparently |
+| **step-ca health** | `https://localhost:9000/health` | returns `{"status":"ok"}` |
 
-Replace `localhost` with the Codespaces forwarded URL when running in GitHub Codespaces.
+!!! warning "RabbitMQ: use the `provider` realm"
+    The SSO button redirects to the **`provider`** realm.  Log in with
+    `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` — the `cdm-admin` account does not work here.
 
-!!! info "RabbitMQ Management UI — SSO"
-    The RabbitMQ Management UI uses the **`provider`** Keycloak realm (not `cdm`).
-    Click **Sign in with Keycloak** and use `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD`
-    (or `provider-operator` / `PROVIDER_OPERATOR_PASSWORD`).  The `cdm-admin` and
-    `cdm-operator` accounts from the `cdm` realm cannot log into RabbitMQ.
-
-!!! info "InfluxDB — transparent auth"
-    InfluxDB is protected by `oauth2-proxy` (Keycloak `cdm` realm) plus an
-    `influxdb-token-injector` Caddy sidecar that automatically adds the admin API token
-    to every upstream request.  After the Keycloak login step, the InfluxDB UI opens
-    directly without a second login screen.
+!!! info "InfluxDB: no double login"
+    After the Keycloak step, InfluxDB opens directly.  The `influxdb-token-injector`
+    sidecar injects the admin API token on every upstream request.
 
 ---
 
-## 7. Next Steps
+## Next steps
 
-- **Tenant-Stack** — [Installation → Tenant-Stack](tenant-stack.md) *(Phase 2)*  
-  Set up a customer tenant that connects to this Provider-Stack.
-- **Device-Stack** — [Installation → Device-Stack](device-stack.md)  
-  Simulate an IoT device enrolling against a Tenant-Stack.
-- **Architecture** — [Architecture → Stack Topology](../architecture/stack-topology.md)  
-  Understand how Provider-Stack, Tenant-Stack, and Device-Stack interact.
+- **Tenant-Stack** → [Installation → Tenant-Stack](tenant-stack.md)
+- **Device-Stack** → [Installation → Device-Stack](device-stack.md)
+- **Architecture** → [Architecture → Stack Topology](../architecture/stack-topology.md)
+- **Troubleshooting** → [Use Cases → Troubleshooting](../use-cases/troubleshooting.md)

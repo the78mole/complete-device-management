@@ -4,8 +4,16 @@
 #   - Automatic HTTPS via ACME (Let's Encrypt / ZeroSSL) in production
 #   - HTTP-only mode for local dev / GitHub Codespaces (CADDY_AUTO_HTTPS=off)
 #
-# Port 8888 is the single entry point (same as the legacy nginx setup).
-# Codespaces exposes it as https://<name>-8888.app.github.dev/.
+# DEPLOYMENT MODES
+#
+#   Development / Codespaces (default):
+#     CADDY_SITE_ADDRESS=   (empty → listens on :8888, all interfaces, plain HTTP)
+#     CADDY_AUTO_HTTPS=off
+#
+#   Production (real domain + Let's Encrypt):
+#     CADDY_SITE_ADDRESS=cdm.example.com   ← Caddy requests LE cert for this domain
+#     CADDY_AUTO_HTTPS=on
+#     Expose ports 80 + 443 in docker-compose.yml (for ACME HTTP-01 challenge)
 #
 # Service routing:
 #   /           → Landing page (static)
@@ -16,13 +24,18 @@
 #   /pki/       → step-ca           step-ca:9000 (HTTPS upstream)
 
 {
-    # Disable automatic HTTPS for local / Codespaces use.
-    # Set CADDY_AUTO_HTTPS=on and configure {$CADDY_DOMAIN} for production.
+    # auto_https off  → plain HTTP (dev / Codespaces)
+    # auto_https on   → Let's Encrypt / ZeroSSL (production, requires real domain)
     auto_https {$CADDY_AUTO_HTTPS:off}
+    # ACME e-mail for Let's Encrypt notifications (set via CADDY_ACME_EMAIL in .env)
+    email {$CADDY_ACME_EMAIL:}
     admin off
 }
 
-:{$CADDY_PORT:8888} {
+# CADDY_SITE_ADDRESS controls both the listen address and HTTPS cert domain:
+#   empty / unset → :8888  (all interfaces, port 8888, plain HTTP)
+#   cdm.example.com → port 443, automatic Let's Encrypt cert
+{$CADDY_SITE_ADDRESS::8888} {
 
     # ── Keycloak (/auth/) ─────────────────────────────────────────────────
     # Keycloak is configured with KC_HTTP_RELATIVE_PATH=/auth so it already
