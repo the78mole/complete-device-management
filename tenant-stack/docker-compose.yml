@@ -110,7 +110,7 @@ services:
     volumes:
       - step-ca-data:/home/step
     ports:
-      - "9000:9000"
+      - "${STEP_CA_HOST_PORT:-9000}:9000"
     networks:
       - tenant-net
     healthcheck:
@@ -158,6 +158,7 @@ services:
       KC_HTTP_PORT: 8080
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: "${EXTERNAL_URL}/auth"
       KC_PROXY_HEADERS: xforwarded
       # OIDC client secrets – injected into realm template by docker-entrypoint.sh
       GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
@@ -184,7 +185,7 @@ services:
       EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
       TB_EXTERNAL_URL: ${TB_EXTERNAL_URL:-http://localhost:9090}
     ports:
-      - "8080:8080"
+      - "${KC_HOST_PORT:-8080}:8080"
     networks:
       - tenant-net
     depends_on:
@@ -257,8 +258,8 @@ services:
       - step-ca-data:/step-ca-certs:ro
       - tb-mqtt-certs:/etc/tb-certs
     ports:
-      - "9090:9090"    # HTTP UI (direct, SPA sub-path not supported)
-      - "8883:8883"    # MQTT TLS / mTLS
+      - "${TB_HOST_PORT:-9090}:9090"    # HTTP UI (direct, SPA sub-path not supported)
+      - "${TB_MQTT_TLS_HOST_PORT:-8883}:8883"    # MQTT TLS / mTLS
     networks:
       - tenant-net
     depends_on:
@@ -382,7 +383,21 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-
+  # ── InfluxDB Token Injector ─────────────────────────────────
+  # Inserts "Authorization: Token" before InfluxDB so the SPA does not show
+  # its own login screen after the oauth2-proxy gate.
+  influxdb-token-injector:
+    image: caddy:2-alpine
+    container_name: ${TENANT_ID:-tenant}-influxdb-token-injector
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/influxdb/token-injector/Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    networks:
+      - tenant-net
+    depends_on:
+      - influxdb
   # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
   influxdb-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
@@ -397,18 +412,19 @@ services:
       OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
       OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
       OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
-      OAUTH2_PROXY_UPSTREAMS: http://influxdb:8086
+      OAUTH2_PROXY_UPSTREAMS: http://influxdb-token-injector:8087
       OAUTH2_PROXY_EMAIL_DOMAINS: "*"
       OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
       OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
       OAUTH2_PROXY_SCOPE: "openid profile email roles"
       OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
       OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
-      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_COOKIE_SECURE: "${INFLUX_PROXY_COOKIE_SECURE:-false}"
+      OAUTH2_PROXY_COOKIE_SAMESITE: "${INFLUX_PROXY_COOKIE_SAMESITE:-lax}"
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
       OAUTH2_PROXY_REVERSE_PROXY: "true"
     ports:
-      - "8086:4180"
+      - "${INFLUX_HOST_PORT:-8086}:4180"
     networks:
       - tenant-net
     depends_on:
@@ -416,6 +432,8 @@ services:
         condition: service_healthy
       influxdb:
         condition: service_healthy
+      influxdb-token-injector:
+        condition: service_started
 
   # ── Grafana (tenant device dashboards) ──────────────────────────
   grafana:
@@ -562,7 +580,7 @@ services:
     volumes:
       - wg-data:/wg-config
     ports:
-      - "8000:8000"
+      - "${BRIDGE_HOST_PORT:-8000}:8000"
     networks:
       - tenant-net
     depends_on:
@@ -593,7 +611,7 @@ services:
     volumes:
       - wg-data:/wg-config:ro
     ports:
-      - "8090:8090"
+      - "${TERMINAL_HOST_PORT:-8090}:8090"
     networks:
       - tenant-net
       - tenant-vpn
