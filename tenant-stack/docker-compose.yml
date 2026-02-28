@@ -400,7 +400,7 @@ services:
       - influxdb
   # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
   influxdb-proxy:
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.3
     container_name: ${TENANT_ID:-tenant}-influxdb-proxy
     restart: unless-stopped
     environment:
