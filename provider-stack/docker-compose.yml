@@ -262,7 +262,7 @@ services:
   # Enforces Keycloak login before the InfluxDB web UI.
   # API paths bypass auth (service-to-service calls use InfluxDB tokens).
   influxdb-proxy:
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.3
     container_name: provider-influxdb-proxy
     restart: unless-stopped
     environment:
