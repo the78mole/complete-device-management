@@ -28,7 +28,8 @@
     # auto_https on   → Let's Encrypt / ZeroSSL (production, requires real domain)
     auto_https {$CADDY_AUTO_HTTPS:off}
     # ACME e-mail for Let's Encrypt notifications (set via CADDY_ACME_EMAIL in .env)
-    email {$CADDY_ACME_EMAIL:}
+    # Fallback to a placeholder – only used when auto_https=on is active.
+    email {$CADDY_ACME_EMAIL:webmaster@localhost}
     admin off
 }
 
