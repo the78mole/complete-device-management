@@ -66,8 +66,79 @@ class HealthResponse(BaseModel):
 # ── JOIN workflow ─────────────────────────────────────────────────────────────
 
 
+class TenantPrepareRequest(BaseModel):
+    """Body for POST /portal/admin/tenants/prepare – creates a tenant slot and generates a JOIN key."""
+
+    tenant_id: str = Field(
+        ...,
+        description="Unique tenant identifier – lowercase alphanumeric + hyphens",
+        pattern=r"^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
+    )
+    display_name: str = Field(
+        ..., description="Human-readable tenant name, e.g. 'Acme Devices GmbH'"
+    )
+
+
+class TenantPrepareResponse(BaseModel):
+    """Returned by /portal/admin/tenants/prepare."""
+
+    tenant_id: str
+    display_name: str
+    join_key: str = Field(
+        ...,
+        description="Single-use JOIN key in XXXX-YYYY-ZZZZ-WWWW format. "
+                    "Set as JOIN_KEY env var in the Tenant-Stack .env.",
+    )
+    expires_at: str = Field(..., description="ISO8601 expiry (7 days from now)")
+    hint: str = (
+        "Set PROVIDER_URL=<this-api-base> and JOIN_KEY=<join_key> in the "
+        "Tenant-Stack .env, then run `docker compose up`."
+    )
+
+
+class JoinHandshakePayload(BaseModel):
+    """Payload sent by the Tenant-Stack during the JOIN handshake.
+
+    The X-Join-Key header carries the single-use key; this body carries the
+    cryptographic material needed to provision the tenant.
+    """
+
+    sub_ca_csr: str = Field(..., description="PEM-encoded PKCS#10 CSR for the Tenant Sub-CA")
+    wg_pubkey: str = Field(..., description="WireGuard server public key of the Tenant-Stack")
+    keycloak_url: str = Field("", description="External Keycloak URL (browser-accessible)")
+    mqtt_bridge_csr: str = Field(
+        "", description="PEM-encoded PKCS#10 CSR for the Tenant MQTT bridge cert"
+    )
+
+
+class JoinHandshakeResponse(BaseModel):
+    """Full provisioning bundle returned immediately after a successful JOIN handshake."""
+
+    tenant_id: str
+    status: str = "joined"
+    # PKI
+    signed_cert: str = Field(..., description="Signed Tenant Sub-CA certificate (PEM)")
+    root_ca_cert: str = Field(..., description="Provider Root CA certificate (PEM)")
+    # RabbitMQ MQTT bridge
+    rabbitmq_url: str | None = None
+    rabbitmq_vhost: str | None = None
+    rabbitmq_user: str | None = None
+    mqtt_bridge_cert: str | None = Field(
+        None, description="Signed MQTT bridge client certificate (PEM)"
+    )
+    # Keycloak federation
+    cdm_idp_client_id: str | None = None
+    cdm_idp_client_secret: str | None = None
+    cdm_discovery_url: str | None = None
+
+
 class JoinRequestPayload(BaseModel):
-    """Payload posted by a Tenant-Stack IoT Bridge API to request platform JOIN."""
+    """Payload posted by a Tenant-Stack IoT Bridge API to request platform JOIN.
+
+    .. deprecated::
+        Use the JOIN-key handshake flow instead (JoinHandshakePayload +
+        POST /portal/admin/join with X-Join-Key header).
+    """
 
     display_name: str = Field(
         ..., description="Human-readable tenant name, e.g. 'Acme Devices GmbH'"

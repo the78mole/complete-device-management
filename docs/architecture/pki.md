@@ -54,21 +54,56 @@ Each **Tenant-Stack** step-ca also has an `iot-bridge` JWK provisioner for signi
 
 ### Sub-CA Signing Flow (JOIN Workflow — Provider-Stack)
 
+The JOIN workflow uses a **single-use cryptographic key** to authenticate the Tenant-Stack
+against the Provider.  No manual approval step or polling is required.
+
+**Step 1 – Provider Admin prepares the tenant:**
+
 ```mermaid
 sequenceDiagram
-    participant T as Tenant-Stack
-    participant A as Provider IoT Bridge API
-    participant S as Provider step-ca
+    participant ADM as CDM Admin (Browser)
+    participant PA as Provider IoT Bridge API
+
+    ADM->>PA: POST /portal/admin/tenants/prepare { tenant_id, display_name }
+    Note over PA: Requires CDM Admin JWT
+    PA-->>ADM: { tenant_id, join_key: "XXXX-YYYY-ZZZZ-WWWW", expires_at }
+    ADM->>ADM: Set PROVIDER_URL + JOIN_KEY in<br>Tenant-Stack .env
+```
+
+**Step 2 – Tenant-Stack handshake (first boot):**
+
+```mermaid
+sequenceDiagram
+    participant T as Tenant-Stack<br>init-sub-ca.sh
+    participant PA as Provider IoT Bridge API
+    participant SCA as Provider step-ca
+    participant RMQ as Provider RabbitMQ
+    participant KC as Provider Keycloak
 
     T->>T: generate Sub-CA key pair + CSR
-    T->>A: POST /admin/tenants/{id}/join-request { sub_ca_csr }
-    Note over A: Provider Admin approves
-    A->>S: Fetch iot-bridge provisioner
-    A->>A: Create OTT JWT (intermediate-ca profile)
-    A->>S: POST /1.0/sign (Sub-CA CSR + OTT)
-    S-->>A: Signed Sub-CA certificate
-    A-->>T: { sub_ca_cert, root_ca_cert }
+    T->>T: generate MQTT bridge key pair + CSR
+    T->>PA: POST /portal/admin/join<br>X-Join-Key: XXXX-YYYY-ZZZZ-WWWW<br>{ sub_ca_csr, mqtt_bridge_csr, wg_pubkey, keycloak_url }
+
+    PA->>PA: validate & consume JOIN key (single-use)
+    PA->>SCA: sign Sub-CA CSR (intermediate-ca profile)
+    SCA-->>PA: signed Sub-CA certificate + Root CA cert
+    PA->>RMQ: create vHost + MQTT bridge user
+    PA->>SCA: sign MQTT bridge CSR
+    SCA-->>PA: MQTT bridge certificate
+    PA->>KC: create federation OIDC client for tenant
+    KC-->>PA: cdm_idp_client_id + cdm_idp_client_secret
+
+    PA-->>T: { signed_cert, root_ca_cert, rabbitmq_*, mqtt_bridge_cert,<br>cdm_idp_client_id, cdm_idp_client_secret, cdm_discovery_url }
+
+    T->>T: install Sub-CA cert + key
+    T->>T: install MQTT bridge cert
+    T->>T: write join-bundle files
+    T->>T: register Provider KC as IdP in Tenant KC
+    Note over T: JOIN key is now invalidated
 ```
+
+The JOIN key has a 7-day TTL.  Once consumed, it cannot be reused.
+Generate a new one in the CDM Dashboard if the handshake needs to be retried.
 
 ### Device Leaf Signing Flow (Tenant-Stack)
 

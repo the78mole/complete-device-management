@@ -1,24 +1,34 @@
 """JOIN workflow router.
 
-Handles the full tenant onboarding lifecycle:
+Handles the full tenant onboarding lifecycle.
+
+New key-based handshake (recommended):
+
+  POST /portal/admin/tenants/prepare
+       CDM admin only.  Registers a tenant name and returns a single-use
+       JOIN key (XXXX-YYYY-ZZZZ-WWWW, valid 7 days).
+
+  POST /portal/admin/join
+       No user auth; authenticated by the X-Join-Key header.
+       Tenant-Stack presents its Sub-CA CSR + MQTT bridge CSR and receives
+       the full provisioning bundle immediately.  Key is invalidated on use.
+
+Legacy approval-based flow (still supported):
 
   POST /portal/admin/join-request/{tenant_id}
-       Unauthenticated – called by a Tenant-Stack IoT Bridge API on first boot.
-       Stores the request (Sub-CA CSR + WireGuard pubkey) with status *pending*.
+       Unauthenticated – stores Sub-CA CSR as *pending*.
 
   GET  /portal/admin/join-requests
        CDM admin only.  Returns all pending/approved/rejected requests.
 
   POST /portal/admin/tenants/{tenant_id}/approve
-       CDM admin only.  Signs the Sub-CA CSR, provisions RabbitMQ, registers the
-       Tenant Keycloak as an IdP in the cdm realm, and returns the bundle.
+       CDM admin only.  Signs, provisions, and returns the bundle.
 
   POST /portal/admin/tenants/{tenant_id}/reject
-       CDM admin only.  Marks the request as rejected with an optional reason.
+       CDM admin only.
 
   GET  /portal/admin/tenants/{tenant_id}/join-status
-       Unauthenticated – tenant polls this endpoint until status is not *pending*.
-       Returns the provisioning bundle once approved.
+       Unauthenticated – tenant polls until status != pending.
 """
 
 from __future__ import annotations
@@ -32,15 +42,20 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.clients.join_store import load_store, save_store
+from app.clients.join_key_store import create_key, validate_and_consume
 from app.clients.rabbitmq import RabbitMQClient
 from app.clients.step_ca import StepCAAdminClient, StepCAClient, StepCAError
 from app.config import Settings
 from app.deps import get_settings
 from app.models import (
     JoinApproveRequest,
+    JoinHandshakePayload,
+    JoinHandshakeResponse,
     JoinRejectRequest,
     JoinRequestPayload,
     JoinStatusResponse,
+    TenantPrepareRequest,
+    TenantPrepareResponse,
 )
 from app.routers.admin_portal import (
     _get_cdm_admin,
@@ -192,6 +207,196 @@ def _step_ca_client(settings: Settings) -> StepCAClient:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# New key-based handshake endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/tenants/prepare",
+    response_model=TenantPrepareResponse,
+    summary="Prepare a tenant slot and generate a single-use JOIN key (CDM admin only)",
+)
+async def prepare_tenant(body: TenantPrepareRequest, request: Request) -> TenantPrepareResponse:
+    """Register a tenant name in the Provider and generate a JOIN key.
+
+    The returned ``join_key`` (format ``XXXX-YYYY-ZZZZ-WWWW``) is a single-use
+    token valid for 7 days.  Set it as ``JOIN_KEY`` in the Tenant-Stack ``.env``.
+    When the Tenant-Stack starts up its ``init-sub-ca.sh`` presents the key to
+    ``POST /portal/admin/join``, receives the full provisioning bundle, and the
+    key is immediately invalidated.
+    """
+    _get_cdm_admin(request)
+    settings: Settings = get_settings()
+
+    tenant_id = body.tenant_id
+    if not tenant_id.replace("-", "").isalnum() or not tenant_id.islower():
+        raise HTTPException(
+            status_code=422,
+            detail="tenant_id must be lowercase alphanumeric with optional hyphens",
+        )
+
+    key = await create_key(tenant_id, body.display_name, settings)
+
+    from app.clients.join_key_store import JOIN_KEY_TTL_HOURS
+    from datetime import UTC, datetime, timedelta
+    expires_at = (datetime.now(UTC) + timedelta(hours=JOIN_KEY_TTL_HOURS)).isoformat()
+
+    logger.info(
+        "JOIN key generated for tenant '%s' (%s), expires %s.", tenant_id, body.display_name, expires_at
+    )
+    return TenantPrepareResponse(
+        tenant_id=tenant_id,
+        display_name=body.display_name,
+        join_key=key,
+        expires_at=expires_at,
+    )
+
+
+async def _run_provisioning(
+    tenant_id: str,
+    display_name: str,
+    payload: JoinHandshakePayload,
+    settings: Settings,
+) -> JoinHandshakeResponse:
+    """Execute the full provisioning pipeline and return the bundle.
+
+    Shared by the key-based handshake and (internally) the legacy approve flow.
+    """
+    errors: dict[str, str] = {}
+
+    # ── 1. Sign Sub-CA CSR ────────────────────────────────────────────────────
+    signed_cert = ""
+    root_ca_cert = ""
+    try:
+        sca_admin: StepCAAdminClient = _step_ca_admin(settings)
+        signed_cert, root_ca_cert = await sca_admin.sign_sub_ca_csr(
+            csr_pem=payload.sub_ca_csr,
+            tenant_id=tenant_id,
+            sub_ca_provisioner_name=settings.step_ca_sub_ca_provisioner,
+            sub_ca_provisioner_password=settings.step_ca_sub_ca_password,
+        )
+        if not root_ca_cert:
+            root_ca_cert = await _fetch_root_ca_cert(settings)
+        logger.info("Sub-CA CSR for tenant '%s' signed.", tenant_id)
+    except StepCAError as exc:
+        errors["step_ca"] = str(exc)
+        logger.error("Sub-CA signing failed for '%s': %s", tenant_id, exc)
+
+    # ── 2. Provision RabbitMQ vHost ───────────────────────────────────────────
+    rmq_vhost = tenant_id
+    rmq_url = settings.rabbitmq_mgmt_url
+    rmq_mqtt_user = f"{tenant_id}-mqtt-bridge"
+    try:
+        rmq: RabbitMQClient = _rabbitmq(settings)
+        await rmq.create_vhost(rmq_vhost)
+        await rmq.create_user(rmq_mqtt_user, "", tags="none")
+        await rmq.set_permissions(rmq_mqtt_user, rmq_vhost)
+        logger.info("RabbitMQ provisioned for tenant '%s'.", tenant_id)
+    except Exception as exc:  # noqa: BLE001
+        errors["rabbitmq"] = str(exc)
+        logger.error("RabbitMQ provisioning failed for '%s': %s", tenant_id, exc)
+
+    # ── 2b. Sign MQTT bridge certificate ─────────────────────────────────────
+    mqtt_bridge_cert = ""
+    if payload.mqtt_bridge_csr:
+        try:
+            sca_client: StepCAClient = _step_ca_client(settings)
+            mqtt_bridge_cert, _ = await sca_client.sign_certificate(
+                csr_pem=payload.mqtt_bridge_csr,
+                subject=rmq_mqtt_user,
+                sans=[rmq_mqtt_user],
+            )
+            logger.info("MQTT bridge cert signed for tenant '%s'.", tenant_id)
+        except StepCAError as exc:
+            errors["mqtt_bridge_cert"] = str(exc)
+            logger.error("MQTT bridge cert signing failed for '%s': %s", tenant_id, exc)
+
+    # ── 3. Keycloak federation client ─────────────────────────────────────────
+    cdm_idp_client_id = ""
+    cdm_idp_client_secret = ""
+    cdm_discovery_url = (
+        f"{settings.external_url.rstrip('/')}/auth/realms/cdm"
+        "/.well-known/openid-configuration"
+    )
+    try:
+        token = await _kc_admin_token(settings)
+        cdm_idp_client_id, cdm_idp_client_secret = await _kc_create_federation_client(
+            tenant_id=tenant_id,
+            tenant_keycloak_url=payload.keycloak_url,
+            token=token,
+            settings=settings,
+        )
+        logger.info("Keycloak federation client created for tenant '%s'.", tenant_id)
+    except Exception as exc:  # noqa: BLE001
+        errors["keycloak_federation"] = str(exc)
+        logger.error("Keycloak federation failed for '%s': %s", tenant_id, exc)
+
+    if errors:
+        logger.warning("Provisioning for tenant '%s' completed with errors: %s", tenant_id, errors)
+
+    return JoinHandshakeResponse(
+        tenant_id=tenant_id,
+        signed_cert=signed_cert,
+        root_ca_cert=root_ca_cert,
+        rabbitmq_url=rmq_url,
+        rabbitmq_vhost=rmq_vhost,
+        rabbitmq_user=rmq_mqtt_user,
+        mqtt_bridge_cert=mqtt_bridge_cert or None,
+        cdm_idp_client_id=cdm_idp_client_id or None,
+        cdm_idp_client_secret=cdm_idp_client_secret or None,
+        cdm_discovery_url=cdm_discovery_url,
+    )
+
+
+@router.post(
+    "/join",
+    response_model=JoinHandshakeResponse,
+    summary="Tenant JOIN handshake – authenticated by single-use X-Join-Key header",
+)
+async def join_handshake(
+    payload: JoinHandshakePayload,
+    request: Request,
+) -> JoinHandshakeResponse:
+    """Complete tenant onboarding in a single request.
+
+    The Tenant-Stack presents the ``X-Join-Key`` header (the key generated by
+    ``/tenants/prepare``) together with its Sub-CA CSR and MQTT bridge CSR.
+    The Provider validates the key, runs the full provisioning pipeline, and
+    returns the bundle immediately.  The key is invalidated after this call.
+
+    No user session is required – the JOIN key is the sole authenticator.
+    """
+    join_key = request.headers.get("X-Join-Key", "").strip()
+    if not join_key:
+        raise HTTPException(status_code=401, detail="X-Join-Key header is required.")
+
+    settings: Settings = get_settings()
+
+    try:
+        key_entry = await validate_and_consume(join_key, settings)
+    except KeyError:
+        raise HTTPException(status_code=401, detail="Invalid JOIN key.")
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    tenant_id: str = key_entry["tenant_id"]
+    display_name: str = key_entry["display_name"]
+
+    logger.info(
+        "JOIN handshake started for tenant '%s' (%s) using key %s…%s.",
+        tenant_id, display_name, join_key[:4], join_key[-4:],
+    )
+
+    bundle = await _run_provisioning(tenant_id, display_name, payload, settings)
+
+    logger.info("JOIN handshake complete for tenant '%s'.", tenant_id)
+    return bundle
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Legacy approval-based endpoints (still supported)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @router.post(

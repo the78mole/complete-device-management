@@ -92,8 +92,9 @@ services:
       STEP_CA_PROVIDER_ADMIN_PROVISIONER: "${STEP_CA_PROVIDER_ADMIN_PROVISIONER:-cdm-admin@cdm.local}"
       STEP_CA_PROVIDER_ADMIN_PASSWORD: "${STEP_CA_PROVIDER_ADMIN_PASSWORD:-}"
       TENANT_ID: "${TENANT_ID:-tenant}"
-      # JOIN workflow (used by init-sub-ca.sh)
-      PROVIDER_API_URL: "${PROVIDER_API_URL:-}"
+      # JOIN handshake (used by init-sub-ca.sh on first boot)
+      PROVIDER_URL: "${PROVIDER_URL:-}"
+      JOIN_KEY: "${JOIN_KEY:-}"
       TENANT_DISPLAY_NAME: "${TENANT_DISPLAY_NAME:-Tenant}"
       TENANT_KEYCLOAK_URL: "${TENANT_KEYCLOAK_URL:-}"
       # Tenant Keycloak admin (for Provider KC IdP federation setup in init-sub-ca.sh)
@@ -521,8 +522,8 @@ services:
       STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-tenant-admin@cdm.local}
       STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
       STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
-      # Provider API connection (for JOIN workflow)
-      PROVIDER_API_URL: ${PROVIDER_API_URL:-}
+      # Provider API connection
+      PROVIDER_URL: ${PROVIDER_URL:-}
       PROVIDER_API_TOKEN: ${PROVIDER_API_TOKEN:-}
       TENANT_ID: ${TENANT_ID:-tenant}
       ROOT_PATH: /api
