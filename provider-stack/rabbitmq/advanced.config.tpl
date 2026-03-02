@@ -51,7 +51,7 @@
     {oauth_client_id,               <<"rabbitmq-management">>},
     {oauth_client_secret,           <<"RABBITMQ_MANAGEMENT_OIDC_SECRET_PLACEHOLDER">>},
     {oauth_provider_url,            <<"EXTERNAL_URL_PLACEHOLDER/auth/realms/provider">>},
-    {oauth_scopes,                  <<"openid profile">>}
+    {oauth_scopes,                  <<"openid">>}
     %% Note: oauth_initiated_logon_type was removed in RabbitMQ 4.x
     %% (SP-initiated flow is now the default and only supported mode).
   ]}

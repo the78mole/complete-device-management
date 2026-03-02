@@ -164,6 +164,20 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "dashboard",
+      "name": "CDM Dashboard",
+      "description": "Public OIDC client for the provider stack landing page – silent SSO check, user info & logout",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": { "post.logout.redirect.uris": "*", "pkce.code.challenge.method": "S256" }
     }
   ],
   "identityProviders": [
