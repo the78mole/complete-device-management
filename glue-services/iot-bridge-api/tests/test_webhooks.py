@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.clients.hawkbit import HawkBitClient, HawkBitError
-from app.clients.influxdb import InfluxDBClient, InfluxDBError
+from app.clients.timescaledb import TimescaleDBClient, TimescaleDBError
 
 # ── Happy path ────────────────────────────────────────────────────────────────
 
@@ -146,15 +146,15 @@ def test_webhook_device_id_extraction(
 # ── Telemetry webhook tests ───────────────────────────────────────────────────
 
 
-def _get_written_line(mock: InfluxDBClient) -> str:
-    """Return the first InfluxDB line protocol string written in the last call."""
-    return mock.write_lines.call_args[0][0][0]  # type: ignore[attr-defined]
+def _get_written_rows(mock: TimescaleDBClient) -> list[dict]:
+    """Return the rows list passed to write_metrics in the last call."""
+    return mock.write_metrics.call_args[0][0]  # type: ignore[attr-defined]
 
 
-def test_telemetry_writes_to_influxdb(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+def test_telemetry_writes_to_timescaledb(
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
-    """Telemetry with numeric fields must be written to InfluxDB."""
+    """Telemetry with numeric fields must be written to TimescaleDB."""
     resp = test_client.post(
         "/webhooks/thingsboard/telemetry",
         json={
@@ -172,20 +172,22 @@ def test_telemetry_writes_to_influxdb(
     assert body["status"] == "written"
     assert body["device_id"] == "dev-tel-001"
     assert body["tenant_id"] == "tenant-abc"
-    assert body["points_written"] == 1
-    mock_influxdb.write_lines.assert_called_once()  # type: ignore[attr-defined]
-    assert len(mock_influxdb.write_lines.call_args[0][0]) == 1  # type: ignore[attr-defined]
-    line = _get_written_line(mock_influxdb)
-    assert "device_telemetry" in line
-    assert "tenant_id=tenant-abc" in line
-    assert "device_id=dev-tel-001" in line
-    assert "cpu_percent=42i" in line
+    assert body["points_written"] == 3  # one row per metric
+    mock_timescaledb.write_metrics.assert_called_once()  # type: ignore[attr-defined]
+    rows = _get_written_rows(mock_timescaledb)
+    assert len(rows) == 3
+    metric_names = {r["metric_name"] for r in rows}
+    assert metric_names == {"cpu_percent", "ram_percent", "temperature_c"}
+    cpu_row = next(r for r in rows if r["metric_name"] == "cpu_percent")
+    assert cpu_row["value"] == 42.0
+    assert cpu_row["tenant_id"] == "tenant-abc"
+    assert cpu_row["device_id"] == "dev-tel-001"
 
 
-def test_telemetry_includes_string_fields(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+def test_telemetry_stores_string_fields_with_null_value(
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
-    """String fields (e.g. ota_status) must be quoted in line protocol."""
+    """String fields (e.g. ota_status) must be stored with value=None and raw_type tag."""
     resp = test_client.post(
         "/webhooks/thingsboard/telemetry",
         json={
@@ -195,32 +197,36 @@ def test_telemetry_includes_string_fields(
         },
     )
     assert resp.status_code == 200
-    line = _get_written_line(mock_influxdb)
-    assert 'ota_status="idle"' in line
+    rows = _get_written_rows(mock_timescaledb)
+    str_row = next(r for r in rows if r["metric_name"] == "ota_status")
+    assert str_row["value"] is None
+    assert str_row["tags"]["raw_type"] == "str"
+    num_row = next(r for r in rows if r["metric_name"] == "cpu_percent")
+    assert num_row["value"] == 10.0
 
 
-def test_telemetry_escapes_special_chars_in_strings(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+def test_telemetry_row_contains_tenant_and_device(
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
-    """Backslashes and double-quotes in string fields must be properly escaped."""
+    """Every row must carry tenant_id and device_id for multi-tenant isolation."""
     resp = test_client.post(
         "/webhooks/thingsboard/telemetry",
         json={
             "msgType": "POST_TELEMETRY_REQUEST",
-            "metadata": {"deviceId": "dev-esc-001", "tenantId": "t1"},
-            "data": {"msg": 'say "hello" \\world'},
+            "metadata": {"deviceId": "dev-iso-001", "tenantId": "t-iso"},
+            "data": {"temp": 22.5},
         },
     )
     assert resp.status_code == 200
-    line = _get_written_line(mock_influxdb)
-    # Backslash and double-quote must be escaped in InfluxDB line protocol
-    assert r'say \"hello\" \\world' in line
+    rows = _get_written_rows(mock_timescaledb)
+    assert all(r["tenant_id"] == "t-iso" for r in rows)
+    assert all(r["device_id"] == "dev-iso-001" for r in rows)
 
 
 def test_telemetry_ignores_empty_data(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
-    """Telemetry with no numeric/string fields must be silently ignored."""
+    """Telemetry with no fields must be silently ignored without a DB write."""
     resp = test_client.post(
         "/webhooks/thingsboard/telemetry",
         json={
@@ -231,11 +237,11 @@ def test_telemetry_ignores_empty_data(
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "ignored"
-    mock_influxdb.write_lines.assert_not_called()  # type: ignore[attr-defined]
+    mock_timescaledb.write_metrics.assert_not_called()  # type: ignore[attr-defined]
 
 
 def test_telemetry_ignores_event_without_device_id(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
     """Events with no identifiable device ID are acknowledged but not written."""
     resp = test_client.post(
@@ -244,15 +250,15 @@ def test_telemetry_ignores_event_without_device_id(
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "ignored"
-    mock_influxdb.write_lines.assert_not_called()  # type: ignore[attr-defined]
+    mock_timescaledb.write_metrics.assert_not_called()  # type: ignore[attr-defined]
 
 
-def test_telemetry_influxdb_error_returns_503(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+def test_telemetry_timescaledb_error_returns_503(
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
-    """InfluxDB write failures must result in a 503 response."""
-    mock_influxdb.write_lines = AsyncMock(  # type: ignore[method-assign]
-        side_effect=InfluxDBError("connection refused")
+    """TimescaleDB write failures must result in a 503 response."""
+    mock_timescaledb.write_metrics = AsyncMock(  # type: ignore[method-assign]
+        side_effect=TimescaleDBError("connection refused")
     )
     resp = test_client.post(
         "/webhooks/thingsboard/telemetry",
@@ -263,15 +269,15 @@ def test_telemetry_influxdb_error_returns_503(
         },
     )
     assert resp.status_code == 503
-    assert "InfluxDB write failed" in resp.json()["detail"]
+    assert "TimescaleDB write failed" in resp.json()["detail"]
 
 
-def test_telemetry_tenant_isolation_tags(
-    test_client: TestClient, mock_influxdb: InfluxDBClient
+def test_telemetry_tenant_isolation_separate_calls(
+    test_client: TestClient, mock_timescaledb: TimescaleDBClient
 ) -> None:
-    """Two devices from different tenants produce lines with distinct tenant tags."""
+    """Two devices from different tenants produce rows with distinct tenant_id values."""
     for tenant, device in [("tenant-A", "dev-A"), ("tenant-B", "dev-B")]:
-        mock_influxdb.write_lines.reset_mock()  # type: ignore[attr-defined]
+        mock_timescaledb.write_metrics.reset_mock()  # type: ignore[attr-defined]
         resp = test_client.post(
             "/webhooks/thingsboard/telemetry",
             json={
@@ -281,6 +287,6 @@ def test_telemetry_tenant_isolation_tags(
             },
         )
         assert resp.status_code == 200
-        line = _get_written_line(mock_influxdb)
-        assert f"tenant_id={tenant}" in line
-        assert f"device_id={device}" in line
+        rows = _get_written_rows(mock_timescaledb)
+        assert all(r["tenant_id"] == tenant for r in rows)
+        assert all(r["device_id"] == device for r in rows)

@@ -18,10 +18,10 @@ from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 
 from app.clients.hawkbit import HawkBitClient
-from app.clients.influxdb import InfluxDBClient
+from app.clients.timescaledb import TimescaleDBClient
 from app.clients.step_ca import StepCAClient
 from app.clients.wireguard import WireGuardConfig
-from app.deps import get_hawkbit_client, get_influxdb_client, get_step_ca_client, get_wg_config
+from app.deps import get_hawkbit_client, get_timescaledb_client, get_step_ca_client, get_wg_config
 from app.main import app
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -97,9 +97,9 @@ def mock_wg_config(tmp_path: Path) -> WireGuardConfig:
 
 
 @pytest.fixture()
-def mock_influxdb() -> InfluxDBClient:
-    client: InfluxDBClient = MagicMock(spec=InfluxDBClient)
-    client.write_lines = AsyncMock(return_value=None)  # type: ignore[method-assign]
+def mock_timescaledb() -> TimescaleDBClient:
+    client: TimescaleDBClient = MagicMock(spec=TimescaleDBClient)
+    client.write_metrics = AsyncMock(return_value=None)  # type: ignore[method-assign]
     return client
 
 
@@ -108,11 +108,11 @@ def test_client(
     mock_step_ca: StepCAClient,
     mock_hawkbit: HawkBitClient,
     mock_wg_config: WireGuardConfig,
-    mock_influxdb: InfluxDBClient,
+    mock_timescaledb: TimescaleDBClient,
 ) -> TestClient:
     app.dependency_overrides[get_step_ca_client] = lambda: mock_step_ca
     app.dependency_overrides[get_hawkbit_client] = lambda: mock_hawkbit
     app.dependency_overrides[get_wg_config] = lambda: mock_wg_config
-    app.dependency_overrides[get_influxdb_client] = lambda: mock_influxdb
+    app.dependency_overrides[get_timescaledb_client] = lambda: mock_timescaledb
     yield TestClient(app)  # type: ignore[misc]
     app.dependency_overrides.clear()

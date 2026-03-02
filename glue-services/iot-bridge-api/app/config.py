@@ -31,11 +31,11 @@ class Settings(BaseSettings):
     wg_server_url: str = "localhost"
     wg_port: int = 51820
 
-    # ── InfluxDB (reserved for future direct writes) ──────────────────────────
-    influx_url: str = "http://influxdb:8086"
-    influx_token: str = ""
-    influx_org: str = "cdm-org"
-    influx_bucket: str = "iot-metrics"
+    # ── TimescaleDB (device telemetry) ──────────────────────────────────────────────
+    tsdb_host: str = "timescaledb"
+    tsdb_port: int = 5432
+    tsdb_database: str = "cdm"
+    tsdb_telegraf_password: str = ""
 
     # ── TLS / security ────────────────────────────────────────────────────────
     # Set to False only for local evaluation when step-ca uses a self-signed cert

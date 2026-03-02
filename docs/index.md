@@ -7,7 +7,7 @@ It combines best-in-class open-source components into a cohesive, Zero-Trust pla
 - **Zero-Touch Provisioning** — devices enroll automatically using X.509 certificates signed by a private CA.
 - **Secure OTA Updates** — Eclipse hawkBit manages software campaigns; RAUC executes A/B OS updates on the device.
 - **Remote Troubleshooting** — WireGuard VPN + browser-based `ttyd` terminal embedded directly in the management UI.
-- **High-Frequency Telemetry** — Telegraf streams metrics to InfluxDB; Grafana visualises them.
+- **High-Frequency Telemetry** — Telegraf streams metrics to TimescaleDB (PostgreSQL); Grafana visualises them.
 - **Single Sign-On** — Keycloak provides OIDC/SAML authentication across all services.
 - **Multi-Tenancy** — each customer operates an independent Tenant-Stack; the Provider-Stack manages shared infrastructure and trust anchors.
 
@@ -19,8 +19,8 @@ The platform is split into two independently deployable Compose stacks:
 
 | Stack | Who operates it | Key services |
 |---|---|---|
-| **Provider-Stack** | CDM platform operator | Caddy, Keycloak (`cdm` + `provider` realms), RabbitMQ, InfluxDB, Grafana, step-ca Root CA, IoT Bridge API |
-| **Tenant-Stack** *(Phase 2)* | Individual customer / tenant | Caddy, Keycloak (tenant realm), ThingsBoard, hawkBit, step-ca Sub-CA, WireGuard, Terminal Proxy, InfluxDB, Grafana |
+| **Provider-Stack** | CDM platform operator | Caddy, Keycloak (`cdm` + `provider` realms), RabbitMQ, TimescaleDB, Grafana, step-ca Root CA, IoT Bridge API |
+| **Tenant-Stack** *(Phase 2)* | Individual customer / tenant | Caddy, Keycloak (tenant realm), ThingsBoard, hawkBit, step-ca Sub-CA, WireGuard, Terminal Proxy, TimescaleDB, Grafana |
 | **Device-Stack** | Edge device (simulated) | bootstrap, mqtt-client, telegraf, rauc-updater, wireguard-client |
 
 The Provider-Stack is the trust anchor for the entire platform: it hosts the Root CA, the central MQTT broker (RabbitMQ with one vHost per tenant), and the management API for tenant onboarding.
@@ -35,7 +35,7 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 | IoT Platform | ThingsBoard CE | Device registry, MQTT, Rule Engine, UI *(Tenant-Stack)* |
 | OTA Backend | Eclipse hawkBit | Software campaign management *(Tenant-Stack)* |
 | PKI | smallstep step-ca | Root CA + per-tenant Issuing Sub-CA; device & service cert signing |
-| Time-Series DB | InfluxDB v2 | Provider metrics (Provider-Stack) + device telemetry (Tenant-Stack) |
+| Time-Series DB | TimescaleDB (PostgreSQL 17) | Provider metrics (Provider-Stack) + device telemetry (Tenant-Stack) |
 | Visualisation | Grafana | Dashboards (both stacks) |
 | Message Broker | RabbitMQ | Central MQTT broker with per-tenant vHosts *(Provider-Stack)* |
 | Reverse Proxy | Caddy | Automatic HTTPS, path-based routing (replaces nginx) |
@@ -103,7 +103,7 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 | IoT Platform | ThingsBoard CE | Device registry, MQTT, Rule Engine, UI |
 | OTA Backend | Eclipse hawkBit | Software campaign management |
 | PKI | smallstep step-ca | Root CA, device & service cert signing |
-| Time-Series DB | InfluxDB v2 | High-frequency telemetry |
+| Time-Series DB | TimescaleDB (PostgreSQL 17) | High-frequency telemetry |
 | Visualisation | Grafana | Dashboards |
 | VPN | WireGuard | Zero-trust device tunnel |
 | Web Terminal | ttyd + Terminal Proxy | Secure browser shell |

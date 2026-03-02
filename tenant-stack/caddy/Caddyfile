@@ -6,10 +6,10 @@
 #
 # Services NOT routed through Caddy (SPA sub-path limitation):
 #   :9090  → ThingsBoard (accessed directly)
-#   :8086  → InfluxDB / oauth2-proxy (accessed directly)
 #   :8883  → ThingsBoard MQTT TLS (direct, device connections)
 #   :51820 → WireGuard (UDP, direct)
 #   :9000  → step-ca (mTLS CMP/ACME, direct)
+# pgAdmin is routed through Caddy at /pgadmin/ (no direct port needed).
 # ─────────────────────────────────────────────────────────────────
 
 :{$CADDY_PORT:8888} {
@@ -86,6 +86,24 @@
   # handle /tb/api/* {
   #   reverse_proxy thingsboard:9090
   # }
+
+  # ── pgAdmin (TimescaleDB admin UI) ─────────────────────────────────
+  # pgAdmin uses SCRIPT_NAME=/pgadmin; inject X-Script-Name header
+  # so Flask rewrites internal links correctly.
+  handle /pgadmin/* {
+    reverse_proxy pgadmin:80 {
+      header_up X-Script-Name /pgadmin
+    }
+  }
+
+  # ── pgAdmin (TimescaleDB admin UI) ──────────────────────────────
+  # pgAdmin uses SCRIPT_NAME=/pgadmin; inject X-Script-Name header
+  # so Flask rewrites internal links correctly.
+  handle /pgadmin/* {
+    reverse_proxy pgadmin:80 {
+      header_up X-Script-Name /pgadmin
+    }
+  }
 
   # ── Static landing page ─────────────────────────────────────────
   handle / {

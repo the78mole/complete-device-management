@@ -5,7 +5,8 @@
 #   step-ca      → Root PKI (X.509 certificates)
 #   keycloak     → Identity provider (realms: cdm, provider)
 #   rabbitmq     → Central AMQP broker with per-tenant vHosts
-#   influxdb     → Time-series database (provider metrics)
+#   timescaledb  → Time-series database (PostgreSQL 17 + TimescaleDB)
+#   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
 #   grafana      → Platform operations dashboards
 #   telegraf     → Metrics aggregation
 #   iot-bridge-api → Platform management API
@@ -21,7 +22,6 @@
 # Port mapping:
 #   8888  → Caddy (entry point, path-based routing)
 #   9000  → step-ca (HTTPS, direct)
-#   8086  → InfluxDB (via oauth2-proxy, direct)
 
 networks:
   provider-net:
@@ -29,8 +29,8 @@ networks:
 
 volumes:
   keycloak-db-data:
-  influxdb-data:
-  influxdb-config:
+  timescaledb-data:
+  pgadmin-data:
   grafana-data:
   rabbitmq-data:
   rabbitmq-tls:
@@ -128,7 +128,6 @@ services:
       GRAFANA_BROKER_SECRET: ${GRAFANA_BROKER_SECRET:-changeme}
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
-      INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
       RABBITMQ_MANAGEMENT_OIDC_SECRET: ${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}
       # Bootstrap user passwords
       PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
@@ -214,92 +213,48 @@ services:
       retries: 10
       start_period: 30s
 
-  # ── InfluxDB ─────────────────────────────────────────────────────
-  influxdb:
-    image: influxdb:2.8-alpine
-    container_name: provider-influxdb
+  # ── TimescaleDB (provider metrics) ─────────────────────────────
+  # PostgreSQL 17 with TimescaleDB extension.
+  # Init script creates the `telegraf` write user and `grafana` read-only user.
+  timescaledb:
+    image: timescale/timescaledb:latest-pg17
+    container_name: provider-timescaledb
     restart: unless-stopped
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER:-admin}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-changeme00}
-      DOCKER_INFLUXDB_INIT_ORG: cdm-org
-      DOCKER_INFLUXDB_INIT_BUCKET: iot-metrics
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      POSTGRES_DB: cdm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${TSDB_PASSWORD:-changeme}
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
+      TSDB_GRAFANA_PASSWORD: ${TSDB_GRAFANA_PASSWORD:-changeme}
     volumes:
-      - influxdb-data:/var/lib/influxdb2
-      - influxdb-config:/etc/influxdb2
-      - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
+      - timescaledb-data:/var/lib/postgresql/data
+      - ./monitoring/timescaledb/init-scripts:/docker-entrypoint-initdb.d:ro
     networks:
       - provider-net
     healthcheck:
-      test: ["CMD", "influx", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cdm"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
-  # ── InfluxDB Token Injector ─────────────────────────────────────
-  # Caddy sidecar between oauth2-proxy and InfluxDB.
-  # Injects "Authorization: Token <INFLUX_TOKEN>" so InfluxDB accepts every
-  # request that already passed the oauth2-proxy without its own login screen.
-  influxdb-token-injector:
-    image: caddy:2-alpine
-    container_name: provider-influxdb-token-injector
+  # ── pgAdmin (TimescaleDB admin UI) ───────────────────────────────
+  # Served via Caddy at /pgadmin/ – no direct port exposed.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: provider-pgadmin
     restart: unless-stopped
-    command: caddy run --config /etc/caddy/Caddyfile
     environment:
-      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@cdm.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+      SCRIPT_NAME: /pgadmin
     volumes:
-      - ./monitoring/influxdb/token-injector/Caddyfile:/etc/caddy/Caddyfile:ro
+      - pgadmin-data:/var/lib/pgadmin
     networks:
       - provider-net
     depends_on:
-      influxdb:
+      timescaledb:
         condition: service_healthy
-
-  # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
-  # Enforces Keycloak login before the InfluxDB web UI.
-  # API paths bypass auth (service-to-service calls use InfluxDB tokens).
-  influxdb-proxy:
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
-    container_name: provider-influxdb-proxy
-    restart: unless-stopped
-    environment:
-      OAUTH2_PROXY_PROVIDER: oidc
-      # OIDC issuer URL must match the "iss" claim in tokens.
-      # Tokens are issued via Caddy (X-Forwarded headers) → external URL.
-      # --skip-oidc-discovery prevents the proxy from fetching the discovery
-      # document (which would return the internal keycloak:8080 hostname and
-      # override LOGIN_URL with an unreachable address for the browser).
-      OAUTH2_PROXY_OIDC_ISSUER_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm
-      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
-      OAUTH2_PROXY_LOGIN_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
-      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
-      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/certs
-      OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
-      OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
-      OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
-      OAUTH2_PROXY_UPSTREAMS: http://influxdb-token-injector:8087
-      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
-      OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
-      OAUTH2_PROXY_SCOPE: "openid profile email roles"
-      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
-      OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
-      OAUTH2_PROXY_COOKIE_SECURE: "${INFLUX_PROXY_COOKIE_SECURE:-false}"
-      OAUTH2_PROXY_COOKIE_SAMESITE: "${INFLUX_PROXY_COOKIE_SAMESITE:-lax}"
-      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
-      OAUTH2_PROXY_REVERSE_PROXY: "true"
-    ports:
-      - "8086:4180"
-    networks:
-      - provider-net
-    depends_on:
-      keycloak:
-        condition: service_healthy
-      influxdb-token-injector:
-        condition: service_started
 
   # ── Grafana ──────────────────────────────────────────────────────
   grafana:
@@ -332,6 +287,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      TSDB_GRAFANA_PASSWORD: ${TSDB_GRAFANA_PASSWORD:-changeme}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -339,7 +295,7 @@ services:
     networks:
       - provider-net
     depends_on:
-      influxdb:
+      timescaledb:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -353,10 +309,10 @@ services:
     # explicitly set in the environment block so strict mode is safe to use.
     command: ["telegraf", "--non-strict-env-handling"]
     environment:
-      INFLUX_URL: http://influxdb:8086
-      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
-      INFLUX_ORG: cdm-org
-      INFLUX_BUCKET: iot-metrics
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DATABASE: cdm
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
       RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
       RABBITMQ_ADMIN_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
     volumes:
@@ -364,7 +320,7 @@ services:
     networks:
       - provider-net
     depends_on:
-      - influxdb
+      - timescaledb
       - rabbitmq
 
   # ── IoT Bridge API ───────────────────────────────────────────────
@@ -402,10 +358,10 @@ services:
       STEP_CA_SUB_CA_PASSWORD: ${STEP_CA_SUB_CA_PASSWORD:-changeme}
       STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
       JOIN_REQUESTS_DB_PATH: /data/join_requests.json
-      INFLUX_URL: http://influxdb:8086
-      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
-      INFLUX_ORG: cdm-org
-      INFLUX_BUCKET: iot-metrics
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DATABASE: cdm
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
       ROOT_PATH: /api
     ports:
       - "8000:8000"
@@ -420,7 +376,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      influxdb:
+      timescaledb:
         condition: service_healthy
 
   # ── Caddy (reverse proxy / entry point) ─────────────────────────
@@ -454,7 +410,9 @@ services:
         condition: service_started
       step-ca:
         condition: service_healthy
-      influxdb-proxy:
+      timescaledb:
+        condition: service_healthy
+      pgadmin:
         condition: service_started
       rabbitmq:
         condition: service_healthy

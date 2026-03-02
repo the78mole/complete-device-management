@@ -5,7 +5,7 @@
 1. **Identity & Trust** — Keycloak (SSO, realm federation) + step-ca (PKI, two-tier CA hierarchy) establish who can connect and which certificates are trusted.
 2. **Device Communication** — The Tenant-Stack ThingsBoard MQTT broker receives device telemetry and state; the central Provider-Stack RabbitMQ routes data via per-tenant vHosts.
 3. **Software Updates** — hawkBit (Tenant-Stack) manages campaigns; RAUC executes them atomically on the device.
-4. **Observability** — Device telemetry flows into the Tenant-Stack InfluxDB; platform-health metrics flow via RabbitMQ into the Provider-Stack InfluxDB.  Grafana is deployed in both stacks.
+4. **Observability** — Device telemetry flows into the Tenant-Stack TimescaleDB; platform-health metrics flow via RabbitMQ into the Provider-Stack TimescaleDB.  Grafana is deployed in both stacks.
 5. **Remote Access** — WireGuard (Tenant-Stack) creates a secure overlay network; ttyd + terminal-proxy deliver a browser shell.
 
 For a complete picture of how the two stacks relate, see [Architecture → Stack Topology](stack-topology.md).
@@ -19,7 +19,7 @@ graph TB
     subgraph provider["Provider-Stack"]
         KC_P["Keycloak<br>(cdm + provider realms)"]
         RMQ["RabbitMQ<br>(central broker)"]
-        IDB_P["InfluxDB<br>(platform metrics)"]
+        IDB_P["TimescaleDB<br>(platform metrics)"]
         GRF_P["Grafana<br>(platform dashboards)"]
         SCA_P["step-ca<br>(Root CA)"]
         IBA["IoT Bridge API"]
@@ -31,7 +31,7 @@ graph TB
         HB["hawkBit<br>(OTA Campaigns)"]
         SCA_T["step-ca<br>(Sub-CA)"]
         WGS["WireGuard Server"]
-        IDB_T["InfluxDB<br>(device telemetry)"]
+        IDB_T["TimescaleDB<br>(device telemetry)"]
         GRF_T["Grafana"]
         TXP["Terminal Proxy"]
 
@@ -119,17 +119,17 @@ sequenceDiagram
     participant D as Device (mqtt-client)
     participant T as ThingsBoard
     participant I as IoT Bridge API
-    participant IDB as InfluxDB
+    participant IDB as TimescaleDB
     participant TEL as Cloud Telegraf
     participant HB as hawkBit
     D->>T: PUBLISH telemetry (MQTT TLS 8883)
     T->>I: Rule Engine: POST /webhooks/thingsboard/telemetry
     I->>I: extract tenant_id + device_id tags
-    I->>IDB: write device_telemetry (line protocol)
-    Note over I,IDB: tenant_id and device_id tags<br/>enforce multi-tenant isolation
+    I->>IDB: write device_telemetry (SQL INSERT)
+    Note over I,IDB: tenant_id and device_id columns<br/>enforce multi-tenant isolation
     TEL->>HB: GET /rest/v1/targets (REST poll)
     HB-->>TEL: OTA target list (JSON)
-    TEL->>IDB: write hawkbit_targets (line protocol)
+    TEL->>IDB: write hawkbit_targets (PostgreSQL output)
 ```
 
 ---
@@ -139,16 +139,16 @@ sequenceDiagram
 | Data Type | Transport | Storage |
 |---|---|---|
 | Device state, alarms, OTA status | MQTT → ThingsBoard | ThingsBoard PostgreSQL |
-| Device telemetry (CPU, RAM, disk, etc.) | MQTT → ThingsBoard Rule Engine → iot-bridge-api webhook → InfluxDB | InfluxDB |
-| OTA / firmware-update status | Cloud Telegraf polls hawkBit REST API | InfluxDB |
-| Optional sensor data | MQTT (`cdm/<tenant>/<device>/sensors`) → Telegraf → InfluxDB | InfluxDB |
+| Device telemetry (CPU, RAM, disk, etc.) | MQTT → ThingsBoard Rule Engine → iot-bridge-api webhook → TimescaleDB | TimescaleDB |
+| OTA / firmware-update status | Cloud Telegraf polls hawkBit REST API | TimescaleDB |
+| Optional sensor data | MQTT (`cdm/<tenant>/<device>/sensors`) → Telegraf → TimescaleDB | TimescaleDB |
 | Audit / access logs | Keycloak events | Keycloak DB |
 
-This design keeps ThingsBoard's database lean by offloading high-cardinality metric streams to InfluxDB. The three metric paths are:
+This design keeps ThingsBoard's database lean by offloading high-cardinality metric streams to TimescaleDB. The three metric paths are:
 
-- **Device telemetry**: ThingsBoard Rule Engine fires a webhook to the IoT Bridge API, which writes `device_telemetry` measurements tagged with `tenant_id` and `device_id` to enforce multi-tenant isolation.
-- **OTA status**: Cloud Telegraf polls the hawkBit Management REST API and writes `hawkbit_targets` measurements to InfluxDB, giving operations teams a consolidated firmware rollout view.
-- **Optional sensor data**: Devices may publish additional readings to the MQTT topic `cdm/<tenant>/<device>/sensors`; device-side or cloud-side Telegraf subscribes and writes them directly to InfluxDB.
+- **Device telemetry**: ThingsBoard Rule Engine fires a webhook to the IoT Bridge API, which writes `device_telemetry` rows tagged with `tenant_id` and `device_id` to enforce multi-tenant isolation.
+- **OTA status**: Cloud Telegraf polls the hawkBit Management REST API and writes `hawkbit_targets` rows to TimescaleDB, giving operations teams a consolidated firmware rollout view.
+- **Optional sensor data**: Devices may publish additional readings to the MQTT topic `cdm/<tenant>/<device>/sensors`; device-side or cloud-side Telegraf subscribes and writes them directly to TimescaleDB.
 
 ---
 

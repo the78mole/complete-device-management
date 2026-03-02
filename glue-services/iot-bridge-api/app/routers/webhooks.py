@@ -11,23 +11,21 @@ On receipt, the service:
 5.  Returns a JSON status payload that ThingsBoard can inspect.
 
 POST /webhooks/thingsboard/telemetry receives POST_TELEMETRY_REQUEST events and
-writes the device metrics to InfluxDB with tenant and device_id tags for
+writes the device metrics to TimescaleDB with tenant_id and device_id tags for
 multi-tenant data isolation.
 """
 
 from __future__ import annotations
 
 import logging
-import re
-from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.clients.hawkbit import HawkBitClient, HawkBitError
-from app.clients.influxdb import InfluxDBClient, InfluxDBError
+from app.clients.timescaledb import TimescaleDBClient, TimescaleDBError
 from app.clients.wireguard import WireGuardConfig
-from app.deps import get_hawkbit_client, get_influxdb_client, get_wg_config
+from app.deps import get_hawkbit_client, get_timescaledb_client, get_wg_config
 from app.models import (
     TelemetryWebhookResponse,
     ThingsboardWebhookEvent,
@@ -37,48 +35,6 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-# Characters that are invalid in InfluxDB tag values (spaces, commas, equals, backslash)
-_TAG_UNSAFE_CHARS_RE = re.compile(r"[^A-Za-z0-9_\-.]")
-
-
-def _safe_tag(value: str) -> str:
-    """Escape a string for use as an InfluxDB tag value (no spaces or commas)."""
-    return _TAG_UNSAFE_CHARS_RE.sub("_", value)
-
-
-def _build_line_protocol(
-    measurement: str,
-    tags: dict[str, str],
-    fields: dict[str, Any],
-    timestamp_ms: int | None = None,
-) -> str | None:
-    """Build a single InfluxDB v2 line-protocol string.
-
-    Returns ``None`` if *fields* is empty (InfluxDB requires at least one field).
-    """
-    field_parts: list[str] = []
-    for key, val in fields.items():
-        if isinstance(val, bool):
-            field_parts.append(f"{key}={str(val).lower()}")
-        elif isinstance(val, int):
-            field_parts.append(f"{key}={val}i")
-        elif isinstance(val, float):
-            field_parts.append(f"{key}={val}")
-        elif isinstance(val, str):
-            escaped = val.replace("\\", "\\\\").replace('"', '\\"')
-            field_parts.append(f'{key}="{escaped}"')
-
-    if not field_parts:
-        return None
-
-    tag_str = ",".join(
-        f"{k}={_safe_tag(v)}" for k, v in sorted(tags.items()) if v
-    )
-    ts_suffix = f" {timestamp_ms}" if timestamp_ms is not None else ""
-    return f"{measurement},{tag_str} {','.join(field_parts)}{ts_suffix}"
 
 
 def _extract_device_id(event: ThingsboardWebhookEvent) -> str | None:
@@ -175,18 +131,18 @@ async def thingsboard_webhook(
     summary="ThingsBoard device telemetry webhook",
     description=(
         "Receives POST_TELEMETRY_REQUEST events from the ThingsBoard Rule Engine "
-        "and writes the metrics to InfluxDB with tenant_id and device_id tags "
+        "and writes the metrics to TimescaleDB with tenant_id and device_id columns "
         "to enforce multi-tenant data isolation."
     ),
 )
 async def thingsboard_telemetry(
     event: ThingsboardWebhookEvent,
-    influx: InfluxDBClient = Depends(get_influxdb_client),
+    tsdb: TimescaleDBClient = Depends(get_timescaledb_client),
 ) -> TelemetryWebhookResponse:
-    """Write device telemetry from ThingsBoard to InfluxDB.
+    """Write device telemetry from ThingsBoard to TimescaleDB.
 
     Extracts tenant and device identifiers from the ThingsBoard metadata and
-    adds them as InfluxDB tags so that each tenant's data is stored separately.
+    stores them as column values in ``device_telemetry`` for per-tenant isolation.
     """
     device_id = _extract_device_id(event)
     if not device_id:
@@ -200,48 +156,50 @@ async def thingsboard_telemetry(
 
     tenant_id = str(event.metadata.get("tenantId", "unknown"))
 
-    # ── Build InfluxDB tags (tenant isolation) ───────────────────────────────
-    tags = {
-        "tenant_id": tenant_id,
-        "device_id": device_id,
-    }
-
-    # ── Extract numeric / string fields from payload data ───────────────────
+    # ── Build metric rows from payload data ──────────────────────────────────
     data = event.data if isinstance(event.data, dict) else {}
-    line = _build_line_protocol(
-        measurement="device_telemetry",
-        tags=tags,
-        fields=data,
-    )
-    if line is None:
+    rows = [
+        {
+            "tenant_id": tenant_id,
+            "device_id": device_id,
+            "metric_name": key,
+            "value": float(val) if isinstance(val, (int, float)) else None,
+            "tags": {"raw_type": type(val).__name__},
+        }
+        for key, val in data.items()
+    ]
+    if not rows:
         return TelemetryWebhookResponse(
             status="ignored",
             device_id=device_id,
             tenant_id=tenant_id,
-            reason="No numeric or string fields in telemetry payload",
+            reason="No fields in telemetry payload",
         )
 
-    # ── Write to InfluxDB ────────────────────────────────────────────────────
+    # ── Write to TimescaleDB ─────────────────────────────────────────────────
     try:
-        await influx.write_lines([line])
-    except InfluxDBError as exc:
+        await tsdb.write_metrics(rows)
+    except TimescaleDBError as exc:
         logger.error(
-            "Failed to write telemetry for device %s (tenant %s) to InfluxDB: %s",
+            "Failed to write telemetry for device %s (tenant %s) to TimescaleDB: %s",
             device_id,
             tenant_id,
             exc,
         )
         raise HTTPException(
             status_code=503,
-            detail=f"InfluxDB write failed: {exc}",
+            detail=f"TimescaleDB write failed: {exc}",
         ) from exc
 
     logger.debug(
-        "Wrote telemetry for device %s (tenant %s) to InfluxDB.", device_id, tenant_id
+        "Wrote %d metric(s) for device %s (tenant %s) to TimescaleDB.",
+        len(rows),
+        device_id,
+        tenant_id,
     )
     return TelemetryWebhookResponse(
         status="written",
         device_id=device_id,
         tenant_id=tenant_id,
-        points_written=1,
+        points_written=len(rows),
     )

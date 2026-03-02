@@ -22,7 +22,6 @@
 #   HB_OIDC_SECRET             – hawkBit OIDC client secret
 #   BRIDGE_OIDC_SECRET         – IoT Bridge API OIDC client secret
 #   PORTAL_OIDC_SECRET         – Portal OIDC client secret
-#   INFLUX_PROXY_OIDC_SECRET   – InfluxDB proxy OIDC client secret
 #   EXTERNAL_URL               – Browser-facing base URL (e.g. http://localhost:8888)
 #   TB_EXTERNAL_URL            – ThingsBoard direct URL (e.g. http://localhost:9090)
 #
@@ -58,7 +57,6 @@ for tpl in "$TEMPLATE_DIR"/*.json.tpl; do
       -e "s|\${HB_OIDC_SECRET}|${HB_OIDC_SECRET:-changeme}|g" \
       -e "s|\${BRIDGE_OIDC_SECRET}|${BRIDGE_OIDC_SECRET:-changeme}|g" \
       -e "s|\${PORTAL_OIDC_SECRET}|${PORTAL_OIDC_SECRET:-changeme}|g" \
-      -e "s|\${INFLUX_PROXY_OIDC_SECRET}|${INFLUX_PROXY_OIDC_SECRET:-changeme}|g" \
       -e "s|\${EXTERNAL_URL}|${EXTERNAL_URL:-http://localhost:8888}|g" \
       -e "s|\${TB_EXTERNAL_URL}|${TB_EXTERNAL_URL:-http://localhost:9090}|g" \
       "$tpl" > "$dest"

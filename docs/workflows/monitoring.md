@@ -1,7 +1,7 @@
 # Monitoring & Telemetry Workflow
 
-This page covers how device metrics flow from the edge to InfluxDB and how to use the
-Grafana dashboards.
+This page covers how device metrics flow from the edge to TimescaleDB (PostgreSQL 17 +
+TimescaleDB extension) and how to use the Grafana dashboards.
 
 ---
 
@@ -16,29 +16,29 @@ graph LR
 
     subgraph tenant[Tenant-Stack]
         TB[ThingsBoard]
-        IDB_T[InfluxDB]
+        TSDB_T[TimescaleDB]
         GRF_T[Grafana]
-        IDB_T --> GRF_T
+        TSDB_T --> GRF_T
     end
 
     subgraph provider[Provider-Stack]
         RMQ[RabbitMQ]
-        IDB_P[InfluxDB]
+        TSDB_P[TimescaleDB]
         GRF_P["Grafana (platform)"]
-        IDB_P --> GRF_P
+        TSDB_P --> GRF_P
     end
 
-    TEL -->|"HTTP · InfluxDB Line Protocol"| IDB_T
+    TEL -->|"PostgreSQL wire protocol"| TSDB_T
     MQC -->|MQTTS| TB
     TB -->|Rule Engine| ALM["Alarms / Notifications"]
     TB -->|"AMQP (optional)"| RMQ
-    RMQ -->|cdm-metrics vHost| IDB_P
+    RMQ -->|cdm-metrics vHost| TSDB_P
 ```
 
 **Principle:** High-frequency, high-cardinality data (every 10 seconds per device) goes
-directly to the Tenant InfluxDB.  Business-logic data (device state, alarms, OTA status)
+directly to the Tenant TimescaleDB.  Business-logic data (device state, alarms, OTA status)
 goes through ThingsBoard.  Optionally, the ThingsBoard Rule Engine forwards aggregated
-platform-health metrics via RabbitMQ to the Provider InfluxDB for fleet-wide visibility.
+platform-health metrics via RabbitMQ to the Provider TimescaleDB for fleet-wide visibility.
 
 ---
 
@@ -57,16 +57,22 @@ The Telegraf config is at `device-stack/telegraf/telegraf.conf`. Key sections:
 | `exec` | Custom metrics from user scripts | configurable |
 | `mqtt_consumer` | Parses device MQTT messages as tags | on message |
 
-### Output — Tenant InfluxDB v2
+### Output — Tenant TimescaleDB
 
 ```toml
-[[outputs.influxdb_v2]]
-  urls = ["http://tenant-influxdb:8086"]
-  token = "${INFLUXDB_TOKEN}"
-  organization = "cdm"
-  bucket = "device-telemetry"
-  timeout = "5s"
+[[outputs.postgresql]]
+  connection = "postgresql://telegraf:${TSDB_TELEGRAF_PASSWORD}@timescaledb:5432/${TSDB_DATABASE}?sslmode=disable"
+  schema = "public"
+  tags_as_foreign_keys = false
+  create_metrics_table_if_not_exists = true
+  [outputs.postgresql.timescaledb]
+    enabled = true
+    disable_compression = false
+    chunk_time_interval = "1d"
 ```
+
+Telegraf automatically creates one hypertable per measurement (e.g. `cpu`, `mem`, `disk`).
+The `time` column is the hypertable partition key.
 
 ### Adding Custom Metrics
 
@@ -76,35 +82,34 @@ To collect application-specific metrics, add an `exec` input:
 [[inputs.exec]]
   commands = ["/opt/cdm/metrics/my-app-metrics.sh"]
   timeout = "5s"
-  data_format = "influx"
+  data_format = "json"
   interval = "30s"
-```
-
-The script must output InfluxDB line protocol, e.g.:
-```
-my_app,device_id=device-001 queue_depth=42i,error_rate=0.01 1700000000000000000
+  name_override = "my_app"
 ```
 
 ---
 
-## InfluxDB Buckets
+## TimescaleDB Tables
 
-**Tenant InfluxDB** (device-facing):
+**Tenant TimescaleDB** (`${TENANT_ID}` database) — device-facing:
 
-| Bucket | Retention | Content |
+| Table (hypertable) | Retention | Content |
 |---|---|---|
-| `device-telemetry` | 30 days | All Telegraf metrics |
-| `device-events` | 90 days | Device state changes, OTA events |
+| `device_telemetry` | 30 days | All Telegraf metrics from devices |
+| `device_events` | 90 days | Device state changes, OTA events |
+| `device_audit` | 90 days | Enrollment, certificate events |
+| `<measurement>` | configurable | Auto-created by Telegraf per measurement |
 
-**Provider InfluxDB** (platform-facing):
+**Provider TimescaleDB** (`cdm` database) — platform-facing:
 
-| Bucket | Retention | Content |
+| Table (hypertable) | Retention | Content |
 |---|---|---|
-| `platform-health` | 90 days | Aggregated metrics from all tenants via RabbitMQ |
-| `cdm-audit` | 1 year | Enrollment events, revocations |
+| `iot_metrics` | 90 days | Aggregated metrics from all tenants via RabbitMQ |
+| `device_events` | 1 year | Enrollment events, revocations |
+| `<measurement>` | configurable | Auto-created by Telegraf per measurement |
 
-Buckets are created by the respective `monitoring/influxdb/init-scripts/01-init-buckets.sh`
-on first start.
+Tables and hypertables are created automatically by `monitoring/timescaledb/init-scripts/01-init-schema.sh`.
+Telegraf creates additional tables on first write.
 
 ---
 
@@ -120,7 +125,6 @@ Shows for a selected device (variable `$device_id`):
 - Memory used %
 - Disk used %
 - Network throughput (bytes sent/recv)
-- Top processes by CPU (from `exec` plugin)
 
 ### Fleet Summary
 
@@ -128,30 +132,22 @@ Shows across all devices:
 
 - Online device count (last heartbeat < 5 min)
 - P50 / P95 CPU usage across fleet
-- OTA success rate (from `device-events` bucket)
+- OTA success rate (from `device_events` table)
 - Devices with disk > 80%
 
----
-
-## Embedding Grafana in ThingsBoard
-
-Grafana dashboards are embedded in ThingsBoard via iframes. To allow anonymous access from within the ThingsBoard UI:
-
-1. In Grafana, go to **Configuration → Data Sources → InfluxDB** and ensure the datasource is working.
-2. Enable anonymous access restricted to a specific organisation:
-   ```ini
-   [auth.anonymous]
-   enabled = true
-   org_name = CDM
-   org_role = Viewer
-   ```
-3. In ThingsBoard, add an **iframe Widget** and set the URL to:
-   ```
-   http://grafana:3000/d/<dashboard-uid>/device-overview?orgId=1&var-device_id=${entityId}
-   ```
-
-!!! warning "Production Security"
-    In production, restrict Grafana iframe access by placing it behind the WireGuard VPN or requiring Keycloak SSO. Do not expose Grafana with anonymous access to the public internet.
+In Grafana, the datasource type is **PostgreSQL** with TimescaleDB enabled:
+- **Configuration → Data Sources → TimescaleDB** — ensure the datasource is working.
+- Queries use standard SQL with TimescaleDB functions:
+  ```sql
+  SELECT
+    time_bucket('1 minute', time) AS bucket,
+    avg(usage_user) AS cpu_avg
+  FROM cpu
+  WHERE device_id = '${device_id}'
+    AND time > NOW() - INTERVAL '1 hour'
+  GROUP BY bucket
+  ORDER BY bucket;
+  ```
 
 ---
 
@@ -163,7 +159,7 @@ ThingsBoard handles device-level alerting:
 - Disk full (> 95%) → critical alarm
 - Device offline (no telemetry for 10 min) → `Inactive` state in ThingsBoard
 
-InfluxDB/Grafana handles fleet-level alerting:
+Grafana + TimescaleDB handles fleet-level alerting:
 
 - OTA error rate > 5% → Grafana Alert → PagerDuty / email
 - Average memory usage across fleet > 80% → warning alert
@@ -174,7 +170,8 @@ InfluxDB/Grafana handles fleet-level alerting:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| No metrics in InfluxDB | Telegraf can't reach InfluxDB | Check `INFLUXDB_URL` and `INFLUXDB_TOKEN` in device `.env` |
-| Grafana shows "No data" | Wrong bucket name or time range | Verify bucket name matches `device-telemetry`; widen time range |
+| No metrics in TimescaleDB | Telegraf can't reach TimescaleDB | Check `TSDB_DATABASE`, `TSDB_TELEGRAF_PASSWORD` in device `.env` |
+| Grafana shows "No data" | Wrong table name or time range | Verify table name matches; widen time range |
 | ThingsBoard telemetry stops | MQTT client disconnected | Check `mqtt-client` logs; verify cert validity |
 | Missing device in Fleet dashboard | Telegraf tag `device_id` not set | Add `[global_tags] device_id = "${DEVICE_ID}"` to `telegraf.conf` |
+| Telegraf: `password authentication failed` | Wrong `TSDB_TELEGRAF_PASSWORD` | Check `.env` and restart `docker compose restart telegraf` |

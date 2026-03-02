@@ -17,19 +17,19 @@
 #   hawkbit      → OTA software-lifecycle management (DDI + DMF)
 #   wireguard    → VPN server for device remote-access tunnel
 #   terminal-proxy → WebSocket → ttyd proxy (browser terminal)
-#   influxdb     → Tenant device telemetry (time-series)
+#   timescaledb  → Tenant device telemetry (PostgreSQL 17 + TimescaleDB)
+#   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
 #   grafana      → Tenant device dashboards
 #   telegraf     → Tenant metrics aggregator
 #   iot-bridge-api → Tenant management API (device enrollment, WG alloc)
 #   caddy        → Reverse proxy / single entry point (:8888)
 #
 # NOT included here (→ provider-stack):
-#   Root CA, central RabbitMQ, platform-wide InfluxDB/Grafana
+#   Root CA, central RabbitMQ, platform-wide TimescaleDB/Grafana
 #
 # Port mapping:
 #   8888       → Caddy  (main entry point, path-based routing)
 #   9090       → ThingsBoard UI (direct, SPA can't use sub-path)
-#   8086       → InfluxDB (via oauth2-proxy, direct)
 #   8883       → ThingsBoard MQTT over TLS (direct, device connections)
 #   51820/udp  → WireGuard (direct, device VPN)
 #   9000       → step-ca (HTTPS, direct)
@@ -49,8 +49,8 @@ volumes:
   hawkbit-db-data:
   hawkbit-data:
   hawkbit-rmq-data:
-  influxdb-data:
-  influxdb-config:
+  timescaledb-data:
+  pgadmin-data:
   grafana-data:
   wg-data:
   step-ca-data:
@@ -166,7 +166,6 @@ services:
       HB_OIDC_SECRET: ${HB_OIDC_SECRET:-changeme}
       BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
-      INFLUX_PROXY_OIDC_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
       # Tenant bootstrap user passwords
       TENANT_ADMIN_PASSWORD: ${TENANT_ADMIN_PASSWORD:-changeme}
       TENANT_OPERATOR_PASSWORD: ${TENANT_OPERATOR_PASSWORD:-changeme}
@@ -359,82 +358,6 @@ services:
       keycloak:
         condition: service_healthy
 
-  # ── InfluxDB (tenant device telemetry) ──────────────────────────
-  influxdb:
-    image: influxdb:2.8-alpine
-    container_name: ${TENANT_ID:-tenant}-influxdb
-    restart: unless-stopped
-    environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER:-admin}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD:-changeme00}
-      DOCKER_INFLUXDB_INIT_ORG: ${TENANT_ID:-tenant}-org
-      DOCKER_INFLUXDB_INIT_BUCKET: device-telemetry
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
-    volumes:
-      - influxdb-data:/var/lib/influxdb2
-      - influxdb-config:/etc/influxdb2
-      - ./monitoring/influxdb/init-scripts:/docker-entrypoint-initdb.d:ro
-    networks:
-      - tenant-net
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-  # ── InfluxDB Token Injector ─────────────────────────────────
-  # Inserts "Authorization: Token" before InfluxDB so the SPA does not show
-  # its own login screen after the oauth2-proxy gate.
-  influxdb-token-injector:
-    image: caddy:2-alpine
-    container_name: ${TENANT_ID:-tenant}-influxdb-token-injector
-    restart: unless-stopped
-    volumes:
-      - ./monitoring/influxdb/token-injector/Caddyfile:/etc/caddy/Caddyfile:ro
-    environment:
-      INFLUX_TOKEN: ${INFLUX_TOKEN}
-    networks:
-      - tenant-net
-    depends_on:
-      - influxdb
-  # ── InfluxDB OAuth2 Proxy ────────────────────────────────────────
-  influxdb-proxy:
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.2
-    container_name: ${TENANT_ID:-tenant}-influxdb-proxy
-    restart: unless-stopped
-    environment:
-      OAUTH2_PROXY_PROVIDER: oidc
-      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}
-      OAUTH2_PROXY_LOGIN_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/auth
-      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/token
-      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/auth/realms/${TENANT_ID:-tenant}/protocol/openid-connect/certs
-      OAUTH2_PROXY_CLIENT_ID: influxdb-proxy
-      OAUTH2_PROXY_CLIENT_SECRET: ${INFLUX_PROXY_OIDC_SECRET:-changeme}
-      OAUTH2_PROXY_REDIRECT_URL: ${INFLUX_EXTERNAL_URL:-http://localhost:8086}/oauth2/callback
-      OAUTH2_PROXY_UPSTREAMS: http://influxdb-token-injector:8087
-      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
-      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: roles
-      OAUTH2_PROXY_ALLOWED_GROUPS: cdm-admin,cdm-operator
-      OAUTH2_PROXY_SCOPE: "openid profile email roles"
-      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/api/,^/write,^/query,^/ping,^/health,^/metrics"
-      OAUTH2_PROXY_COOKIE_SECRET: ${INFLUX_PROXY_COOKIE_SECRET:-0123456789abcdef0123456789abcdef}
-      OAUTH2_PROXY_COOKIE_SECURE: "${INFLUX_PROXY_COOKIE_SECURE:-false}"
-      OAUTH2_PROXY_COOKIE_SAMESITE: "${INFLUX_PROXY_COOKIE_SAMESITE:-lax}"
-      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
-      OAUTH2_PROXY_REVERSE_PROXY: "true"
-    ports:
-      - "${INFLUX_HOST_PORT:-8086}:4180"
-    networks:
-      - tenant-net
-    depends_on:
-      keycloak:
-        condition: service_healthy
-      influxdb:
-        condition: service_healthy
-      influxdb-token-injector:
-        condition: service_started
-
   # ── Grafana (tenant device dashboards) ──────────────────────────
   grafana:
     image: grafana/grafana-oss:12.4.0
@@ -460,6 +383,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      TSDB_GRAFANA_PASSWORD: ${TSDB_GRAFANA_PASSWORD:-changeme}
+      TSDB_DATABASE: ${TENANT_ID:-tenant}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -467,7 +392,7 @@ services:
     networks:
       - tenant-net
     depends_on:
-      influxdb:
+      timescaledb:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -478,10 +403,10 @@ services:
     container_name: ${TENANT_ID:-tenant}-telegraf
     restart: unless-stopped
     environment:
-      INFLUX_URL: http://influxdb:8086
-      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
-      INFLUX_ORG: ${TENANT_ID:-tenant}-org
-      INFLUX_BUCKET: device-telemetry
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DATABASE: ${TENANT_ID:-tenant}
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
       HAWKBIT_URL: http://hawkbit:8070/hawkbit
       HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
       HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
@@ -497,7 +422,7 @@ services:
     networks:
       - tenant-net
     depends_on:
-      - influxdb
+      - timescaledb
       - hawkbit
       - thingsboard
 
@@ -558,10 +483,10 @@ services:
       HAWKBIT_URL: http://hawkbit:8070/hawkbit
       HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
       HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
-      INFLUX_URL: http://influxdb:8086
-      INFLUX_TOKEN: ${INFLUX_TOKEN:-my-super-secret-influx-token}
-      INFLUX_ORG: ${TENANT_ID:-tenant}-org
-      INFLUX_BUCKET: device-telemetry
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DATABASE: ${TENANT_ID:-tenant}
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
       WIREGUARD_CONFIG_DIR: /wg-config
       WG_SUBNET: ${WG_INTERNAL_SUBNET:-10.8.0.0}/24
       WG_SERVER_IP: ${WG_SERVER_IP:-10.8.0.1}
@@ -592,7 +517,7 @@ services:
         condition: service_started
       hawkbit:
         condition: service_started
-      influxdb:
+      timescaledb:
         condition: service_healthy
 
   # ── Terminal Proxy ───────────────────────────────────────────────
@@ -624,7 +549,7 @@ services:
   # ── Caddy (reverse proxy / single entry point) ───────────────────
   # Entry point on port 8888 (same as provider-stack).
   # ThingsBoard uses port 9090 directly (SPA webpack limitation).
-  # InfluxDB uses port 8086 directly (SPA limitation).
+
   caddy:
     image: caddy:2-alpine
     container_name: ${TENANT_ID:-tenant}-caddy
@@ -651,7 +576,9 @@ services:
         condition: service_started
       step-ca:
         condition: service_healthy
-      influxdb-proxy:
+      timescaledb:
+        condition: service_healthy
+      pgadmin:
         condition: service_started
       thingsboard:
         condition: service_started

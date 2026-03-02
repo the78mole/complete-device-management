@@ -235,20 +235,6 @@
       ]
     },
     {
-      "clientId": "influxdb-proxy",
-      "name": "InfluxDB Proxy",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "${INFLUX_PROXY_OIDC_SECRET}",
-      "redirectUris": ["*"],
-      "webOrigins": ["*"],
-      "standardFlowEnabled": true,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "attributes": { "post.logout.redirect.uris": "*" }
-    },
-    {
       "clientId": "terminal-proxy",
       "name": "Terminal Proxy",
       "enabled": true,

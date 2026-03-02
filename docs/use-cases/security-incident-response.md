@@ -82,17 +82,35 @@ Follow the [Device Provisioning Workflow](../workflows/device-provisioning.md) w
 
 ---
 
-## Scenario 2 — Leaked InfluxDB Token
+## Scenario 2 — Leaked TimescaleDB Credentials
 
-**Trigger:** An InfluxDB write token is accidentally exposed in logs or a git commit.
+**Trigger:** A TimescaleDB user password (e.g. `TSDB_TELEGRAF_PASSWORD` or `TSDB_GRAFANA_PASSWORD`) is accidentally exposed in logs or a git commit.
 
 ### Response Steps
 
-1. Log in to Tenant InfluxDB (`https://tenant.example.com:8086`) or Provider InfluxDB (`https://provider.example.com:8086`).
-2. Go to **Load Data → API Tokens**.
-3. Find the compromised token and click **Delete**.
-4. Create a new token with the same permissions.
-5. Update `INFLUXDB_TOKEN` in the relevant `.env` and restart Telegraf on all devices.
+1. Connect to the affected TimescaleDB container (Provider or Tenant):
+   ```bash
+   docker compose exec timescaledb psql -U postgres -d cdm
+   ```
+2. Rotate the compromised password:
+   ```sql
+   ALTER USER telegraf WITH PASSWORD '<new-strong-password>';
+   -- or:
+   ALTER USER grafana  WITH PASSWORD '<new-strong-password>';
+   ```
+3. Update the corresponding variable in `.env`:
+   ```dotenv
+   TSDB_TELEGRAF_PASSWORD=<new-strong-password>
+   # or
+   TSDB_GRAFANA_PASSWORD=<new-strong-password>
+   ```
+4. Restart the affected service (Telegraf or Grafana) to pick up the new credential:
+   ```bash
+   docker compose restart telegraf
+   # or
+   docker compose restart grafana
+   ```
+5. Verify reconnection in `docker compose logs telegraf`.
 
 ---
 

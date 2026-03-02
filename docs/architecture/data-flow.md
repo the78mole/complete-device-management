@@ -16,19 +16,19 @@ graph LR
 
     subgraph tenant[Tenant-Stack]
         TB[ThingsBoard]
-        IDB_T[InfluxDB]
+        IDB_T[InfluxDB → TimescaleDB]
         GRF_T[Grafana]
         TB --> IDB_T --> GRF_T
     end
 
     subgraph provider[Provider-Stack]
         RMQ[RabbitMQ]
-        IDB_P[InfluxDB]
+        IDB_P[TimescaleDB]
         GRF_P["Grafana (platform)"]
         IDB_P --> GRF_P
     end
 
-    TLG -->|"HTTP · CPU/RAM/disk/net"| IDB_T
+    TLG -->|"HTTP · CPU/RAM/disk/net (PostgreSQL wire)"| IDB_T
     MQC -->|"MQTTS mTLS (8883)"| TB
     TB -->|"Rule Engine → AMQP"| RMQ
     RMQ -->|cdm-metrics vHost| IDB_P
@@ -38,11 +38,11 @@ graph LR
 
 - **ThingsBoard MQTT** (Tenant-Stack) handles business-logic telemetry (device state,
   alarm conditions, OTA status).  ThingsBoard’s Rule Engine can trigger actions.
-- **Telegraf → Tenant InfluxDB** handles high-frequency performance metrics (every 10 s).
-  This avoids overwhelming ThingsBoard’s PostgreSQL backend.
+- **Telegraf → Tenant TimescaleDB** handles high-frequency performance metrics (every 10 s).
+  This avoids overwhelming ThingsBoard's PostgreSQL backend.
 - **Tenant → Provider aggregation** (optional): ThingsBoard Rule Engine bridges selected
   metrics to the Provider RabbitMQ `cdm-metrics` vHost; Provider Telegraf consumes them
-  and writes to Provider InfluxDB for platform-wide visibility.
+  and writes to Provider TimescaleDB for platform-wide visibility.
 
 ### MQTT Message Format
 
@@ -131,8 +131,8 @@ sequenceDiagram
 | Data Type | Transport | Storage |
 |---|---|---|
 | Device state, alarms, OTA status | MQTT → ThingsBoard (Tenant) | ThingsBoard PostgreSQL |
-| Device telemetry (CPU, RAM, disk) | Telegraf → Tenant InfluxDB | Tenant InfluxDB |
-| Platform-health metrics | AMQP → Provider RabbitMQ → Provider InfluxDB | Provider InfluxDB |
+| Device telemetry (CPU, RAM, disk) | Telegraf → Tenant TimescaleDB | Tenant TimescaleDB |
+| Platform-health metrics | AMQP → Provider RabbitMQ → Provider TimescaleDB | Provider TimescaleDB |
 | OTA / firmware-update status | hawkBit DDI API (polled by device) | hawkBit DB |
 | Audit / access logs | Keycloak events | Keycloak DB |
 
@@ -145,7 +145,7 @@ graph TB
     subgraph provider["Provider-Stack"]
         RMQ_P["RabbitMQ :5672"]
         KC_P["Keycloak :8888/auth"]
-        IDB_P["InfluxDB :8086"]
+        IDB_P["TimescaleDB :8086 (pgAdmin)"]
         SCA_P["step-ca :9000"]
         IBA_P["IoT Bridge API"]
     end
@@ -156,7 +156,7 @@ graph TB
         KC_T["Keycloak"]
         WGS["WireGuard :51820/udp"]
         TXP["Terminal Proxy"]
-        IDB_T["InfluxDB"]
+        IDB_T["TimescaleDB"]
     end
 
     subgraph device["Device"]
@@ -168,7 +168,7 @@ graph TB
     end
 
     MQC -->|MQTTS 8883| TB_T
-    TLG -->|InfluxDB HTTP| IDB_T
+    TLG -->|TimescaleDB (PostgreSQL)| IDB_T
     WGC -->|WireGuard UDP 51820| WGS
     UPD -->|DDI HTTP| HB_T
     TB_T -->|AMQP| RMQ_P

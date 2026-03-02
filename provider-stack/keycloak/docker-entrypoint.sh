@@ -6,7 +6,7 @@
 # into /opt/keycloak/data/import/ before starting Keycloak with --import-realm.
 #
 # Provider-stack manages two realms only:
-#   realm-cdm.json.tpl      – platform users, Grafana/IoT-Bridge/Portal/influxdb-proxy clients
+#   realm-cdm.json.tpl      – platform users, Grafana/IoT-Bridge/Portal clients
 #   realm-provider.json.tpl – platform operations staff (platform-admin, platform-operator)
 #
 # Adding a new realm:
@@ -37,7 +37,6 @@ for tpl in "$TEMPLATE_DIR"/*.json.tpl; do
       -e "s|\${GRAFANA_BROKER_SECRET}|${GRAFANA_BROKER_SECRET:-changeme}|g" \
       -e "s|\${BRIDGE_OIDC_SECRET}|${BRIDGE_OIDC_SECRET:-}|g" \
       -e "s|\${PORTAL_OIDC_SECRET}|${PORTAL_OIDC_SECRET:-changeme}|g" \
-      -e "s|\${INFLUX_PROXY_OIDC_SECRET}|${INFLUX_PROXY_OIDC_SECRET:-changeme}|g" \
       -e "s|\${RABBITMQ_MANAGEMENT_OIDC_SECRET}|${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}|g" \
       -e "s|\${PROVIDER_OPERATOR_PASSWORD}|${PROVIDER_OPERATOR_PASSWORD:-changeme}|g" \
       -e "s|\${EXTERNAL_URL}|${EXTERNAL_URL:-http://localhost:8888}|g" \

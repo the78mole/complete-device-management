@@ -22,6 +22,7 @@
 #   /api/       → IoT Bridge API    iot-bridge-api:8000  (strips /api prefix)
 #   /rabbitmq/  → RabbitMQ Mgmt     rabbitmq:15672
 #   /pki/       → step-ca           step-ca:9000 (HTTPS upstream)
+#   /pgadmin/   → pgAdmin           pgadmin:80   (TimescaleDB admin UI)
 
 {
     # auto_https off  → plain HTTP (dev / Codespaces)

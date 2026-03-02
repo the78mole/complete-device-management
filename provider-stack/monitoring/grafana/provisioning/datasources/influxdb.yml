@@ -1,29 +1,4 @@
+# This file has been replaced by timescaledb.yml
+# TimescaleDB (PostgreSQL 17) is now the time-series backend.
 apiVersion: 1
-
-datasources:
-  - name: InfluxDB-iot-metrics
-    type: influxdb
-    access: proxy
-    url: http://influxdb:8086
-    jsonData:
-      version: Flux
-      organization: cdm-org
-      defaultBucket: iot-metrics
-      tlsSkipVerify: true
-    secureJsonData:
-      token: ${INFLUX_TOKEN}
-    isDefault: true
-    editable: false
-
-  - name: InfluxDB-device-events
-    type: influxdb
-    access: proxy
-    url: http://influxdb:8086
-    jsonData:
-      version: Flux
-      organization: cdm-org
-      defaultBucket: device-events
-      tlsSkipVerify: true
-    secureJsonData:
-      token: ${INFLUX_TOKEN}
-    editable: false
+datasources: []

@@ -23,7 +23,7 @@ containers are running.
 | Docker | 24.x | |
 | Docker Compose | 2.20 | Ships with Docker Desktop |
 | RAM | 6 GB | 8 GB recommended |
-| Disk | 10 GB free | InfluxDB data grows over time |
+| Disk | 10 GB free | TimescaleDB data grows over time |
 | OS | Linux (amd64) | macOS works for development; Windows via WSL 2 |
 | `git` | 2.40+ | |
 | `step` CLI | 0.25+ | Host-side cert inspection only; not required inside containers |
@@ -52,7 +52,6 @@ Minimal changes for **localhost**:
 
 ```dotenv
 EXTERNAL_URL=http://localhost:8888
-INFLUX_EXTERNAL_URL=http://localhost:8086
 CADDY_SITE_ADDRESS=       # empty → Caddy listens on :8888
 CADDY_AUTO_HTTPS=off
 # Change all secrets:
@@ -61,26 +60,22 @@ KC_DB_PASSWORD=<strong-password>
 STEP_CA_PASSWORD=<strong-password>
 STEP_CA_PROVISIONER_PASSWORD=<strong-password>
 RABBITMQ_ADMIN_PASSWORD=<strong-password>
-INFLUX_ADMIN_PASSWORD=<strong-password>    # min 8 chars
-INFLUX_TOKEN=<random-token>
-INFLUX_PROXY_COOKIE_SECRET=$(openssl rand -hex 32)
+TSDB_PASSWORD=<strong-password>
+TSDB_TELEGRAF_PASSWORD=<strong-password>
+TSDB_GRAFANA_PASSWORD=<strong-password>
+PGADMIN_EMAIL=admin@cdm.local
+PGADMIN_PASSWORD=<strong-password>
 ```
 
-For **GitHub Codespaces**, additionally:
-
-```dotenv
-EXTERNAL_URL=https://<CODESPACE_NAME>-8888.app.github.dev
-INFLUX_EXTERNAL_URL=https://<CODESPACE_NAME>-8086.app.github.dev
-INFLUX_PROXY_COOKIE_SECURE=true
-INFLUX_PROXY_COOKIE_SAMESITE=none
-```
+For **GitHub Codespaces**, no additional InfluxDB proxy variables needed — pgAdmin
+runs behind Caddy on the same port 8888.
 
 !!! tip "Find your Codespace name"
     Run `echo $CODESPACE_NAME` in the terminal, or read the forwarded URLs from the
     **Ports** tab in the VS Code sidebar.
 
 !!! info "OIDC secrets on first boot"
-    `GRAFANA_OIDC_SECRET`, `BRIDGE_OIDC_SECRET`, `INFLUXDB_PROXY_OIDC_SECRET`, and
+    `GRAFANA_OIDC_SECRET`, `BRIDGE_OIDC_SECRET`, and
     `RABBITMQ_MANAGEMENT_OIDC_SECRET` can remain as `changeme` for the initial start.
     You will copy the real Keycloak-generated values in step [A5](#a5----retrieve-oidc-secrets).
 
@@ -107,9 +102,8 @@ provider-step-ca                    running (healthy)
 provider-keycloak-db                running (healthy)
 provider-keycloak                   running (healthy)
 provider-rabbitmq                   running (healthy)
-provider-influxdb                   running (healthy)
-provider-influxdb-token-injector    running
-provider-influxdb-proxy             running
+provider-timescaledb                running (healthy)
+provider-pgadmin                    running
 provider-grafana                    running (healthy)
 provider-telegraf                   running
 provider-iot-bridge-api             running (healthy)
@@ -138,7 +132,6 @@ STEP_CA_FINGERPRINT=<printed value>
    | `cdm` | `grafana` | `GRAFANA_OIDC_SECRET` |
    | `cdm` | `iot-bridge` | `BRIDGE_OIDC_SECRET` |
    | `cdm` | `portal` | `PORTAL_OIDC_SECRET` |
-   | `cdm` | `influxdb-proxy` | `INFLUXDB_PROXY_OIDC_SECRET` |
    | `provider` | `rabbitmq-management` | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
 
 3. Update `.env` and restart affected services:
@@ -182,7 +175,6 @@ Use `openssl rand -hex 16` / `openssl rand -hex 32` for every secret — never u
 
 ```bash
 ufw allow 8888/tcp   # CDM Dashboard / Caddy
-ufw allow 8086/tcp   # InfluxDB proxy (direct)
 ufw allow 9000/tcp   # step-ca (optional; needed by Tenant-Stacks connecting from another host)
 ```
 
@@ -257,18 +249,9 @@ INFLUX_PROXY_COOKIE_SECRET=$(openssl rand -hex 32)
 PORTAL_SESSION_SECRET=$(openssl rand -hex 32)
 ```
 
-!!! note "InfluxDB TLS in production"
-    InfluxDB is exposed on a separate port (SPA webpack limitation).  For production
-    TLS, add `influx.example.com` as a second DNS record pointing to the same server
-    and extend `docker-compose.override.yml` with a second Caddy site block:
-    ```yaml
-    # In the caddy container's volumes, mount an extended Caddyfile that adds:
-    # influx.example.com {
-    #     reverse_proxy influxdb-proxy:4180
-    # }
-    ```
-    A simpler alternative is to terminate TLS for port 8086 at a separate load
-    balancer or cloud ingress.
+!!! note "pgAdmin in production"
+    pgAdmin is routed through Caddy at `/pgadmin/` and requires no separate port.
+    Access it at `https://cdm.example.com/pgadmin/` with `PGADMIN_EMAIL` / `PGADMIN_PASSWORD`.
 
 ### C4 — Start and verify TLS
 
@@ -315,16 +298,8 @@ Distribute `root_ca.crt` and `STEP_CA_FINGERPRINT` to every Tenant-Stack and Dev
 | **Grafana** | `/grafana/` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
 | **RabbitMQ Management** | `/rabbitmq/` | SSO: Keycloak **`provider`** realm (`KC_ADMIN_USER`) **or** local `admin` / `RABBITMQ_ADMIN_PASSWORD` |
 | **IoT Bridge API (Swagger)** | `/api/docs` | requires OIDC JWT |
-| **InfluxDB** | `http://localhost:8086` | SSO via Keycloak `cdm` realm; token-injector handles InfluxDB auth transparently |
+| **pgAdmin (TimescaleDB)** | `/pgadmin/` | `PGADMIN_EMAIL` / `PGADMIN_PASSWORD` |
 | **step-ca health** | `https://localhost:9000/health` | returns `{"status":"ok"}` |
-
-!!! warning "RabbitMQ: use the `provider` realm"
-    The SSO button redirects to the **`provider`** realm.  Log in with
-    `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` — the `cdm-admin` account does not work here.
-
-!!! info "InfluxDB: no double login"
-    After the Keycloak step, InfluxDB opens directly.  The `influxdb-token-injector`
-    sidecar injects the admin API token on every upstream request.
 
 ---
 

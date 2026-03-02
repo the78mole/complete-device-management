@@ -101,46 +101,48 @@ docker compose up -d keycloak
 
 ### oauth2-proxy "Rejecting invalid redirect" / "domain / port not in whitelist"
 
-**Cause:** `EXTERNAL_URL` or `INFLUX_EXTERNAL_URL` is set to `http://localhost:…` but the
-browser is accessing the service via a GitHub Codespaces URL (`*.app.github.dev`).
+**Cause:** `EXTERNAL_URL` is set to `http://localhost:...` but the browser is accessing
+the service via a GitHub Codespaces URL (`*.app.github.dev`).
 oauth2-proxy validates redirect URIs against the configured allow-list.
 
-**Fix:** Update `.env` to the full Codespaces URLs:
+**Fix:** Update `.env` to the full Codespaces URL:
 
 ```dotenv
 EXTERNAL_URL=https://<CODESPACE_NAME>-8888.app.github.dev
-INFLUX_EXTERNAL_URL=https://<CODESPACE_NAME>-8086.app.github.dev
-INFLUX_PROXY_COOKIE_SECURE=true
-INFLUX_PROXY_COOKIE_SAMESITE=none
 ```
 
-Then restart the affected proxies:
+Then restart Caddy:
 
 ```bash
-docker compose restart influxdb-proxy caddy
+docker compose restart caddy
 ```
 
 ---
 
-### InfluxDB shows its own login screen after Keycloak authentication
+### TimescaleDB connection refused / Telegraf write errors
 
-**Cause:** `oauth2-proxy` proxies to InfluxDB directly without providing an API token.
-InfluxDB has its own independent authentication layer and shows a native login form for
-unauthenticated requests.
+**Cause:** Telegraf can't reach TimescaleDB, or user credentials are wrong.
 
-**Fix:** Ensure `OAUTH2_PROXY_UPSTREAMS` in `docker-compose.yml` points to the
-`influxdb-token-injector` sidecar, **not** to `influxdb:8086` directly:
-
-```yaml
-OAUTH2_PROXY_UPSTREAMS: http://influxdb-token-injector:8087
-```
-
-Also verify that the `influxdb-token-injector` container is running:
+**Fix:** Verify TimescaleDB is healthy:
 
 ```bash
-docker compose ps influxdb-token-injector
-# Should show: running
-docker compose logs influxdb-token-injector
+docker compose ps timescaledb
+# Should show: running (healthy)
+docker compose logs timescaledb | tail -20
+```
+
+Verify Telegraf credentials:
+
+```bash
+docker compose exec timescaledb psql -U postgres -d cdm -c "\\du"
+# Should list telegraf and grafana users
+```
+
+If credentials appear correct but Telegraf still fails:
+
+```bash
+docker compose restart telegraf
+docker compose logs telegraf | grep -i error
 ```
 
 ---
