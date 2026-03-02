@@ -4,7 +4,7 @@ datasources:
   - name: TimescaleDB
     type: postgres
     access: proxy
-    url: timescaledb:5432
+    url: thingsboard-db:5432
     database: ${TSDB_DATABASE}
     user: grafana
     secureJsonData:

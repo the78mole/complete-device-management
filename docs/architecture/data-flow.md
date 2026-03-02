@@ -15,16 +15,18 @@ graph LR
 
     subgraph tenant[Tenant-Stack]
         TB[ThingsBoard]
+        TB_DB[(thingsboard-db\nTimescaleDB-pg17)]
         IBA[IoT Bridge API]
-        IDB_T[TimescaleDB]
         GRF_T[Grafana]
+        TB -->|"primary storage\n(thingsboard DB)"| TB_DB
         TB -->|"Rule Engine webhook"| IBA
-        IBA --> IDB_T --> GRF_T
+        IBA -->|"analytics\n(tenant DB)"| TB_DB
+        TB_DB --> GRF_T
     end
 
     subgraph provider[Provider-Stack]
         RMQ[RabbitMQ]
-        IDB_P[TimescaleDB]
+        IDB_P[(TimescaleDB)]
         GRF_P["Grafana (platform)"]
         IDB_P --> GRF_P
     end
@@ -37,9 +39,14 @@ graph LR
 **Data paths:**
 
 - **ThingsBoard MQTT** (Tenant-Stack) receives all device telemetry (device state, alarms,
-  OTA status, sensor values) over mTLS. ThingsBoard's Rule Engine can trigger actions.
-- **Rule Engine → IoT Bridge API webhook**: ThingsBoard forwards telemetry events via HTTP
-  webhook to the Tenant IoT Bridge API, which writes them to Tenant TimescaleDB.
+  OTA status, sensor values) over mTLS and **persists them in the `thingsboard` database**
+  (primary storage). ThingsBoard's built-in dashboards and Rule Engine operate on this data.
+- **Rule Engine → IoT Bridge API webhook**: ThingsBoard optionally forwards telemetry events
+  via HTTP webhook to the Tenant IoT Bridge API, which writes them to a **separate `${TENANT_ID}`
+  database within the same PostgreSQL instance** (TimescaleDB hypertables) for long-term
+  analytics and Grafana dashboards.
+- Both databases (`thingsboard` + `${TENANT_ID}`) reside in a **single `thingsboard-db`
+  container** running `timescale/timescaledb:latest-pg17` — no separate TimescaleDB service.
 - **Tenant → Provider aggregation** (optional): ThingsBoard Rule Engine bridges selected
   metrics to the Provider RabbitMQ `cdm-metrics` vHost; Provider TimescaleDB stores them
   for platform-wide visibility.
@@ -130,8 +137,8 @@ sequenceDiagram
 
 | Data Type | Transport | Storage |
 |---|---|---|
-| Device state, alarms, OTA status | MQTT → ThingsBoard (Tenant) | ThingsBoard PostgreSQL |
-| Device telemetry (CPU, RAM, disk, sensors) | MQTT → ThingsBoard → Rule Engine webhook → IoT Bridge API | Tenant TimescaleDB |
+| Device state, alarms, OTA status | MQTT → ThingsBoard (Tenant) | ThingsBoard PostgreSQL (`thingsboard` DB) |
+| Device telemetry (CPU, RAM, disk, sensors) | MQTT → ThingsBoard (`thingsboard` DB) *(primary)*; Rule Engine webhook → IoT Bridge API → TimescaleDB (`${TENANT_ID}` DB) *(analytics)* | Single `thingsboard-db` container (two databases) |
 | Platform-health metrics | AMQP → Provider RabbitMQ → Provider TimescaleDB | Provider TimescaleDB |
 | OTA / firmware-update status | hawkBit DDI API (polled by device) | hawkBit DB |
 | Audit / access logs | Keycloak events | Keycloak DB |
@@ -152,11 +159,15 @@ graph TB
 
     subgraph tenant["Tenant-Stack"]
         TB_T["ThingsBoard :8883 (MQTTS)"]
+        TB_DB[("thingsboard-db\n(TimescaleDB-pg17)\nthingsboard + tenant DBs")]
         HB_T["hawkBit"]
         KC_T["Keycloak"]
         WGS["WireGuard :51820/udp"]
         TXP["Terminal Proxy"]
-        IDB_T["TimescaleDB"]
+        IBA_T["IoT Bridge API"]
+        TB_T -->|thingsboard DB| TB_DB
+        TB_T -->|Rule Engine webhook| IBA_T
+        IBA_T -->|tenant DB| TB_DB
     end
 
     subgraph device["Device"]

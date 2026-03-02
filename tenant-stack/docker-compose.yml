@@ -17,7 +17,8 @@
 #   hawkbit      → OTA software-lifecycle management (DDI + DMF)
 #   wireguard    → VPN server for device remote-access tunnel
 #   terminal-proxy → WebSocket → ttyd proxy (browser terminal)
-#   timescaledb  → Tenant device telemetry (PostgreSQL 17 + TimescaleDB)
+#   timescaledb  → unified DB: ThingsBoard app data + tenant telemetry analytics
+#                   (timescale/timescaledb image replaces thingsboard-db + separate timescaledb)
 #   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
 #   grafana      → Tenant device dashboards
 #   telegraf     → Tenant metrics aggregator
@@ -46,10 +47,6 @@ volumes:
   thingsboard-logs:
   thingsboard-db-data:
   tb-mqtt-certs:
-  hawkbit-db-data:
-  hawkbit-data:
-  hawkbit-rmq-data:
-  timescaledb-data:
   pgadmin-data:
   grafana-data:
   wg-data:
@@ -198,20 +195,31 @@ services:
       start_period: 90s
 
   # ── ThingsBoard ─────────────────────────────────────────────────
+  # Unified PostgreSQL (TimescaleDB image) – serves as both ThingsBoard's
+  # application database and the tenant analytics/telemetry database.
+  # Two databases within one instance:
+  #   thingsboard  – ThingsBoard internal storage (app user: thingsboard)
+  #   ${TENANT_ID} – Tenant analytics hypertables (users: telegraf, grafana)
   thingsboard-db:
-    image: postgres:18-alpine
+    image: timescale/timescaledb:latest-pg17
     container_name: ${TENANT_ID:-tenant}-tb-db
     restart: unless-stopped
     environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${TSDB_PASSWORD:-changeme}
       POSTGRES_DB: thingsboard
-      POSTGRES_USER: thingsboard
-      POSTGRES_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+      # Passed through to init script:
+      TB_DB_PASSWORD: ${TB_DB_PASSWORD:-changeme}
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
+      TSDB_GRAFANA_PASSWORD: ${TSDB_GRAFANA_PASSWORD:-changeme}
+      TENANT_ID: ${TENANT_ID:-tenant}
     volumes:
       - thingsboard-db-data:/var/lib/postgresql/data
+      - ./monitoring/timescaledb/init-scripts/01-init-schema.sh:/docker-entrypoint-initdb.d/01-init-schema.sh:ro
     networks:
       - tenant-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U thingsboard"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -224,8 +232,7 @@ services:
       TB_QUEUE_TYPE: in-memory
       SPRING_DATASOURCE_URL: jdbc:postgresql://thingsboard-db:5432/thingsboard
       SPRING_DATASOURCE_USERNAME: thingsboard
-      SPRING_DATASOURCE_PASSWORD: ${TB_DB_PASSWORD:-changeme}
-      # Keycloak OIDC – ThingsBoard uses the tenant Keycloak realm
+      SPRING_DATASOURCE_PASSWORD: ${TB_DB_PASSWORD:-changeme} – ThingsBoard uses the tenant Keycloak realm
       SECURITY_OAUTH2_ENABLED: "true"
       SECURITY_OAUTH2_DEFAULT_PROVIDER: keycloak
       SECURITY_OAUTH2_REGISTRATION_KEYCLOAK_CLIENT_ID: thingsboard
@@ -392,7 +399,7 @@ services:
     networks:
       - tenant-net
     depends_on:
-      timescaledb:
+      thingsboard-db:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -403,11 +410,10 @@ services:
     container_name: ${TENANT_ID:-tenant}-telegraf
     restart: unless-stopped
     environment:
-      TSDB_HOST: timescaledb
+      TSDB_HOST: thingsboard-db
       TSDB_PORT: "5432"
       TSDB_DATABASE: ${TENANT_ID:-tenant}
       TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
-      HAWKBIT_URL: http://hawkbit:8070/hawkbit
       HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
       HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
       HAWKBIT_TENANT: DEFAULT
@@ -422,11 +428,29 @@ services:
     networks:
       - tenant-net
     depends_on:
-      - timescaledb
+      - thingsboard-db
       - hawkbit
       - thingsboard
 
-  # ── WireGuard (device VPN server) ───────────────────────────────
+  # ── pgAdmin (unified DB admin UI) ───────────────────────────────
+  # Manages the single PostgreSQL instance (thingsboard-db) which serves
+  # both ThingsBoard internal storage and tenant analytics hypertables.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ${TENANT_ID:-tenant}-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@cdm.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      SCRIPT_NAME: /pgadmin
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    networks:
+      - tenant-net
+    depends_on:
+      thingsboard-db:
+        condition: service_healthy (device VPN server) ───────────────────────────────
   wireguard:
     image: lscr.io/linuxserver/wireguard:latest
     container_name: ${TENANT_ID:-tenant}-wireguard
@@ -483,7 +507,7 @@ services:
       HAWKBIT_URL: http://hawkbit:8070/hawkbit
       HAWKBIT_USER: ${HB_ADMIN_USER:-admin}
       HAWKBIT_PASSWORD: ${HB_ADMIN_PASSWORD:-admin}
-      TSDB_HOST: timescaledb
+      TSDB_HOST: thingsboard-db
       TSDB_PORT: "5432"
       TSDB_DATABASE: ${TENANT_ID:-tenant}
       TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
@@ -517,7 +541,7 @@ services:
         condition: service_started
       hawkbit:
         condition: service_started
-      timescaledb:
+      thingsboard-db:
         condition: service_healthy
 
   # ── Terminal Proxy ───────────────────────────────────────────────
@@ -576,7 +600,7 @@ services:
         condition: service_started
       step-ca:
         condition: service_healthy
-      timescaledb:
+      thingsboard-db:
         condition: service_healthy
       pgadmin:
         condition: service_started
