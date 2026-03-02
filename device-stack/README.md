@@ -4,7 +4,7 @@ This directory contains multiple implementations of the CDM device-side logic, e
 
 | Variant | Directory | Description |
 |---|---|---|
-| **Docker-based** | [`docker-based/`](docker-based/) | Full feature simulation via Docker Compose — WireGuard, OTA updater, MQTT telemetry, Telegraf, ttyd terminal |
+| **Docker-based** | [`docker-based/`](docker-based/) | Full feature simulation via Docker Compose — WireGuard, OTA updater, MQTT telemetry, ttyd terminal |
 | **FreeRTOS POSIX (x86\_64)** | [`freertos-x86_64-posix/`](freertos-x86_64-posix/) | FreeRTOS running on the POSIX/Linux port; enrollment + mTLS only |
 | **Linux QEMU (x86\_64)** | [`some-linux-x86_64-qemu/`](some-linux-x86_64-qemu/) | Minimal Linux (`busybox` initramfs) in QEMU x86\_64; enrollment + mTLS only |
 | **Yocto RPi 4** | [`yocto-raspberrypi4/`](yocto-raspberrypi4/) | Yocto 5.0 LTS image for Raspberry Pi 4 (64-bit); enrollment + mTLS, systemd service |
@@ -20,7 +20,6 @@ This directory contains multiple implementations of the CDM device-side logic, e
 | systemd service | ❌ | ❌ | ❌ | ✅ | ✅ |
 | WireGuard VPN client | ✅ | ❌ | ❌ | ❌ | ❌ |
 | hawkBit OTA updater | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Telegraf telemetry | ✅ | ❌ | ❌ | ❌ | ❌ |
 | ttyd web terminal | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 ## Shared Prerequisites

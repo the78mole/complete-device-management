@@ -10,15 +10,16 @@ telemetry, OTA updates, and remote access.
 ```mermaid
 graph LR
     subgraph device[Device]
-        TLG[Telegraf]
         MQC[MQTT client]
     end
 
     subgraph tenant[Tenant-Stack]
         TB[ThingsBoard]
-        IDB_T[InfluxDB → TimescaleDB]
+        IBA[IoT Bridge API]
+        IDB_T[TimescaleDB]
         GRF_T[Grafana]
-        TB --> IDB_T --> GRF_T
+        TB -->|"Rule Engine webhook"| IBA
+        IBA --> IDB_T --> GRF_T
     end
 
     subgraph provider[Provider-Stack]
@@ -28,7 +29,6 @@ graph LR
         IDB_P --> GRF_P
     end
 
-    TLG -->|"HTTP · CPU/RAM/disk/net (PostgreSQL wire)"| IDB_T
     MQC -->|"MQTTS mTLS (8883)"| TB
     TB -->|"Rule Engine → AMQP"| RMQ
     RMQ -->|cdm-metrics vHost| IDB_P
@@ -36,13 +36,13 @@ graph LR
 
 **Data paths:**
 
-- **ThingsBoard MQTT** (Tenant-Stack) handles business-logic telemetry (device state,
-  alarm conditions, OTA status).  ThingsBoard’s Rule Engine can trigger actions.
-- **Telegraf → Tenant TimescaleDB** handles high-frequency performance metrics (every 10 s).
-  This avoids overwhelming ThingsBoard's PostgreSQL backend.
+- **ThingsBoard MQTT** (Tenant-Stack) receives all device telemetry (device state, alarms,
+  OTA status, sensor values) over mTLS. ThingsBoard's Rule Engine can trigger actions.
+- **Rule Engine → IoT Bridge API webhook**: ThingsBoard forwards telemetry events via HTTP
+  webhook to the Tenant IoT Bridge API, which writes them to Tenant TimescaleDB.
 - **Tenant → Provider aggregation** (optional): ThingsBoard Rule Engine bridges selected
-  metrics to the Provider RabbitMQ `cdm-metrics` vHost; Provider Telegraf consumes them
-  and writes to Provider TimescaleDB for platform-wide visibility.
+  metrics to the Provider RabbitMQ `cdm-metrics` vHost; Provider TimescaleDB stores them
+  for platform-wide visibility.
 
 ### MQTT Message Format
 
@@ -131,7 +131,7 @@ sequenceDiagram
 | Data Type | Transport | Storage |
 |---|---|---|
 | Device state, alarms, OTA status | MQTT → ThingsBoard (Tenant) | ThingsBoard PostgreSQL |
-| Device telemetry (CPU, RAM, disk) | Telegraf → Tenant TimescaleDB | Tenant TimescaleDB |
+| Device telemetry (CPU, RAM, disk, sensors) | MQTT → ThingsBoard → Rule Engine webhook → IoT Bridge API | Tenant TimescaleDB |
 | Platform-health metrics | AMQP → Provider RabbitMQ → Provider TimescaleDB | Provider TimescaleDB |
 | OTA / firmware-update status | hawkBit DDI API (polled by device) | hawkBit DB |
 | Audit / access logs | Keycloak events | Keycloak DB |
@@ -161,14 +161,12 @@ graph TB
 
     subgraph device["Device"]
         MQC[mqtt-client]
-        TLG[telegraf]
         WGC[wireguard-client]
         UPD[rauc-updater]
         TTD["ttyd :7681"]
     end
 
     MQC -->|MQTTS 8883| TB_T
-    TLG -->|TimescaleDB (PostgreSQL)| IDB_T
     WGC -->|WireGuard UDP 51820| WGS
     UPD -->|DDI HTTP| HB_T
     TB_T -->|AMQP| RMQ_P
