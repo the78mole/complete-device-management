@@ -26,6 +26,9 @@ echo ">>> Creating grafana read-only user..."
 $PSQL -c "CREATE USER grafana WITH PASSWORD '${TSDB_GRAFANA_PASSWORD:-changeme}';"
 $PSQL -c "GRANT CONNECT ON DATABASE ${POSTGRES_DB:-cdm} TO grafana;"
 $PSQL -c "GRANT USAGE ON SCHEMA public TO grafana;"
+# Grant SELECT for tables created by postgres itself
 $PSQL -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana;"
+# Grant SELECT for tables created by the telegraf write user (all metric tables)
+$PSQL -c "ALTER DEFAULT PRIVILEGES FOR ROLE telegraf IN SCHEMA public GRANT SELECT ON TABLES TO grafana;"
 
 echo ">>> TimescaleDB init complete."

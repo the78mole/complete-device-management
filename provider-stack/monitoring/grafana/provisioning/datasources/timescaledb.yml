@@ -3,17 +3,18 @@ apiVersion: 1
 datasources:
   - name: TimescaleDB
     uid: timescaledb-provider
-    type: postgres
+    type: grafana-postgresql-datasource
     access: proxy
     url: timescaledb:5432
-    database: cdm
     user: grafana
     secureJsonData:
       password: ${TSDB_GRAFANA_PASSWORD}
     jsonData:
+      database: cdm
       sslmode: disable
       postgresVersion: 1700
       timescaledb: true
+      schema: public
     isDefault: true
     editable: false
 
