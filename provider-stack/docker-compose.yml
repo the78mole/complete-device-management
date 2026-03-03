@@ -280,7 +280,7 @@ services:
       - ./pgadmin/oidc-proxy.py:/app/oidc-proxy.py:ro
     environment:
       KEYCLOAK_INTERNAL_URL: "http://keycloak:8080"
-      KEYCLOAK_REALM: "provider"
+      KEYCLOAK_REALM: "cdm"
       PROXY_PORT: "9099"
     networks:
       - provider-net
