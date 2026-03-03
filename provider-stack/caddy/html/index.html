@@ -125,23 +125,30 @@
       text-transform: uppercase;
       color: #8b949e;
     }
-    /* ── User Session Bar ───────────────────────────────────── */
-    .user-bar {
+    /* ── Realm Session Boxes ──────────────────────────────── */
+    .realm-box {
       background: rgba(255,255,255,0.04);
       border: 1px solid #30363d;
       border-radius: 8px;
-      padding: 0.45rem 0.85rem;
+      padding: 0.4rem 0.8rem;
       font-size: 0.82rem;
       display: flex;
       align-items: center;
-      gap: 0.6rem;
-      flex-wrap: wrap;
+      gap: 0.55rem;
       white-space: nowrap;
+      min-width: 9rem;
     }
-    .user-bar .btn-logout {
-      font-size: 0.75rem;
-      padding: 0.2rem 0.65rem;
+    .realm-box .btn-sess {
+      font-size: 0.73rem;
+      padding: 0.18rem 0.6rem;
       border-radius: 5px;
+    }
+    .realm-box .user-roles-small {
+      font-size: 0.68rem;
+      color: #8b949e;
+      max-width: 10rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
   </style>
 </head>
@@ -163,24 +170,10 @@
             </p>
           </div>
         </div>
-        <!-- ── Session / Login ────────────────────────────── -->
-        <div id="user-bar" class="user-bar mt-1 flex-shrink-0">
-          <!-- Logged-in state -->
-          <div id="session-info" class="d-none d-flex align-items-center gap-2">
-            <span style="font-size:1.15rem">👤</span>
-            <div class="d-flex flex-column" style="gap:0.1rem;line-height:1.2">
-              <span id="user-name" style="font-weight:600;color:#e6edf3"></span>
-              <span id="user-roles" style="color:#8b949e;font-size:0.72rem"></span>
-            </div>
-            <span id="user-realm" class="badge"></span>
-            <button id="btn-logout" class="btn btn-outline-danger btn-logout ms-1">Logout</button>
-          </div>
-          <!-- Not-logged-in state -->
-          <div id="login-options" class="d-flex align-items-center gap-2">
-            <span style="color:#8b949e;font-size:0.78rem">Nicht angemeldet</span>
-            <button id="btn-login-cdm"      class="btn btn-primary      btn-logout">Login CDM</button>
-            <button id="btn-login-provider" class="btn btn-outline-warning btn-logout">Login Provider</button>
-          </div>
+        <!-- ── Session / Login (per realm) ───────────────── -->
+        <div id="session-bar" class="d-flex gap-2 mt-1 flex-shrink-0 flex-wrap">
+          <div id="realm-box-cdm"      class="realm-box"></div>
+          <div id="realm-box-provider" class="realm-box"></div>
         </div>
       </div>
     </div>
@@ -473,52 +466,52 @@
       }
     }
 
-    // ── UI helpers ──────────────────────────────────────────────────────────
-    function showLoggedIn(kc) {
-      const t        = kc.tokenParsed;
-      const username = t.preferred_username || t.email || t.sub || '?';
-      const realm    = kc.realm;
-      const ignored  = ['uma_authorization', 'offline_access', `default-roles-${realm}`];
-      const roles    = (t.roles || t.realm_access?.roles || [])
-                         .filter(r => !ignored.includes(r));
+    // ── Render one realm box ────────────────────────────────────────────────
+    function renderRealmBox(realm, kc) {
+      const box      = document.getElementById(`realm-box-${realm}`);
+      const realmCls = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
+      const tag      = `<span class="realm-tag ${realmCls}">${realm.toUpperCase()}</span>`;
 
-      document.getElementById('user-name').textContent  = username;
-      document.getElementById('user-roles').textContent = roles.join(', ');
+      if (kc?.tokenParsed) {
+        const t        = kc.tokenParsed;
+        const username = t.preferred_username || t.email || t.sub || '?';
+        const ignored  = new Set(['uma_authorization','offline_access',`default-roles-${realm}`,'matrix-viewer']);
+        const roles    = (t.roles || t.realm_access?.roles || [])
+                           .filter(r => !ignored.has(r));
 
-      const rb = document.getElementById('user-realm');
-      rb.textContent = realm;
-      rb.className   = `badge ${realm === 'provider' ? 'bg-warning text-dark' : 'bg-primary'}`;
-
-      document.getElementById('login-options').classList.add('d-none');
-      document.getElementById('session-info').classList.remove('d-none');
-
-      document.getElementById('btn-logout').addEventListener('click', () => {
-        kc.logout({ redirectUri: window.location.href });
-      });
-    }
-
-    function setupLoginButtons() {
-      document.getElementById('btn-login-cdm').addEventListener('click', () => {
-        const kc = makeKC('cdm');
-        kc.init({ pkceMethod: 'S256', checkLoginIframe: false }).then(() =>
-          kc.login({ redirectUri: window.location.href })
+        box.innerHTML = `
+          ${tag}
+          <span style="color:#56d364;font-size:0.9rem">&#x25CF;</span>
+          <div style="display:flex;flex-direction:column;gap:0.05rem;line-height:1.25">
+            <span style="font-weight:600;color:#e6edf3">${username}</span>
+            <span class="user-roles-small" title="${roles.join(', ')}">${roles.join(', ') || '&mdash;'}</span>
+          </div>
+          <button class="btn btn-outline-danger btn-sess ms-1">Logout</button>`;
+        box.querySelector('button').addEventListener('click', () =>
+          kc.logout({ redirectUri: window.location.href })
         );
-      });
-      document.getElementById('btn-login-provider').addEventListener('click', () => {
-        const kc = makeKC('provider');
-        kc.init({ pkceMethod: 'S256', checkLoginIframe: false }).then(() =>
-          kc.login({ redirectUri: window.location.href })
-        );
-      });
+      } else {
+        box.innerHTML = `
+          ${tag}
+          <span style="color:#484f58;font-size:0.9rem">&#x25CF;</span>
+          <span style="color:#484f58">not logged in</span>
+          <button class="btn btn-sm btn-outline-light btn-sess ms-auto">Login &rarr;</button>`;
+        box.querySelector('button').addEventListener('click', () => {
+          const k = makeKC(realm);
+          k.init({ pkceMethod: 'S256', checkLoginIframe: false })
+           .then(() => k.login({ redirectUri: window.location.href }));
+        });
+      }
     }
 
     // ── Bootstrap ───────────────────────────────────────────────────────────
-    const kc = await trySilentSSO('cdm') || await trySilentSSO('provider');
-    if (kc?.tokenParsed) {
-      showLoggedIn(kc);
-    } else {
-      setupLoginButtons();
+    // Silent SSO must run sequentially (shared iframe)
+    const sessions = {};
+    for (const realm of ['cdm', 'provider']) {
+      sessions[realm] = await trySilentSSO(realm);
     }
+    renderRealmBox('cdm',      sessions['cdm']);
+    renderRealmBox('provider', sessions['provider']);
   </script>
 
 </body>
