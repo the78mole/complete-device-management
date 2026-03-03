@@ -19,7 +19,7 @@ The platform is split into two independently deployable Compose stacks:
 
 | Stack | Who operates it | Key services |
 |---|---|---|
-| **Provider-Stack** | CDM platform operator | Caddy, Keycloak (`cdm` + `provider` realms), RabbitMQ, TimescaleDB, Grafana, step-ca Root CA, IoT Bridge API |
+| **Provider-Stack** | CDM platform operator | Caddy, Keycloak (`cdm` realm), RabbitMQ, TimescaleDB, Grafana, step-ca Root CA, IoT Bridge API |
 | **Tenant-Stack** *(Phase 2)* | Individual customer / tenant | Caddy, Keycloak (tenant realm), ThingsBoard, hawkBit, step-ca Sub-CA, WireGuard, Terminal Proxy, TimescaleDB, Grafana |
 | **Device-Stack** | Edge device (simulated) | bootstrap, mqtt-client, telegraf, rauc-updater, wireguard-client |
 
@@ -31,7 +31,7 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 
 | Layer | Component | Role |
 |---|---|---|
-| IAM | Keycloak | OIDC/SAML SSO (Provider-Stack: `cdm`+`provider` realms; Tenant-Stack: per-tenant realm) |
+| IAM | Keycloak | OIDC/SAML SSO (Provider-Stack: `cdm` realm; Tenant-Stack: per-tenant realm) |
 | IoT Platform | ThingsBoard CE | Device registry, MQTT, Rule Engine, UI *(Tenant-Stack)* |
 | OTA Backend | Eclipse hawkBit | Software campaign management *(Tenant-Stack)* |
 | PKI | smallstep step-ca | Root CA + per-tenant Issuing Sub-CA; device & service cert signing |

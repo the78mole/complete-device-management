@@ -11,7 +11,7 @@ the network boundaries between stacks, the trust relationships, and all communic
 graph TB
     subgraph provider["Provider-Stack  (CDM operator)"]
         CADDY_P["Caddy :8888 (entry point)"]
-        KC_P["Keycloak<br>(realms: cdm, provider)"]
+        KC_P["Keycloak<br>(realm: cdm)"]
         RMQ["RabbitMQ<br>(vHost per tenant)"]
         TSDB_P["TimescaleDB<br>(provider metrics)"]
         TLG["Telegraf<br>(service health)"]

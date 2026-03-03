@@ -17,7 +17,7 @@ For a complete picture of how the two stacks relate, see [Architecture → Stack
 ```mermaid
 graph TB
     subgraph provider["Provider-Stack"]
-        KC_P["Keycloak<br>(cdm + provider realms)"]
+        KC_P["Keycloak<br>(cdm realm)"]
         RMQ["RabbitMQ<br>(central broker)"]
         TLG["Telegraf<br>(service health)"]
         IDB_P["TimescaleDB<br>(platform metrics)"]

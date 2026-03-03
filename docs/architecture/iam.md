@@ -9,12 +9,11 @@ Keycloak instances are involved: one in the **Provider-Stack** and one per **Ten
 
 ### Provider-Stack Keycloak
 
-Manages two realms:
+Manages a single **`cdm`** realm — all roles and users are consolidated here:
 
 | Realm | Purpose | OIDC Clients |
 |---|---|---|
-| `cdm` | Platform services and cross-tenant SSO | `grafana`, `iot-bridge`, `portal`, `pgadmin` |
-| `provider` | Platform operations staff | `grafana-broker` (Identity Provider link), `rabbitmq-management` (RabbitMQ SSO) |
+| `cdm` | Platform services, all users, cross-tenant SSO | `grafana`, `iot-bridge`, `portal`, `pgadmin`, `rabbitmq-management`, `dashboard` |
 
 **`cdm` realm roles:**
 
@@ -23,20 +22,17 @@ Manages two realms:
 | `cdm-admin` | Platform administrator |
 | `cdm-operator` | Fleet operator |
 | `cdm-viewer` | Read-only access |
-
-**`provider` realm roles:**
-
-| Role | Description |
-|---|---|
 | `platform-admin` | Full administrative access to CDM platform and all tenants |
 | `platform-operator` | Day-to-day operations; read-only on tenants |
+| `pgadmin-users` | Grants access to the pgAdmin UI via OIDC |
+| `matrix-viewer` | Composite role: `view-users`, `query-users`, `view-realm` (realm-management) |
 
 ### Tenant-Stack Keycloak *(Phase 2)*
 
 Each tenant operates its own Keycloak instance with a single **tenant realm** that mirrors
 the `cdm` realm role structure.  The tenant realm is registered as an **Identity Provider**
 in the Provider `cdm` realm, enabling platform admins to access the Tenant-Stack with their
-provider credentials.
+`cdm` realm credentials.
 
 | Realm | Purpose | OIDC Clients |
 |---|---|---|
@@ -49,8 +45,7 @@ provider credentials.
 ```mermaid
 graph LR
     subgraph provider["Provider-Stack Keycloak"]
-        CDM["cdm realm"]
-        PROV["provider realm"]
+        CDM["cdm realm<br>(all users + roles)"]
     end
 
     subgraph t1["Tenant-Stack A Keycloak"]
@@ -62,7 +57,6 @@ graph LR
 
     TR1 -->|"Identity Provider federation"| CDM
     TR2 -->|"Identity Provider federation"| CDM
-    PROV -->|"grafana-broker client<br>(Grafana provider login)"| CDM
 ```
 
 When a tenant JOIN request is approved, the IoT Bridge API automatically:
@@ -71,7 +65,7 @@ When a tenant JOIN request is approved, the IoT Bridge API automatically:
 
 ---
 
-## OIDC Client Configuration (Provider `cdm` realm)
+## OIDC Client Configuration (`cdm` realm)
 
 | Client ID | Service | Type | Secret env var |
 |---|---|---|---|
@@ -79,16 +73,12 @@ When a tenant JOIN request is approved, the IoT Bridge API automatically:
 | `iot-bridge` | IoT Bridge API | confidential + service-account | `BRIDGE_OIDC_SECRET` |
 | `portal` | CDM Provider Portal | confidential | `PORTAL_OIDC_SECRET` |
 | `pgadmin` | pgAdmin OIDC proxy | confidential | `PGADMIN_OIDC_SECRET` |
+| `rabbitmq-management` | RabbitMQ Management UI | confidential, standard flow | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
+| `dashboard` | Landing page Silent SSO | public | — |
 
 All `redirectUris` and `webOrigins` are set to `*` to support dynamic Codespaces hostnames.
 
-## OIDC Client Configuration (Provider `provider` realm)
-
-| Client ID | Service | Type | Secret env var |
-|---|---|---|---|
-| `rabbitmq-management` | RabbitMQ Management UI | confidential, standard flow | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
-
-The `rabbitmq-management` client provides five custom client scopes that map directly to
+The `rabbitmq-management` client has five custom client scopes that map directly to
 RabbitMQ permissions:
 
 | Scope | RabbitMQ permission |
@@ -99,8 +89,8 @@ RabbitMQ permissions:
 | `rabbitmq.configure:*/*` | Configure all resources |
 | `rabbitmq.tag:monitoring` | Read-only monitoring tag |
 
-All four non-monitoring scopes are assigned as default scopes so that `provider` realm users
-receive full administrator access to RabbitMQ on SSO login.
+All four non-monitoring scopes are assigned as default scopes on `rabbitmq-management` so
+that `platform-admin` users receive full administrator access to RabbitMQ on SSO login.
 
 > **Grafana — realm-roles mapper**: The `grafana` client has an `oidc-usermodel-realm-role-mapper`
 > that injects all realm roles as a flat array into the `roles` claim.  Grafana maps this to
@@ -118,6 +108,8 @@ receive full administrator access to RabbitMQ on SSO login.
 | `platform-admin` | Admin | Full access |
 | `platform-operator` | Editor | Read-only on tenants |
 
+> All roles live in the single `cdm` realm — separation is purely role-based, not realm-based.
+
 For the complete cross-service access matrix including pgAdmin, RabbitMQ, and
 Keycloak Admin Console, see [Access Matrix](access-matrix.md).
 
@@ -129,11 +121,11 @@ Keycloak Admin Console, see [Access Matrix](access-matrix.md).
 2. For each client, go to **Credentials** → copy or regenerate the **Secret**.
 3. Update `provider-stack/.env`:
    ```
-   GRAFANA_OIDC_SECRET=<from Keycloak cdm realm>
-   BRIDGE_OIDC_SECRET=<from Keycloak cdm realm>
-   PORTAL_OIDC_SECRET=<from Keycloak cdm realm>
-   PGADMIN_OIDC_SECRET=<from Keycloak provider realm → pgadmin>
-   RABBITMQ_MANAGEMENT_OIDC_SECRET=<from Keycloak provider realm → rabbitmq-management>
+   GRAFANA_OIDC_SECRET=<from Keycloak cdm realm → grafana>
+   BRIDGE_OIDC_SECRET=<from Keycloak cdm realm → iot-bridge>
+   PORTAL_OIDC_SECRET=<from Keycloak cdm realm → portal>
+   PGADMIN_OIDC_SECRET=<from Keycloak cdm realm → pgadmin>
+   RABBITMQ_MANAGEMENT_OIDC_SECRET=<from Keycloak cdm realm → rabbitmq-management>
    ```
 4. Restart affected services:
    ```bash

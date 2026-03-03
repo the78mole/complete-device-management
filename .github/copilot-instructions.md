@@ -20,7 +20,7 @@ running as Docker Compose stacks.
 - **Entry point (both stacks)**: **Caddy** on port **8888** (`*/caddy/Caddyfile`).
   All services reachable via path-based routing EXCEPT ThingsBoard (:9090 direct)
   due to SPA webpack absolute-path limitations.
-- **Identity (Provider-Stack)**: Keycloak 26.x at `/auth/`, realms `cdm` and `provider`.
+- **Identity (Provider-Stack)**: Keycloak 26.x at `/auth/`, realm `cdm` (single realm — `provider` realm was consolidated into `cdm`).
   See `.github/skills/cdm-keycloak/SKILL.md` for full realm/user/client reference.
 - **Identity (Tenant-Stack)**: Each Tenant-Stack runs its own Keycloak, realm `${TENANT_ID}`.
   Tenant realm registers as Identity Provider in Provider `cdm` realm via JOIN workflow.

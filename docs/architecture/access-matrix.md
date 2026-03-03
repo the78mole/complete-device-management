@@ -5,8 +5,7 @@ endpoints, and at what permission level.
 
 !!! tip "Keep this page up to date"
     The [Role-Based Access Matrix](#role-based-access-matrix) is derived from the realm
-    templates and does not change unless you edit `realm-cdm.json.tpl` or
-    `realm-provider.json.tpl`.  
+    template and does not change unless you edit `realm-cdm.json.tpl`.  
     The [Current User Assignments](#current-user-assignments) section shows users as they
     exist in a running deployment and can be regenerated at any time:
 
@@ -23,14 +22,12 @@ endpoints, and at what permission level.
 |---|---|---|---|
 | `/` | Landing page | — (public) | — |
 | `/auth/admin/cdm/console/` | Keycloak CDM Admin | `master` or `cdm` realm-admin | admin-cli / realm-management |
-| `/auth/admin/provider/console/` | Keycloak Provider Admin | `master` or `provider` realm-admin | admin-cli / realm-management |
 | `/auth/realms/cdm/account/` | CDM Account Portal | `cdm` | account-console |
-| `/auth/realms/provider/account/` | Provider Account Portal | `provider` | account-console |
 | `/grafana/` | Grafana (platform dashboards) | `cdm` | `grafana` |
 | `/api/` | IoT Bridge API | `cdm` (JWT Bearer) | `iot-bridge` |
 | `/api/portal/` | Tenant Portal | `cdm` | `portal` |
 | `/pgadmin/` | pgAdmin (TimescaleDB admin) | `cdm` | `pgadmin` |
-| `/rabbitmq/` | RabbitMQ Management | `provider` | `rabbitmq-management` |
+| `/rabbitmq/` | RabbitMQ Management | `cdm` | `rabbitmq-management` |
 | `/pki/` | step-ca (PKI) | — (provisioner password) | — |
 
 ---
@@ -53,18 +50,16 @@ the current runtime state of Keycloak.
 
 ### `cdm` realm roles
 
-| Role | Grafana | IoT Bridge API | Tenant Portal | pgAdmin | RabbitMQ | KC CDM Admin | KC Provider Admin |
-|---|---|---|---|---|---|---|---|
-| `cdm-admin` | ✅ Admin | ✅ Full | ✅ Admin view | ⚠️ DB Superuser[^1] | ✗ | ✗[^2] | ✗ |
-| `cdm-operator` | 🔵 Editor | 🔵 Read + deploy | 🔵 Operator view | ⚠️ DB Superuser[^1] | ✗ | ✗ | ✗ |
-| `cdm-viewer` | 👁 Viewer | 👁 Read-only | 👁 Viewer view | ⚠️ DB Superuser[^1] | ✗ | ✗ | ✗ |
+All users and roles are in the single `cdm` realm.  Role-based separation replaces the
+previous two-realm approach.
 
-### `provider` realm roles
-
-| Role | Grafana | IoT Bridge API | Tenant Portal | pgAdmin | RabbitMQ | KC CDM Admin | KC Provider Admin |
-|---|---|---|---|---|---|---|---|
-| `platform-admin` | ✅ Admin[^3] | ✅ Full[^3] | ✅ Admin view[^3] | ✗ | ✅ Administrator | ✅ Full[^4] | ✅ Full[^4] |
-| `platform-operator` | 🔵 Editor[^3] | 👁 Read-only[^3] | 🔵 Operator view[^3] | ✗ | 👁 Monitoring[^5] | ✗ | ✗ |
+| Role | Grafana | IoT Bridge API | Tenant Portal | pgAdmin | RabbitMQ | KC CDM Admin |
+|---|---|---|---|---|---|---|
+| `cdm-admin` | ✅ Admin | ✅ Full | ✅ Admin view | ⚠️ DB Superuser[^1] | ✗ | ✗[^2] |
+| `cdm-operator` | 🔵 Editor | 🔵 Read + deploy | 🔵 Operator view | ⚠️ DB Superuser[^1] | ✗ | ✗ |
+| `cdm-viewer` | 👁 Viewer | 👁 Read-only | 👁 Viewer view | ⚠️ DB Superuser[^1] | ✗ | ✗ |
+| `platform-admin` | ✅ Admin | ✅ Full | ✅ Admin view | ✗ | ✅ Administrator | ✅ Full[^3] |
+| `platform-operator` | 🔵 Editor | 👁 Read-only | 🔵 Operator view | ✗ | 👁 Monitoring[^4] | ✗ |
 
 **Footnotes**
 
@@ -77,15 +72,10 @@ the current runtime state of Keycloak.
       must explicitly run `init-tenants.sh` to grant `realm-admin` on the `cdm` realm to the
       target user account, or promote the user via the Admin REST API.
 
-[^3]: `provider` realm users access `cdm`-realm-protected services (Grafana, IoT Bridge API,
-      Portal) through the **Grafana Identity Provider broker** (`grafana-broker` client in `cdm`
-      realm).  The broker maps `platform-admin` → `cdm-admin` and `platform-operator` →
-      `cdm-operator` via protocol mappers.
+[^3]: `platform-admin` is identical to `KC_ADMIN_USER` / `${KC_ADMIN_USER}` — the master-realm
+      superadmin.  `init-tenants.sh` grants `realm-admin` on the `cdm` realm.
 
-[^4]: `platform-admin` is identical to `KC_ADMIN_USER` / `${KC_ADMIN_USER}` — the master-realm
-      superadmin.  `init-tenants.sh` grants `realm-admin` on both `cdm` and `provider` realms.
-
-[^5]: The `rabbitmq.tag:monitoring` scope is registered in the `provider` realm but is **not**
+[^4]: The `rabbitmq.tag:monitoring` scope is registered in the `cdm` realm but is **not**
       a default scope on the `rabbitmq-management` client.  `platform-operator` users receive
       monitoring-only access only if this scope is explicitly assigned to them.
 
@@ -122,11 +112,6 @@ python3 keycloak/generate-access-matrix.py
 |---|---|---|
 | `cdm-admin` | *(template default)* | `cdm-admin` |
 | `cdm-operator` | *(template default)* | `cdm-operator` |
-
-#### `provider` realm
-
-| Username | Email | Roles |
-|---|---|---|
 | `${KC_ADMIN_USER}` | *(env-set)* | `platform-admin` |
 | `provider-operator` | *(template default)* | `platform-operator` |
 
@@ -159,6 +144,5 @@ python3 keycloak/generate-access-matrix.py > /tmp/matrix.md && echo "Done"
 
 1. Authenticates as master-realm admin against `/auth/realms/master/protocol/openid-connect/token`
 2. Lists all users in the `cdm` realm with their effective realm roles
-3. Lists all users in the `provider` realm with their effective realm roles
-4. Maps each role to the per-endpoint access level (using the same logic as the matrix above)
-5. Prints a Markdown table and a summary of any anomalies (unexpected roles, disabled users, etc.)
+3. Maps each role to the per-endpoint access level (using the same logic as the matrix above)
+4. Prints a Markdown table and a summary of any anomalies (unexpected roles, disabled users, etc.)

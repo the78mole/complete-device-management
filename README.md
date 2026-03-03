@@ -95,8 +95,8 @@ flowchart BT
         KC_T -->|federation| KC
         TB -->|Rule Engine| IBA_T[IoT Bridge API]
         SCA_T <-->|Sign| IBA_T
-        TB -->|AMQP| RMQ
         TB -->|Rule Engine| TSDB_T
+        TB -->|AMQP| RMQ
         TSDB_T --> GRF_T
     end
 

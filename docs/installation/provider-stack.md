@@ -290,9 +290,8 @@ Distribute `root_ca.crt` and `STEP_CA_FINGERPRINT` to every Tenant-Stack and Dev
 |---|---|---|
 | **CDM Dashboard** | `http://localhost:8888` | — |
 | **Keycloak Admin (cdm)** | `/auth/admin/cdm/console/` | `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD` |
-| **Keycloak Admin (provider)** | `/auth/admin/provider/console/` | same |
 | **Grafana** | `/grafana/` | `admin` / `GRAFANA_ADMIN_PASSWORD` |
-| **RabbitMQ Management** | `/rabbitmq/` | SSO: Keycloak **`provider`** realm (`KC_ADMIN_USER`) **or** local `admin` / `RABBITMQ_ADMIN_PASSWORD` |
+| **RabbitMQ Management** | `/rabbitmq/` | SSO: Keycloak **`cdm`** realm (`KC_ADMIN_USER`) **or** local `admin` / `RABBITMQ_ADMIN_PASSWORD` |
 | **IoT Bridge API (Swagger)** | `/api/docs` | requires OIDC JWT |
 | **pgAdmin (TimescaleDB)** | `/pgadmin/` | `PGADMIN_EMAIL` / `PGADMIN_PASSWORD` |
 | **step-ca health** | `https://localhost:9000/health` | returns `{"status":"ok"}` |

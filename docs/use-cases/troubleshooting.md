@@ -179,7 +179,7 @@ docker compose restart rabbitmq
 
 ### RabbitMQ SSO: "ErrorResponse: Invalid scopes: openid profile"
 
-**Cause:** The `provider` Keycloak realm is missing the standard OIDC client scopes
+**Cause:** The `cdm` Keycloak realm is missing the standard OIDC client scopes
 (`openid`, `profile`, `email`).  These are not auto-created on realm import — they must be
 explicitly defined in the realm JSON template.
 
@@ -189,9 +189,9 @@ explicitly defined in the realm JSON template.
 ErrorResponse: Invalid scopes: openid profile
 ```
 
-**Fix (permanent — requires Keycloak rebuild):** Ensure `realm-provider.json.tpl` contains
-full definitions for `openid`, `profile`, and `email` in its `clientScopes` array and that
-these are listed in the `rabbitmq-management` client's `defaultClientScopes`.
+**Fix (permanent — requires Keycloak rebuild):** Ensure `realm-cdm.json.tpl` contains
+full definitions for `profile`, `email`, `roles`, and `web-origins` in its `clientScopes`
+array and that these are listed in `defaultDefaultClientScopes`.
 
 **Fix (live — without restarting Keycloak):** Create the scopes via the Admin REST API:
 
@@ -205,7 +205,7 @@ TOKEN=$(curl -sf -X POST \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 for SCOPE in openid profile email; do
-  curl -sf -X POST "${EXTERNAL_URL}/auth/admin/realms/provider/client-scopes" \
+  curl -sf -X POST "${EXTERNAL_URL}/auth/admin/realms/cdm/client-scopes" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"${SCOPE}\",\"protocol\":\"openid-connect\"}"
@@ -214,7 +214,7 @@ done
 ```
 
 Then assign the new scopes as default scopes to the `rabbitmq-management` client in the
-Keycloak Admin Console: **Realms → provider → Clients → rabbitmq-management → Client Scopes → Add client scope**.
+Keycloak Admin Console: **Realms → cdm → Clients → rabbitmq-management → Client Scopes → Add client scope**.
 
 ---
 
@@ -228,14 +228,14 @@ browser.
 `advanced.config.tpl`:
 
 ```erlang
-{oauth_provider_url, "EXTERNAL_URL_PLACEHOLDER/auth/realms/provider"}
+{oauth_provider_url, "EXTERNAL_URL_PLACEHOLDER/auth/realms/cdm"}
 ```
 
 Also ensure the `issuer` in `rabbitmq_auth_backend_oauth2` matches the external URL (because
 `KC_HOSTNAME` stamps that URL into the `iss` claim of issued JWTs):
 
 ```erlang
-{issuer, "EXTERNAL_URL_PLACEHOLDER/auth/realms/provider"}
+{issuer, "EXTERNAL_URL_PLACEHOLDER/auth/realms/cdm"}
 ```
 
 The `EXTERNAL_URL_PLACEHOLDER` is replaced with `${EXTERNAL_URL}` by the RabbitMQ

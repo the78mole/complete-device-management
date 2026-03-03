@@ -19,7 +19,7 @@
 | Image build context | `provider-stack/keycloak/` |
 | Dockerfile | `provider-stack/keycloak/Dockerfile` |
 | Entrypoint | `provider-stack/keycloak/docker-entrypoint.sh` |
-| Managed realms | `cdm`, `provider` only (tenant realms live in each Tenant-Stack) |
+| Managed realms | `cdm` only (tenant realms live in each Tenant-Stack) |
 
 Keycloak is started with `start-dev --import-realm`.
 
@@ -49,13 +49,17 @@ OIDC clients registered here.
 | `cdm-admin` | Platform administrator |
 | `cdm-operator` | Fleet operator |
 | `cdm-viewer` | Read-only access |
+| `platform-admin` | Full administrative access to CDM platform and all tenants |
+| `platform-operator` | Day-to-day operations; read-only on tenants |
+| `pgadmin-users` | Grants access to the pgAdmin OIDC proxy |
+| `matrix-viewer` | Read-only access to the access-roles matrix page |
 
 **Example users**
 
-| Username | Role | Initial password |
+| Username | Roles | Initial password |
 |---|---|---|
-| `cdm-admin` | `cdm-admin` | `changeme` (temporary) |
-| `cdm-operator` | `cdm-operator` | `changeme` (temporary) |
+| `cdm-admin` | `cdm-admin`, `platform-admin` | `changeme` (temporary) |
+| `cdm-operator` | `cdm-operator`, `platform-operator` | `changeme` (temporary) |
 
 **OIDC clients**
 
@@ -65,55 +69,23 @@ OIDC clients registered here.
 | `iot-bridge` | IoT Bridge API | confidential + service-account | `BRIDGE_OIDC_SECRET` |
 | `portal` | CDM Tenant Portal (iot-bridge-api) | confidential | `PORTAL_OIDC_SECRET` |
 | `pgadmin` | pgAdmin OIDC proxy (TimescaleDB admin) | confidential | `PGADMIN_OIDC_SECRET` |
+| `rabbitmq-management` | RabbitMQ Management UI (OAuth2 SSO) | confidential | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
+| `dashboard` | Provider landing-page session dashboard | public | — |
 
 > **hawkBit, ThingsBoard, Terminal Proxy** OIDC clients are registered in each
 > Tenant-Stack's own Keycloak instance (Phase 2), not in the provider-stack `cdm` realm.
 
-All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic Codespaces hostnames.
-
-> **Grafana — realm-roles mapper**: The `grafana` client has a `realm-roles` ProtocolMapper
-> (`oidc-usermodel-realm-role-mapper`) that injects all realm roles as a flat array into the
-> `roles` claim of the access token.  Grafana maps this claim to its internal role via
-> `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`.
-
-**Admin console**: `/auth/admin/cdm/console/`  
-**Account portal**: `/auth/realms/cdm/account/`  
-**Template file**: `provider-stack/keycloak/realms/realm-cdm.json.tpl`
-
-### 2.3 provider — Platform Operations
-
-Realm for the platform operations team.
-
-| Role | Description |
-|---|---|
-| `platform-admin` | Full administrative access to CDM platform and all tenants |
-| `platform-operator` | Day-to-day operations; read-only on tenants |
-
-**Users**
-
-| Username | Role | Password | Notes |
-|---|---|---|---|
-| `${KC_ADMIN_USER}` | `platform-admin` | `${KC_ADMIN_PASSWORD}` (non-temporary) | Same credentials as master admin — true superadmin |
-| `provider-operator` | `platform-operator` | `${PROVIDER_OPERATOR_PASSWORD}` (temporary) | — |
-
-**OIDC clients**
-
-| Client ID | Service | Type | Secret env var |
-|---|---|---|---|
-| `grafana-broker` | Grafana identity-broker (cdm realm federation) | confidential | `GRAFANA_BROKER_SECRET` |
-| `rabbitmq-management` | RabbitMQ Management UI (OAuth2 SSO) | confidential | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
-
 **RabbitMQ OAuth2 integration — `rabbitmq-management` client**
 
-The `rabbitmq-management` client enables single-sign-on into the RabbitMQ management UI
-for `provider` realm users.  The following Keycloak client scopes are registered in the
-`provider` realm and assigned as *default* scopes on `rabbitmq-management`:
+The `rabbitmq-management` client enables single-sign-on into the RabbitMQ management UI.
+The following Keycloak client scopes are registered in the `cdm` realm and assigned as
+*default* scopes on `rabbitmq-management`:
 
-> **Important:** The standard OIDC scopes `openid`, `profile`, and `email` **must** exist
-> in the `provider` realm as client scopes (they are not auto-created by Keycloak on import).
-> Without them RabbitMQ shows `ErrorResponse: Invalid scopes: openid profile` when attempting
-> SSO login.  `realm-provider.json.tpl` defines these scopes; if they are missing from a
-> running deployment run the quick-fix below (→ Section 9).
+> **Important:** The standard OIDC scopes `openid`, `profile`, `email`, `roles`, and
+> `web-origins` **must** exist in the `cdm` realm as client scopes (they are not
+> auto-created by Keycloak on import).  Without them RabbitMQ shows
+> `ErrorResponse: Invalid scopes: openid profile` when attempting SSO login.
+> `realm-cdm.json.tpl` defines these scopes explicitly.
 
 | Scope name | Grants |
 |---|---|
@@ -126,11 +98,18 @@ for `provider` realm users.  The following Keycloak client scopes are registered
 An **audience mapper** (`oidc-audience-mapper`) adds `rabbitmq` as a custom `aud` claim to
 every access token issued for this client — required by RabbitMQ's OAuth2 backend.
 
-**Admin console**: `/auth/admin/provider/console/`  
-**Account portal**: `/auth/realms/provider/account/`  
-**Template file**: `provider-stack/keycloak/realms/realm-provider.json.tpl`
+All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic Codespaces hostnames.
 
-### 2.4 Tenant realms — Phase 2
+> **Grafana — realm-roles mapper**: The `grafana` client has a `realm-roles` ProtocolMapper
+> (`oidc-usermodel-realm-role-mapper`) that injects all realm roles as a flat array into the
+> `roles` claim of the access token.  Grafana maps this claim to its internal role via
+> `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`.
+
+**Admin console**: `/auth/admin/cdm/console/`  
+**Account portal**: `/auth/realms/cdm/account/`  
+**Template file**: `provider-stack/keycloak/realms/realm-cdm.json.tpl`
+
+### 2.3 Tenant realms — Phase 2
 
 > **Note: Tenant realms (`tenant1`, `tenant2`, …) are NOT part of the Provider-Stack.**
 > Each Tenant-Stack runs its own dedicated Keycloak instance and registers its realm as an
@@ -174,7 +153,7 @@ bash keycloak/init-tenants.sh
 
 `init-tenants.sh` uses the Keycloak Admin REST API to:
 - Create/verify the `${KC_ADMIN_USER}` account in the **master** realm
-- Grant `realm-admin` role on the `cdm-realm` and `provider-realm` clients
+- Grant `realm-admin` role on the `cdm-realm` client
 
 After this, the superadmin can access `/auth/admin/<realm>/console/` with their normal credentials.
 
@@ -190,13 +169,13 @@ All variables are substituted in every `*.json.tpl` file by `docker-entrypoint.s
 
 | Variable | Used in realm | Purpose |
 |---|---|---|
-| `${KC_ADMIN_USER}` | provider | Provider superadmin username |
-| `${KC_ADMIN_PASSWORD}` | provider | Provider superadmin password |
+| `${KC_ADMIN_USER}` | master | Keycloak superadmin username |
+| `${KC_ADMIN_PASSWORD}` | master | Keycloak superadmin password |
 | `${GRAFANA_OIDC_SECRET}` | cdm | Grafana OIDC client secret |
 | `${BRIDGE_OIDC_SECRET}` | cdm | IoT Bridge OIDC client secret |
 | `${PORTAL_OIDC_SECRET}` | cdm | Portal OIDC client secret |
 | `${PGADMIN_OIDC_SECRET}` | cdm | pgAdmin OIDC proxy client secret |
-| `${PROVIDER_OPERATOR_PASSWORD}` | provider | provider-operator initial password |
+| `${RABBITMQ_MANAGEMENT_OIDC_SECRET}` | cdm | RabbitMQ Management OAuth2 client secret |
 
 > **Tenant-specific variables** (`TENANT1_*`, `TENANT2_*`, `HB_OIDC_SECRET`, `TB_OIDC_SECRET`, …)
 > belong to individual Tenant-Stack `.env` files, not to provider-stack.
@@ -393,8 +372,9 @@ imported from JSON.  Services that request `scope=openid profile` (most standard
 clients, including RabbitMQ Management) will fail with `Invalid scopes` if these scopes
 have not been explicitly defined in the realm's `clientScopes` list.
 
-`realm-provider.json.tpl` now includes full definitions for `openid`, `profile`, and
-`email` with the standard protocol mappers.  If they are missing from a running deployment:
+`realm-cdm.json.tpl` now includes full definitions for `openid`, `profile`, `email`,
+`roles`, and `web-origins` with the standard protocol mappers.  If they are missing from a
+running deployment:
 
 ```bash
 source provider-stack/.env
@@ -404,9 +384,9 @@ TOKEN=$(curl -sf -X POST \
   -d "grant_type=password&client_id=admin-cli&username=${KC_ADMIN_USER}&password=${KC_ADMIN_PASSWORD}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-# Create the scopes in the provider realm
-for SCOPE in openid profile email; do
-  curl -sf -X POST "${EXTERNAL_URL}/auth/admin/realms/provider/client-scopes" \
+# Create the scopes in the cdm realm
+for SCOPE in openid profile email roles web-origins; do
+  curl -sf -X POST "${EXTERNAL_URL}/auth/admin/realms/cdm/client-scopes" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"${SCOPE}\",\"protocol\":\"openid-connect\"}"
@@ -504,9 +484,8 @@ Every realm that the portal should serve **must** have a confidential OIDC clien
 }
 ```
 
-This client is included in `provider-stack/keycloak/realms/realm-cdm.json.tpl` and
-`provider-stack/keycloak/realms/realm-provider.json.tpl` and is provisioned via API
-by `init-tenants.sh` for existing deployments.  Each Tenant-Stack must also register
+This client is included in `provider-stack/keycloak/realms/realm-cdm.json.tpl` and is
+provisioned via API by `init-tenants.sh` for existing deployments.  Each Tenant-Stack must also register
 a `portal` client in its own realm.
 
 ### Environment variables (iot-bridge-api)
@@ -527,8 +506,7 @@ provider-stack/
     docker-entrypoint.sh           Template loop: sed substitution → import/
     init-tenants.sh                Post-boot: cross-realm realm-admin grants
     realms/
-      realm-cdm.json.tpl           cdm realm  (platform OIDC clients + users)
-      realm-provider.json.tpl      provider realm  (platform ops team)
+      realm-cdm.json.tpl           cdm realm  (all platform OIDC clients + users)
 ```
 
 > **Tenant realms** (`realm-tenant.json.tpl`, etc.) live in each Tenant-Stack under
