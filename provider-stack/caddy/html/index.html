@@ -343,21 +343,7 @@
               <span class="health-dot" id="health-realm-cdm" title="Prüfe…">⬤</span>
             </td>
           </tr>
-          <tr>
-            <td class="ps-3 align-middle">
-              <span class="fw-semibold">🏢 Provider</span>
-              <div style="font-size:0.75rem;color:#8b949e">Superadmin &amp; platform-operators</div>
-            </td>
-            <td class="align-middle">
-              <div class="d-flex flex-wrap gap-2">
-                <a href="/auth/admin/provider/console/" class="btn btn-danger btn-service" target="_blank" rel="noopener">Admin Console →</a>
-                <a href="/auth/realms/provider/account/" class="btn btn-outline-secondary btn-service" target="_blank" rel="noopener">Account Portal →</a>
-              </div>
-            </td>
-            <td class="text-center align-middle pe-3">
-              <span class="health-dot" id="health-realm-provider" title="Prüfe…">⬤</span>
-            </td>
-          </tr>
+
         </tbody>
       </table>
     </div>
@@ -426,7 +412,7 @@
           dot.title = 'Nicht erreichbar';
         });
     }
-    ['cdm', 'provider'].forEach(checkRealmHealth);
+    checkRealmHealth('cdm');
 
     // ── IoT Bridge API health indicator ─────────────────────────────────────
     fetch('/api/health')
@@ -475,7 +461,7 @@
         const t        = kc.tokenParsed;
         const username = t.preferred_username || t.email || t.sub || '?';
         const ignored  = new Set(['uma_authorization','offline_access',`default-roles-${realm}`,'matrix-viewer']);
-        const roles    = (t.roles || t.realm_access?.roles || [])
+        const roles    = (t.realm_access?.roles || [])
                            .filter(r => !ignored.has(r));
 
         box.innerHTML = `

@@ -88,6 +88,143 @@
   ],
   "clientScopes": [
     {
+      "name": "web-origins",
+      "description": "OpenID Connect scope for add allowed web origins to the access token",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "allowed web origins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-origins-mapper",
+          "consentRequired": false,
+          "config": { "introspection.token.claim": "true", "access.token.claim": "true" }
+        }
+      ]
+    },
+    {
+      "name": "roles",
+      "description": "OpenID Connect scope for add user roles to the access token",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "true" },
+      "protocolMappers": [
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "consentRequired": false,
+          "config": { "introspection.token.claim": "true", "access.token.claim": "true" }
+        },
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        },
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "resource_access.${client_id}.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "description": "OpenID Connect built-in scope: email",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" },
+      "protocolMappers": [
+        {
+          "name": "email verified",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true", "userinfo.token.claim": "true",
+            "user.attribute": "emailVerified", "id.token.claim": "true",
+            "access.token.claim": "true", "claim.name": "email_verified", "jsonType.label": "boolean"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true", "userinfo.token.claim": "true",
+            "user.attribute": "email", "id.token.claim": "true",
+            "access.token.claim": "true", "claim.name": "email", "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "description": "OpenID Connect built-in scope: profile",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "true" },
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true", "userinfo.token.claim": "true",
+            "user.attribute": "username", "id.token.claim": "true",
+            "access.token.claim": "true", "claim.name": "preferred_username", "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "given name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true", "userinfo.token.claim": "true",
+            "user.attribute": "firstName", "id.token.claim": "true",
+            "access.token.claim": "true", "claim.name": "given_name", "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "family name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true", "userinfo.token.claim": "true",
+            "user.attribute": "lastName", "id.token.claim": "true",
+            "access.token.claim": "true", "claim.name": "family_name", "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true", "introspection.token.claim": "true",
+            "access.token.claim": "true", "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "name": "rabbitmq.tag:administrator",
       "description": "RabbitMQ management tag: administrator",
       "protocol": "openid-connect",
@@ -216,6 +353,8 @@
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
+      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "optionalClientScopes": ["offline_access", "address", "phone"],
       "attributes": { "post.logout.redirect.uris": "*", "pkce.code.challenge.method": "S256" }
     },
     {
@@ -353,7 +492,7 @@
   "identityProviders": [],
   "identityProviderMappers": [],
   "defaultDefaultClientScopes": ["profile", "email", "roles", "web-origins"],
-  "defaultOptionalClientScopes": ["offline_access", "address", "phone"],
+  "defaultOptionalClientScopes": ["offline_access"],
   "smtpServer": {},
   "eventsEnabled": true,
   "eventsListeners": ["jboss-logging"],
