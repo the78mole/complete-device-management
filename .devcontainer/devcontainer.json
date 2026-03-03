@@ -97,7 +97,13 @@
       "installDockerBuildx": true,
       "dockerDashComposeVersion": "v2"
     },
-    "ghcr.io/devcontainers/features/python:1": {}
+    "ghcr.io/the78mole/devcontainer-features/uv": {},
+    "ghcr.io/devcontainers/features/python:1": {
+      "toolsToInstall": "flake8,autopep8,black,yapf,mypy,pydocstyle,pycodestyle,bandit,pipenv,virtualenv,pytest,pylint,ruff",
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "extensions": "the78mole/gh-moles"
+    }
   },
 
   // ── Environment ───────────────────────────────────────────────────────────

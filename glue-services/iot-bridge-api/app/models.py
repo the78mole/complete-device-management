@@ -67,7 +67,10 @@ class HealthResponse(BaseModel):
 
 
 class TenantPrepareRequest(BaseModel):
-    """Body for POST /portal/admin/tenants/prepare – creates a tenant slot and generates a JOIN key."""
+    """Body for POST /portal/admin/tenants/prepare.
+
+    Creates a tenant slot and generates a JOIN key.
+    """
 
     tenant_id: str = Field(
         ...,

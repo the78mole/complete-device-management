@@ -34,15 +34,15 @@ Legacy approval-based flow (still supported):
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.clients.join_key_store import JOIN_KEY_TTL_HOURS, create_key, validate_and_consume
 from app.clients.join_store import load_store, save_store
-from app.clients.join_key_store import create_key, validate_and_consume
 from app.clients.rabbitmq import RabbitMQClient
 from app.clients.step_ca import StepCAAdminClient, StepCAClient, StepCAError
 from app.config import Settings
@@ -239,12 +239,13 @@ async def prepare_tenant(body: TenantPrepareRequest, request: Request) -> Tenant
 
     key = await create_key(tenant_id, body.display_name, settings)
 
-    from app.clients.join_key_store import JOIN_KEY_TTL_HOURS
-    from datetime import UTC, datetime, timedelta
     expires_at = (datetime.now(UTC) + timedelta(hours=JOIN_KEY_TTL_HOURS)).isoformat()
 
     logger.info(
-        "JOIN key generated for tenant '%s' (%s), expires %s.", tenant_id, body.display_name, expires_at
+        "JOIN key generated for tenant '%s' (%s), expires %s.",
+        tenant_id,
+        body.display_name,
+        expires_at,
     )
     return TenantPrepareResponse(
         tenant_id=tenant_id,
@@ -377,9 +378,9 @@ async def join_handshake(
     try:
         key_entry = await validate_and_consume(join_key, settings)
     except KeyError:
-        raise HTTPException(status_code=401, detail="Invalid JOIN key.")
+        raise HTTPException(status_code=401, detail="Invalid JOIN key.") from None
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc))
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
     tenant_id: str = key_entry["tenant_id"]
     display_name: str = key_entry["display_name"]

@@ -451,7 +451,8 @@ services:
       - tenant-net
     depends_on:
       thingsboard-db:
-        condition: service_healthy (device VPN server) ───────────────────────────────
+        condition: service_healthy
+  # ── WireGuard (device VPN server) ───────────────────────────────
   wireguard:
     image: lscr.io/linuxserver/wireguard:latest
     container_name: ${TENANT_ID:-tenant}-wireguard
