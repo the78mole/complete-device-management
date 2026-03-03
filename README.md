@@ -71,7 +71,7 @@ flowchart RL
 ```mermaid
 flowchart BT
     subgraph provider[Provider-Stack]
-        KC[Keycloak IAM<br>cdm + provider realms]
+        KC[Keycloak IAM<br>cdm realm]
         SCA[step-ca Root CA]
         RMQ[RabbitMQ]
         TSDB_P[(TimescaleDB<br>+ pgAdmin)]
@@ -121,18 +121,18 @@ flowchart BT
 
 | Layer | Component | Stack | Role |
 |---|---|---|---|
-| Reverse Proxy | [Caddy](https://caddyserver.com/) | Both | Automatic HTTPS, path-based routing, entry point `:8888` |
-| IAM | [Keycloak](https://www.keycloak.org/) | Both | OIDC SSO; Provider: `cdm`+`provider` realms; Tenant: tenant realm |
-| Message Broker | [RabbitMQ](https://www.rabbitmq.com/) | Provider | Central MQTT/AMQP broker, vHost per tenant |
-| IoT Platform | [ThingsBoard CE](https://thingsboard.io/) | Tenant | Device registry, MQTT broker, Rule Engine, UI |
+| Reverse Proxy | [Caddy](https://caddyserver.com/) | Both | Automatic HTTPS, path-based routing,<br>entry point `:8888` |
+| IAM | [Keycloak](https://www.keycloak.org/) | Both | OIDC SSO; <br>Provider: `cdm` realm;<br>Tenant: tenant realm |
+| Message Broker | [RabbitMQ](https://www.rabbitmq.com/) | Provider | Central MQTT/AMQP broker,<br>vHost per tenant |
+| IoT Platform | [ThingsBoard CE](https://thingsboard.io/) | Tenant | Device registry,<br>MQTT broker, Rule Engine, UI |
 | OTA Backend | [Eclipse hawkBit](https://eclipse.dev/hawkbit/) | Tenant | Software campaign management |
-| PKI | [smallstep step-ca](https://smallstep.com/docs/step-ca/) | Both | Provider: Root+ICA; Tenant: Sub-CA for device certs |
-| Time-Series DB | [TimescaleDB](https://www.timescale.com/) | Both | Provider: platform metrics; Tenant: device telemetry (PostgreSQL extension) |
-| Visualization | [Grafana](https://grafana.com/) | Both | Fleet dashboards (Provider) + device dashboards (Tenant) |
+| PKI | [smallstep step-ca](https://smallstep.com/docs/step-ca/) | Both | Provider: Root+ICA;<br>Tenant: Sub-CA for device certs |
+| Time-Series DB | [TimescaleDB](https://www.timescale.com/) | Both | Provider: platform metrics;<br>Tenant: device telemetry<br>(PostgreSQL extension) |
+| Visualization | [Grafana](https://grafana.com/) | Both | Fleet dashboards (Provider)<br>device dashboards (Tenant) |
 | VPN | [WireGuard](https://www.wireguard.com/) | Tenant | Zero-trust device tunnel |
 | Web Terminal | [ttyd](https://github.com/tsl0922/ttyd) + Terminal Proxy | Tenant | Secure browser-based shell |
 | OTA Agent | [SWupdate](https://sbabic.github.io/swupdate/) (preferred) / [RAUC](https://rauc.io/) | Device | A/B OS update execution |
-| Telemetry | [Telegraf](https://www.influxdata.com/time-series-platform/telegraf/) | Provider | Platform & broker metric collection (RabbitMQ, system) |
+| Telemetry | [Telegraf](https://www.influxdata.com/time-series-platform/telegraf/) | Provider | Platform & broker metric collection<br>(RabbitMQ, system) |
 | Glue Services | Python [FastAPI](https://fastapi.tiangolo.com/) + Node.js | Both | IoT Bridge API + Terminal Proxy |
 | IaC | Docker Compose | Both | Local evaluation and production deployment |
 
