@@ -47,7 +47,9 @@ volumes:
   thingsboard-logs:
   thingsboard-db-data:
   tb-mqtt-certs:
+  hawkbit-data:
   hawkbit-db-data:
+  hawkbit-rmq-data:
   pgadmin-data:
   grafana-data:
   wg-data:
