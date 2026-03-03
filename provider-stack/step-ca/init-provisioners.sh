@@ -52,9 +52,9 @@ step ca provisioner add "$PROVISIONER_NAME" \
   --admin-provisioner "$ADMIN_PROVISIONER" \
   --admin-password-file /run/secrets/step-ca-password
 
-echo ">>> Attaching device-leaf template and setting max cert duration for $PROVISIONER_NAME ..."
+echo ">>> Attaching service-leaf template and setting max cert duration for $PROVISIONER_NAME ..."
 step ca provisioner update "$PROVISIONER_NAME" \
-  --x509-template "$DEVICE_TEMPLATE" \
+  --x509-template "$SERVICE_TEMPLATE" \
   --x509-max-dur 8760h \
   --admin-subject step \
   --admin-provisioner "$ADMIN_PROVISIONER" \

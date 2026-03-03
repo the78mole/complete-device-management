@@ -8,7 +8,8 @@
 #   timescaledb  → Time-series database (PostgreSQL 17 + TimescaleDB)
 #   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
 #   grafana      → Platform operations dashboards
-#   telegraf     → Metrics aggregation
+#   telegraf     → Metrics aggregation (HTTP health + RabbitMQ mgmt + MQTT mTLS)
+#   system-monitor → Host CPU/RAM metrics publisher (MQTT+mTLS → cdm/provider/system)
 #   iot-bridge-api → Platform management API
 #   caddy        → Reverse proxy / entry point
 #
@@ -34,6 +35,7 @@ volumes:
   grafana-data:
   rabbitmq-data:
   rabbitmq-tls:
+  mqtt-client-tls:
   step-ca-data:
   caddy-data:
   iot-bridge-data:
@@ -167,6 +169,32 @@ services:
     volumes:
       - rabbitmq-tls:/etc/rabbitmq/tls
       - ./rabbitmq/cert-init.sh:/scripts/cert-init.sh:ro
+    networks:
+      - provider-net
+    depends_on:
+      step-ca:
+        condition: service_healthy
+
+  # ── MQTT client cert-init (one-shot) ──────────────────────────────
+  # Issues client certificates for system-monitor (CN=system-monitor) and
+  # Telegraf (CN=telegraf) from the Provider step-ca into the shared
+  # mqtt-client-tls volume.  Both services use these certs for mTLS
+  # authentication against RabbitMQ (EXTERNAL auth, no passwords).
+  mqtt-certs-init:
+    image: smallstep/step-cli:latest
+    container_name: provider-mqtt-certs-init
+    restart: "no"
+    user: root
+    entrypoint: ["/bin/sh", "/scripts/cert-init.sh"]
+    environment:
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      CERTS_DIR: /etc/mqtt-certs
+    volumes:
+      - mqtt-client-tls:/etc/mqtt-certs
+      - ./system-monitor/cert-init.sh:/scripts/cert-init.sh:ro
     networks:
       - provider-net
     depends_on:
@@ -355,11 +383,44 @@ services:
       RABBITMQ_ADMIN_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
     volumes:
       - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - mqtt-client-tls:/etc/telegraf/tls:ro
     networks:
       - provider-net
     depends_on:
-      - timescaledb
-      - rabbitmq
+      timescaledb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mqtt-certs-init:
+        condition: service_completed_successfully
+
+  # ── System Monitor ──────────────────────────────────────────────
+  # Publishes host CPU load and RAM metrics every 5s to
+  # topic cdm/provider/system on the cdm-metrics vHost via MQTT+mTLS.
+  # Runs as non-root (uid 10001); reads /proc/loadavg and /proc/meminfo.
+  # Identity: client cert CN=system-monitor → RabbitMQ EXTERNAL auth.
+  system-monitor:
+    build:
+      context: ./system-monitor
+    container_name: provider-system-monitor
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: rabbitmq
+      MQTT_PORT: "8883"
+      MQTT_TOPIC: cdm/provider/system
+      TLS_CA:   /tls/ca.crt
+      TLS_CERT: /tls/system-monitor.crt
+      TLS_KEY:  /tls/system-monitor.key
+      INTERVAL: "5"
+    volumes:
+      - mqtt-client-tls:/tls:ro
+    networks:
+      - provider-net
+    depends_on:
+      mqtt-certs-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
 
   # ── IoT Bridge API ───────────────────────────────────────────────
   # Platform management API: device enrollment, provisioning, OIDC portal.

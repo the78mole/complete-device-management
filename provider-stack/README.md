@@ -12,7 +12,8 @@ At the end, all Provider services should be running stably with:
 - `provider-rabbitmq` (`healthy`)
 - `provider-timescaledb` (`healthy`)
 - `provider-caddy`, `provider-grafana`, `provider-iot-bridge-api`, `provider-pgadmin`, `provider-telegraf` (`Up`)
-- `provider-rabbitmq-cert-init` as a one-shot with `Exited (0)`
+- `provider-rabbitmq-cert-init`, `provider-mqtt-certs-init` as one-shots with `Exited (0)`
+- `provider-system-monitor` (`Up`)  — publishes CPU load + RAM metrics every 5 s via MQTT+mTLS
 
 ## 1) Create `.env` and set the Codespaces URL
 
@@ -83,6 +84,19 @@ Check status:
 docker compose ps -a
 ```
 
+The start-up order is controlled by `depends_on` conditions:
+
+```
+step-ca (healthy)
+  ├─► rabbitmq-cert-init → rabbitmq (healthy)
+  └─► mqtt-certs-init   → system-monitor
+                         → telegraf (needs timescaledb + rabbitmq + mqtt-certs-init)
+```
+
+`mqtt-certs-init` issues client certificates (CN=`system-monitor` and CN=`telegraf`) from
+the Provider step-ca into the shared `mqtt-client-tls` volume.  Both services use these
+certs for **mTLS authentication** against RabbitMQ (EXTERNAL auth — no username/password).
+
 ## 7) Quick smoke test of endpoints
 
 ```bash
@@ -141,6 +155,52 @@ Fix:
 docker exec provider-step-ca /usr/local/bin/init-provisioners.sh
 docker compose up -d rabbitmq-cert-init rabbitmq
 ```
+
+### `provider-mqtt-certs-init`: `STEP_CA_FINGERPRINT is not set`
+
+Same root cause as the RabbitMQ cert-init.  Fix identically (steps 4 and 5 above), then:
+
+```bash
+docker compose up -d mqtt-certs-init system-monitor telegraf
+```
+
+### `provider-system-monitor`: keeps reconnecting
+
+This service starts when `mqtt-certs-init` completes and `rabbitmq` is healthy, but
+RabbitMQ may still be loading definitions.  The monitor retries automatically — no action
+required.  Check logs if it does not stabilise after ~30 s:
+
+```bash
+docker compose logs --tail=40 system-monitor
+```
+
+### MQTT mTLS: `unsuitable certificate purpose` / `Client identifier not valid`
+
+Two known issues can occur on a fresh setup:
+
+**`unsuitable certificate purpose`** — Python 3.13 enforces `serverAuth` EKU on the TLS
+server certificate.  The `iot-bridge` provisioner must use `service-leaf.tpl` (which
+includes both `serverAuth` and `clientAuth`).  If step-ca was provisioned with the old
+`device-leaf.tpl` for `iot-bridge`, update it:
+
+```bash
+docker exec provider-step-ca sh -lc '
+step ca provisioner update iot-bridge \
+  --x509-template /home/step/templates/service-leaf.tpl \
+  --x509-max-dur 8760h \
+  --admin-subject step \
+  --admin-provisioner "${DOCKER_STEPCA_INIT_PROVISIONER_NAME}" \
+  --admin-password-file /run/secrets/step-ca-password
+'
+# Then force re-issue of all TLS certs:
+docker run --rm -v provider-stack_rabbitmq-tls:/tls alpine rm /tls/server.crt /tls/server.key
+docker compose up -d --force-recreate rabbitmq-cert-init mqtt-certs-init rabbitmq telegraf system-monitor
+```
+
+**`Client identifier not valid`** — RabbitMQ 4.x validates that the MQTT CONNECT client-id
+matches the cert's Subject Alternative Name (SAN). This is enforced by `mqtt.ssl_cert_client_id_from = subject_alternative_name` in `rabbitmq.conf`.
+Python clients must use `protocol=MQTTv311` (paho-mqtt 2.x defaults to MQTTv5 which has
+different CONNACK semantics).  Both are already configured in the current codebase.
 
 ### `provider-telegraf` restart loop due to `outputs.postgresql`
 

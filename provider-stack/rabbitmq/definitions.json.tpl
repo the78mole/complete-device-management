@@ -7,6 +7,18 @@
       "name": "RABBITMQ_ADMIN_USER_PLACEHOLDER",
       "password": "RABBITMQ_ADMIN_PASSWORD_PLACEHOLDER",
       "tags": ["administrator"]
+    },
+    {
+      "name": "system-monitor",
+      "password_hash": "",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": []
+    },
+    {
+      "name": "telegraf",
+      "password_hash": "",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": []
     }
   ],
   "vhosts": [
@@ -23,6 +35,20 @@
     },
     {
       "user":      "RABBITMQ_ADMIN_USER_PLACEHOLDER",
+      "vhost":     "cdm-metrics",
+      "configure": ".*",
+      "write":     ".*",
+      "read":      ".*"
+    },
+    {
+      "user":      "system-monitor",
+      "vhost":     "cdm-metrics",
+      "configure": "",
+      "write":     ".*",
+      "read":      ""
+    },
+    {
+      "user":      "telegraf",
       "vhost":     "cdm-metrics",
       "configure": ".*",
       "write":     ".*",

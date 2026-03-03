@@ -12,7 +12,11 @@
 [
   %% ── Auth backends ──────────────────────────────────────────────────────
   %% Priority 1: validate JWT tokens from Keycloak (management UI SSO + AMQP)
-  %% Priority 2: internal credentials (local admin user, telegraf)
+  %% Priority 2: internal credentials (admin user + EXTERNAL cert clients)
+  %%
+  %% EXTERNAL / mTLS clients (CN = RabbitMQ username, no JWT token) are rejected
+  %% by the OAuth2 backend with {refused,...} and fall through to the internal
+  %% backend automatically – no tuple form needed here.
   {rabbit, [
     {auth_backends, [rabbit_auth_backend_oauth2, rabbit_auth_backend_internal]}
   ]},
