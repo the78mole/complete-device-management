@@ -26,9 +26,9 @@ The platform is split into two independently deployable stacks:
 Key capabilities:
 
 - **Zero-Touch Device Provisioning** — devices boot, generate a key pair, enroll against the Tenant step-ca Sub-CA, receive a signed mTLS certificate (chain to Provider Root CA), and are automatically registered in ThingsBoard and hawkBit.
-- **Secure OTA Updates** — Eclipse hawkBit (Tenant-Stack) manages software campaigns; `rauc-hawkbit-updater` on devices executes RAUC A/B OS updates.
+- **Secure OTA Updates** — Eclipse hawkBit (Tenant-Stack) manages software campaigns; SWupdate (preferred) or RAUC execute A/B OS updates on the device.
 - **Remote Troubleshooting** — WireGuard VPN + `ttyd` web terminal, proxied securely through a JWT-validated WebSocket gateway embedded in the ThingsBoard UI (both in Tenant-Stack).
-- **High-Frequency Telemetry** — Telegraf → Tenant TimescaleDB pipeline bypasses ThingsBoard's DB for performance; aggregated metrics flow via RabbitMQ to Provider TimescaleDB for fleet-wide dashboards.
+- **High-Frequency Telemetry** — Devices publish MQTT telemetry to ThingsBoard; the ThingsBoard Rule Engine writes time-series data to Tenant TimescaleDB. Aggregated platform metrics flow via RabbitMQ to Provider TimescaleDB for fleet-wide dashboards.
 - **Single Sign-On** — Keycloak realm federation links each Tenant Keycloak into the Provider `cdm` realm; one login across all services.
 - **Private PKI** — Two-tier hierarchy: Provider Root CA → Provider Intermediate CA → Tenant Sub-CA → Device certificates.
 
@@ -74,7 +74,7 @@ flowchart BT
         KC[Keycloak IAM<br>cdm + provider realms]
         SCA[step-ca Root CA]
         RMQ[RabbitMQ]
-        TSDB_P[TimescaleDB<br>+ pgAdmin]
+        TSDB_P[(TimescaleDB<br>+ pgAdmin)]
         GRF_P[Grafana]
         IBA_P[IoT Bridge API]
 
@@ -89,19 +89,20 @@ flowchart BT
         SCA_T[step-ca Sub-CA]
         WGS[WireGuard Server]
         TXP[Terminal Proxy]
-        TSDB_T[TimescaleDB]
+        TSDB_T[(TimescaleDB)]
         GRF_T[Grafana]
 
         KC_T -->|federation| KC
         TB -->|Rule Engine| IBA_T[IoT Bridge API]
         SCA_T <-->|Sign| IBA_T
         TB -->|AMQP| RMQ
+        TB -->|Rule Engine| TSDB_T
+        TSDB_T --> GRF_T
     end
 
     subgraph edge[Edge Device]
         BST[Bootstrap enroll.sh]
-        UPD[RAUC Updater]
-        TLG[Telegraf]
+        UPD[SWupdate / RAUC]
         MQC[MQTT Client]
         TTD[ttyd]
         WGC[WireGuard Client]
@@ -109,7 +110,6 @@ flowchart BT
 
     MQC -->|MQTTS mTLS| TB
     UPD -->|DDI poll| HB
-    TLG -->|PostgreSQL| TSDB_T
     TTD <-->|WebSocket WireGuard| TXP
     WGC <-->|WireGuard VPN| WGS
     BST -->|enroll CSR| IBA_T
@@ -131,8 +131,8 @@ flowchart BT
 | Visualization | [Grafana](https://grafana.com/) | Both | Fleet dashboards (Provider) + device dashboards (Tenant) |
 | VPN | [WireGuard](https://www.wireguard.com/) | Tenant | Zero-trust device tunnel |
 | Web Terminal | [ttyd](https://github.com/tsl0922/ttyd) + Terminal Proxy | Tenant | Secure browser-based shell |
-| OTA Agent | [RAUC](https://rauc.io/) + rauc-hawkbit-updater | Device | A/B OS update execution |
-| Telemetry | [Telegraf](https://www.influxdata.com/time-series-platform/telegraf/) | Device | Metric collection & forwarding |
+| OTA Agent | [SWupdate](https://sbabic.github.io/swupdate/) (preferred) / [RAUC](https://rauc.io/) | Device | A/B OS update execution |
+| Telemetry | [Telegraf](https://www.influxdata.com/time-series-platform/telegraf/) | Provider | Platform & broker metric collection (RabbitMQ, system) |
 | Glue Services | Python [FastAPI](https://fastapi.tiangolo.com/) + Node.js | Both | IoT Bridge API + Terminal Proxy |
 | IaC | Docker Compose | Both | Local evaluation and production deployment |
 
@@ -158,11 +158,10 @@ flowchart BT
 ├── device-stack/           # Edge device simulation
 │   ├── docker-compose.yml
 │   ├── bootstrap/          # enroll.sh — generates key, signs cert via Tenant Sub-CA
-│   ├── mqtt-client/        # mTLS MQTT telemetry publisher
-│   ├── updater/            # hawkBit DDI poller (simulates RAUC)
-│   ├── telegraf/           # telegraf.conf
+│   ├── mqtt-client/        # mTLS MQTT telemetry publisher (MQTTS → ThingsBoard)
+│   ├── updater/            # hawkBit DDI poller (simulates SWupdate/RAUC)
 │   ├── wireguard-client/   # WireGuard client container
-│   ├── rauc/               # Reference RAUC system.conf
+│   ├── rauc/               # Reference RAUC system.conf (alternative to SWupdate)
 │   └── terminal/           # ttyd setup script
 └── docs/                   # MkDocs source → gh-pages
 ```
