@@ -39,7 +39,7 @@
       "enabled": true,
       "emailVerified": true,
       "attributes": { "tenant": ["cdm"] },
-      "realmRoles": ["cdm-admin", "matrix-viewer"],
+      "realmRoles": ["cdm-admin", "pgadmin-users", "matrix-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "changeme", "temporary": true }
@@ -269,6 +269,7 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "attributes": { "post.logout.redirect.uris": "*" },
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"],
       "protocolMappers": [
         {
           "name": "realm-roles",
@@ -339,7 +340,8 @@
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
-      "attributes": { "post.logout.redirect.uris": "*" }
+      "attributes": { "post.logout.redirect.uris": "*" },
+      "defaultClientScopes": ["openid", "profile", "email", "roles", "web-origins"]
     },
     {
       "clientId": "dashboard",
