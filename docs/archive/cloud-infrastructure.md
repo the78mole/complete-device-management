@@ -1,8 +1,8 @@
-# cloud-infrastructure — Legacy Stack (Archiv)
+# cloud-infrastructure — Legacy Stack (Archive)
 
-!!! warning "Archiviert"
-    Diese Seite dokumentiert den ursprünglichen monolithischen Stack und dient nur noch als Referenz.
-    Aktuelle Installationsanleitungen: [Provider-Stack](../installation/provider-stack.md) · [Tenant-Stack](../installation/tenant-stack.md)
+!!! warning "Archived"
+    This page documents the original monolithic stack and is kept for reference only.
+    Current installation guides: [Provider-Stack](../installation/provider-stack.md) · [Tenant-Stack](../installation/tenant-stack.md)
 
 > **⚠ DEPRECATED — kept for reference only.**
 >

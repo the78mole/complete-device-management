@@ -1,52 +1,51 @@
-# Kubernetes — Abschätzung des Migrations-Aufwands für den Provider-Stack
+# Kubernetes — Migration Effort Estimate for the Provider-Stack
 
-Dieses Dokument analysiert, welche Anpassungen und Herausforderungen beim Deployment des
-CDM Provider-Stacks auf Kubernetes zu erwarten sind.  Es dient als Entscheidungsgrundlage
-und vorläufige Planung — kein fertiger Migrations-Guide.
+This document analyses the adjustments and challenges to expect when deploying the
+CDM Provider-Stack on Kubernetes.  It serves as a decision-making basis and preliminary
+planning — not a finished migration guide.
 
 ---
 
-## Zusammenfassung
+## Summary
 
-| Kategorie | Aufwand | Risiko |
+| Category | Effort | Risk |
 |---|---|---|
-| Image-Build & Registry | niedrig | niedrig |
-| Secrets & ConfigMaps | mittel | mittel |
-| PersistentVolumeClaims | niedrig | niedrig |
-| Networking & Ingress | hoch | hoch |
-| Init-Container / Jobs | mittel | mittel |
-| Keycloak (Start-Modus) | mittel | hoch |
-| InfluxDB Direct-Port (SPA) | hoch | hoch |
-| `depends_on` ersetzen | mittel | mittel |
-| Kein Docker Compose Secrets API | mittel | mittel |
-| RabbitMQ TLS (Shared Volume) | mittel | mittel |
-| step-ca (Stateful PKI) | hoch | hoch |
-| Skalierung / StatefulSets | hoch | hoch |
+| Image Build & Registry | low | low |
+| Secrets & ConfigMaps | medium | medium |
+| PersistentVolumeClaims | low | low |
+| Networking & Ingress | high | high |
+| Init Containers / Jobs | medium | medium |
+| Keycloak (start mode) | medium | high |
+| InfluxDB Direct Port (SPA) | high | high |
+| Replacing `depends_on` | medium | medium |
+| No Docker Compose Secrets API | medium | medium |
+| RabbitMQ TLS (Shared Volume) | medium | medium |
+| step-ca (Stateful PKI) | high | high |
+| Scaling / StatefulSets | high | high |
 
-Gesamt-Einschätzung: **erheblicher Aufwand, mehrere Architektur-Entscheidungen nötig**.
-Ein direktes `kompose convert` erzeugt lauffähige YAML-Manifeste, aber ohne alle hier
-beschriebenen Anpassungen ist das Ergebnis **nicht produktionstauglich**.
+Overall assessment: **significant effort, several architectural decisions required**.
+A direct `kompose convert` produces runnable YAML manifests, but without all the
+adjustments described here the result is **not production-ready**.
 
 ---
 
 ## 1. Custom Docker Images — Build & Registry
 
-Drei Services werden aus Quellcode gebaut und sind **nicht auf Docker Hub verfügbar**:
+Three services are built from source and are **not available on Docker Hub**:
 
 | Service | Dockerfile | Problem |
 |---|---|---|
-| `step-ca` | `provider-stack/step-ca/Dockerfile` | Build-Kontext ist das Repo-Root |
-| `keycloak` | `provider-stack/keycloak/Dockerfile` | Realm-Templates werden zur Build-Zeit eingebaut |
-| `iot-bridge-api` | `glue-services/iot-bridge-api/Dockerfile` | Anwendungs-Code |
+| `step-ca` | `provider-stack/step-ca/Dockerfile` | Build context is the repo root |
+| `keycloak` | `provider-stack/keycloak/Dockerfile` | Realm templates are embedded at build time |
+| `iot-bridge-api` | `glue-services/iot-bridge-api/Dockerfile` | Application code |
 
-**Konsequenz:**
-- Eine Container Registry ist zwingend (ghcr.io, Docker Hub, ECR, GCR, …).
-- Eine CI/CD-Pipeline (GitHub Actions, GitLab CI, …) muss Images bauen und pushen.
-- Der `step-ca`-Build nutzt `context: ..` (Repo-Root als Kontext) — das muss in der
-  CI-Pipeline mit `docker build -f provider-stack/step-ca/Dockerfile .` aus dem Repo-Root
-  heraus aufgerufen werden.
-- Bei Änderungen an Keycloak-Realm-Templates muss die Keycloak-Image-Version gestoßen
-  werden (Tags!), sonst rollen Pods mit veralteten Templates aus.
+**Consequence:**
+- A container registry is mandatory (ghcr.io, Docker Hub, ECR, GCR, …).
+- A CI/CD pipeline (GitHub Actions, GitLab CI, …) must build and push images.
+- The `step-ca` build uses `context: ..` (repo root as context) — the CI pipeline must
+  call `docker build -f provider-stack/step-ca/Dockerfile .` from the repo root.
+- When Keycloak realm templates change, the Keycloak image version must be bumped
+  (tags!), otherwise pods roll out with stale templates.
 
 ---
 
@@ -54,23 +53,22 @@ Drei Services werden aus Quellcode gebaut und sind **nicht auf Docker Hub verfü
 
 ### Docker Compose Secrets → Kubernetes Secrets
 
-Docker Compose kennt `secrets:` mit `file: ./step-ca/password.txt`.
-In Kubernetes gibt es kein direktes Äquivalent — `password.txt` muss ein `Secret`-Objekt
-werden und als Volume oder env-Variable eingemountet werden.
+Docker Compose uses `secrets:` with `file: ./step-ca/password.txt`.
+Kubernetes has no direct equivalent — `password.txt` must become a `Secret` object
+and be mounted as a volume or injected as an environment variable.
 
 ```yaml
-# K8s Secret (base64-kodiert):
+# K8s Secret (base64-encoded):
 apiVersion: v1
 kind: Secret
 metadata:
   name: step-ca-password
 stringData:
-  password: "<inhalt von password.txt>"
+  password: "<contents of password.txt>"
 ```
 
-Alle weiteren `.env`-Variablen (Passwörter, Tokens, OIDC-Secrets) müssen ebenfalls als
-K8s-Secrets angelegt werden.  In der aktuellen Compose-Konfiguration gibt es
-**über 20 Secrets**:
+All other `.env` variables (passwords, tokens, OIDC secrets) must also be created as
+K8s Secrets.  In the current Compose configuration there are **more than 20 secrets**:
 
 ```
 KC_ADMIN_PASSWORD, KC_DB_PASSWORD, STEP_CA_PASSWORD, STEP_CA_PROVISIONER_PASSWORD,
@@ -80,42 +78,42 @@ GRAFANA_OIDC_SECRET, GRAFANA_BROKER_SECRET, BRIDGE_OIDC_SECRET,
 PORTAL_OIDC_SECRET, PORTAL_SESSION_SECRET, PROVIDER_OPERATOR_PASSWORD, ...
 ```
 
-**Empfehlung:** External Secrets Operator (ESO) mit einem Vault-Backend (HashiCorp Vault,
-AWS Secrets Manager, Azure Key Vault) für produktionstaugliches Secret-Management.
+**Recommendation:** Use the External Secrets Operator (ESO) with a Vault backend
+(HashiCorp Vault, AWS Secrets Manager, Azure Key Vault) for production-grade secret management.
 
 ---
 
 ## 3. PersistentVolumeClaims
 
-Jedes benannte Docker-Volume wird ein `PersistentVolumeClaim`.  Im Provider-Stack gibt es
-9 Volumes:
+Each named Docker volume becomes a `PersistentVolumeClaim`.  The Provider-Stack has
+9 volumes:
 
-| Docker Volume | Typ | Empfohlener StorageClass |
+| Docker Volume | Type | Recommended StorageClass |
 |---|---|---|
 | `keycloak-db-data` (PostgreSQL) | RWO | `standard` / SSD-backed |
-| `influxdb-data` | RWO | SSD-backed (hohe I/O) |
+| `influxdb-data` | RWO | SSD-backed (high I/O) |
 | `influxdb-config` | RWO | `standard` |
 | `grafana-data` | RWO | `standard` |
 | `rabbitmq-data` | RWO | SSD-backed |
-| `rabbitmq-tls` | RWO (**shared**, s. Abschnitt 8) | `standard` |
-| `step-ca-data` (enthält CA-Keys) | RWO | verschlüsselt!, `encrypted-ssd` |
+| `rabbitmq-tls` | RWO (**shared**, see section 8) | `standard` |
+| `step-ca-data` (contains CA keys) | RWO | encrypted!, `encrypted-ssd` |
 | `caddy-data` (Let's Encrypt cert cache) | RWO | `standard` |
 | `iot-bridge-data` | RWO | `standard` |
 
-Alle Volumes sind `ReadWriteOnce` — das ist kompatibel, schränkt aber **Horizontal Scaling
-auf ein Replica pro Service** ein (sofern kein shared-filesystem wie NFS/EFS verwendet wird).
+All volumes are `ReadWriteOnce` — this is compatible but limits **horizontal scaling to
+one replica per service** (unless a shared filesystem like NFS/EFS is used).
 
 ---
 
-## 4. Networking — der kritischste Unterschied
+## 4. Networking — the Most Critical Difference
 
-### 4.1 Internes Service-Discovery
+### 4.1 Internal Service Discovery
 
-Docker Compose nutzt den Service-Namen direkt als DNS-Hostname (`keycloak:8080`,
-`influxdb:8086`, …).  In Kubernetes werden `ClusterIP`-Services benötigt:
+Docker Compose uses the service name directly as a DNS hostname (`keycloak:8080`,
+`influxdb:8086`, …).  Kubernetes requires `ClusterIP` Services:
 
 ```yaml
-# Beispiel: keycloak Service
+# Example: keycloak Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -128,18 +126,17 @@ spec:
       targetPort: 8080
 ```
 
-Alle internen Hostnamen (`keycloak:8080`, `step-ca:9000`, `rabbitmq:15672`, usw.) bleiben
-nutzbar, solange die Kubernetes-Services denselben Namen bekommen.
+All internal hostnames (`keycloak:8080`, `step-ca:9000`, `rabbitmq:15672`, etc.) remain
+usable as long as the Kubernetes Services get the same names.
 
-### 4.2 Ingress für externen Zugriff
+### 4.2 Ingress for External Access
 
-Caddy als manuell konfigurierter Reverse Proxy wird in Kubernetes typischerweise durch
-einen **Ingress Controller** (nginx-ingress, Traefik, Caddy Ingress, …) ersetzt.
+Caddy as a manually configured reverse proxy is typically replaced in Kubernetes by an
+**Ingress Controller** (nginx-ingress, Traefik, Caddy Ingress, …).
 
-Die aktuellen Pfad-Routing-Regeln aus dem Caddyfile müssen als `Ingress`-Ressource
-abgebildet werden:
+The current path-routing rules from the Caddyfile must be mapped as `Ingress` resources:
 
-| Caddy-Pfad | K8s Ingress Path | Backend-Service |
+| Caddy Path | K8s Ingress Path | Backend Service |
 |---|---|---|
 | `/auth/*` | `/auth` | `keycloak:8080` |
 | `/grafana/*` | `/grafana` | `grafana:3000` |
@@ -147,59 +144,59 @@ abgebildet werden:
 | `/rabbitmq/*` | `/rabbitmq` | `rabbitmq:15672` |
 | `/pki/*` (strip prefix, TLS upstream) | `/pki` | `step-ca:9000` |
 
-**Besonderheit `/api/` strip prefix:** Caddy entfernt das `/api`-Präfix vor dem Forwarding.
-In nginx-ingress: `nginx.ingress.kubernetes.io/rewrite-target: /$2` mit Regex-Pfad.
-In Traefik: `StripPrefix`-Middleware.
+**Note on `/api/` strip prefix:** Caddy removes the `/api` prefix before forwarding.
+In nginx-ingress: `nginx.ingress.kubernetes.io/rewrite-target: /$2` with a regex path.
+In Traefik: `StripPrefix` middleware.
 
-### 4.3 InfluxDB — SPA Direct-Port Problem (kritisch!)
+### 4.3 InfluxDB — SPA Direct Port Problem (critical!)
 
-InfluxDB läuft auf **Port 8086 direkt** (kein Caddy-Pfad), weil die InfluxDB-SPA
-hardcodierte absolute Pfade nutzt.  In Docker Compose wird Port 8086 über
-`influxdb-proxy:4180` exponiert.
+InfluxDB runs on **port 8086 directly** (no Caddy path) because the InfluxDB SPA uses
+hardcoded absolute paths.  In Docker Compose, port 8086 is exposed via
+`influxdb-proxy:4180`.
 
-In Kubernetes gibt es **keine direkte Entsprechung zu `ports: - "8086:4180"`** auf der
-Caddy-Ebene.  Optionen:
+Kubernetes has **no direct equivalent to `ports: - "8086:4180"`** at the Caddy level.
+Options:
 
-| Option | Aufwand | Nachteile |
+| Option | Effort | Drawbacks |
 |---|---|---|
-| `NodePort` Service auf Port 8086 | niedrig | Nicht für Produktion, IP-abhängig |
-| `LoadBalancer` Service mit external IP | mittel | Benötigt Cloud-LB pro Port; teuer |
-| Separater Ingress auf Subdomain `influx.example.com` | mittel | Erfordert DNS-Eintrag; funktioniert gut |
-| Caddy als Sidecar direkt im Pod (wie bisher) | niedrig | Nicht K8s-native |
+| `NodePort` Service on port 8086 | low | Not for production, IP-dependent |
+| `LoadBalancer` Service with external IP | medium | Requires a cloud LB per port; expensive |
+| Separate Ingress on subdomain `influx.example.com` | medium | Requires DNS entry; works well |
+| Caddy as a sidecar directly in the pod (as-is) | low | Not K8s-native |
 
-**Empfehlung:** Subdomain-Ingress (`influx.example.com`) mit TLS via cert-manager.
+**Recommendation:** Subdomain Ingress (`influx.example.com`) with TLS via cert-manager.
 
-### 4.4 RabbitMQ MQTT-Ports (1883, 5672, 8883)
+### 4.4 RabbitMQ MQTT Ports (1883, 5672, 8883)
 
-Nicht-HTTP-Ports können nicht über einen Standard-HTTP-Ingress geroutet werden.
-Optionen:
-- `LoadBalancer` Services (bei Cloud-Providern gut unterstützt)
+Non-HTTP ports cannot be routed through a standard HTTP Ingress.
+Options:
+- `LoadBalancer` Services (well-supported with cloud providers)
 - nginx TCP/UDP proxy routing (nginx-ingress `tcp-services` ConfigMap)
-- MetalLB für on-prem
+- MetalLB for on-premises deployments
 
 ---
 
-## 5. `depends_on` mit `service_healthy` — kein direktes Äquivalent
+## 5. `depends_on` with `service_healthy` — No Direct Equivalent
 
-Docker Compose wartet auf Health-Checks (`condition: service_healthy`).  Kubernetes hat
-**kein natives `depends_on`** auf Pod-Ebene.  Lösungen:
+Docker Compose waits for health checks (`condition: service_healthy`).  Kubernetes has
+**no native `depends_on`** at the Pod level.  Solutions:
 
-| Problem | K8s-Lösung |
+| Problem | K8s Solution |
 |---|---|
-| Keycloak wartet auf keycloak-db | `initContainer` im Keycloak-Pod, der `pg_isready` pollt |
-| rabbitmq-cert-init wartet auf step-ca | `Job` mit `initContainer` der step-ca-health prüft |
-| iot-bridge-api wartet auf 4 Services | `readinessProbe` + Retry-Logik in der App |
-| Alle Services warten auf Keycloak | `readinessProbe` in jedem Pod, der Keycloak braucht |
+| Keycloak waits for keycloak-db | `initContainer` in the Keycloak Pod polling `pg_isready` |
+| rabbitmq-cert-init waits for step-ca | `Job` with an `initContainer` checking step-ca health |
+| iot-bridge-api waits for 4 services | `readinessProbe` + retry logic in the app |
+| All services wait for Keycloak | `readinessProbe` in every Pod that requires Keycloak |
 
-Die `readinessProbe` verhindert, dass ein Pod Traffic empfängt bevor er bereit ist — der
-Pod startet aber ohne auf Abhängigkeiten zu warten.  Bei harten Boot-Reihenfolge-Anforderungen
-(rabbitmq-cert-init → rabbitmq) sind `initContainers` oder Kubernetes `Jobs` nötig.
+The `readinessProbe` prevents a Pod from receiving traffic before it is ready — but the
+Pod starts without waiting for its dependencies.  For hard boot-order requirements
+(rabbitmq-cert-init → rabbitmq), `initContainers` or Kubernetes `Jobs` are required.
 
 ---
 
-## 6. Keycloak: `start-dev` → `start` (Pflicht!)
+## 6. Keycloak: `start-dev` → `start` (mandatory!)
 
-Die aktuelle Konfiguration nutzt:
+The current configuration uses:
 
 ```yaml
 command: >
@@ -207,8 +204,8 @@ command: >
   --import-realm
 ```
 
-`start-dev` ist **nicht für Produktion geeignet** (kein Clustering, In-Memory-Caches,
-reduzierte Sicherheit).  Für Kubernetes muss auf `start` umgestellt werden:
+`start-dev` is **not suitable for production** (no clustering, in-memory caches, reduced
+security).  For Kubernetes it must be switched to `start`:
 
 ```yaml
 command: >
@@ -217,108 +214,108 @@ command: >
   --optimized
 ```
 
-Zusätzlich nötig:
-- `KC_CACHE=ispn` (Infinispan-Clustering für Keycloak HA) oder `KC_CACHE=local` (Single-Node)
-- `KC_DB=postgres` ist bereits konfiguriert ✅
-- `KC_HOSTNAME` muss auf den Ingress-Hostnamen gesetzt sein
-- `KC_PROXY=edge` oder `KC_PROXY_HEADERS=xforwarded` (`xforwarded` ist bereits gesetzt ✅)
+Additionally required:
+- `KC_CACHE=ispn` (Infinispan clustering for Keycloak HA) or `KC_CACHE=local` (single node)
+- `KC_DB=postgres` is already configured ✅
+- `KC_HOSTNAME` must be set to the Ingress hostname
+- `KC_PROXY=edge` or `KC_PROXY_HEADERS=xforwarded` (`xforwarded` is already set ✅)
 
-Für echtes Keycloak-HA werden **mehrere Replicas** und das Infinispan-Clustering benötigt
-(JGroups via DNS-Ping im K8s-Cluster).  Das ist erheblicher Zusatzaufwand.
+For true Keycloak HA, **multiple replicas** and Infinispan clustering are required
+(JGroups via DNS-Ping in the K8s cluster).  This involves significant additional effort.
 
-**Empfehlung:** Offizieller [Keycloak Helm Chart](https://www.keycloak.org/operator/installation)
-oder [Bitnami Keycloak Chart](https://github.com/bitnami/charts/tree/main/bitnami/keycloak)
-als Ausgangspunkt — Realm-Templates als ConfigMap mounten.
+**Recommendation:** Use the official [Keycloak Helm Chart](https://www.keycloak.org/operator/installation)
+or the [Bitnami Keycloak Chart](https://github.com/bitnami/charts/tree/main/bitnami/keycloak)
+as a starting point — mount realm templates as a ConfigMap.
 
 ---
 
-## 7. step-ca — Stateful PKI (kritisch!)
+## 7. step-ca — Stateful PKI (critical!)
 
-step-ca ist besonders heikel in Kubernetes:
+step-ca is particularly delicate in Kubernetes:
 
-### 7.1 Single-Instance / kein HA
+### 7.1 Single Instance / No HA
 
-step-ca unterstützt keine horizontale Skalierung ohne externe Datenbank (z.B.
-`badger v2` als DB-Backend statt `nosql`).  Es sollte als **StatefulSet mit 1 Replica**
-deployed werden.
+step-ca does not support horizontal scaling without an external database (e.g.
+`badger v2` as a DB backend instead of `nosql`).  It should be deployed as a
+**StatefulSet with 1 replica**.
 
-### 7.2 CA-Key im PersistentVolume
+### 7.2 CA Key in PersistentVolume
 
-Der verschlüsselte Root-CA-Private-Key liegt im Volume `/home/step/secrets/`.  Das Volume
-muss:
-- Verschlüsselt (StorageClass mit encryption at rest)
-- Backup-gesichert
-- **Nicht** in einem ReadWriteMany-Volume (NFS) gespeichert werden
+The encrypted Root CA private key lives in the volume `/home/step/secrets/`.  That volume
+must be:
+- Encrypted (StorageClass with encryption at rest)
+- Backed up
+- **Not** stored in a ReadWriteMany volume (NFS)
 
-### 7.3 Erster Boot (`DOCKER_STEPCA_INIT_*`)
+### 7.3 First Boot (`DOCKER_STEPCA_INIT_*`)
 
-Die automatische CA-Initialisierung über `DOCKER_STEPCA_INIT_*`-Env-Variablen funktioniert
-nur beim allerersten Start mit leerem Volume.  In Kubernetes muss das PVC rechtzeitig
-vorhanden sein.  Bei erneutem Volume-Löschen wird die CA neu generiert — alle ausgestellten
-Zertifikate werden ungültig.
+Automatic CA initialisation via `DOCKER_STEPCA_INIT_*` environment variables only works
+on the very first start with an empty volume.  In Kubernetes the PVC must be present in
+time.  If the volume is deleted and recreated, the CA is regenerated and all previously
+issued certificates become invalid.
 
-**Empfehlung:** `step-ca` als `StatefulSet` mit 1 Replica und dedizierten PVC deployen.
-CA-Key zusätzlich in einem Vault/HSM sichern (s. Security-Hinweise im step-ca SKILL).
+**Recommendation:** Deploy `step-ca` as a `StatefulSet` with 1 replica and a dedicated PVC.
+Additionally back up the CA key in a Vault/HSM (see security notes in the step-ca SKILL).
 
-### 7.4 ACME challenge für Caddy (intern)
+### 7.4 ACME Challenge for Caddy (internal)
 
-In Docker Compose nutzt Caddy den ACME-Provisioner des internen step-ca für automatische
-TLS-Zertifikate der Backend-Services.  In Kubernetes übernimmt `cert-manager` diese Rolle
-für Service-TLS.  Der step-ca ACME-Provisioner kann für IoT-Device-Zertifikate weiterhin
-genutzt werden.
+In Docker Compose, Caddy uses the ACME provisioner of the internal step-ca for automatic
+TLS certificates for backend services.  In Kubernetes, `cert-manager` takes over this role
+for service TLS.  The step-ca ACME provisioner can still be used for IoT device
+certificates.
 
 ---
 
 ## 8. RabbitMQ — Shared Volume (`rabbitmq-tls`)
 
-In der aktuellen Architektur schreibt `rabbitmq-cert-init` TLS-Zertifikate in das Volume
-`rabbitmq-tls`, das anschließend von `rabbitmq` gelesen wird.
+In the current architecture, `rabbitmq-cert-init` writes TLS certificates into the
+`rabbitmq-tls` volume, which is then read by `rabbitmq`.
 
-In Kubernetes kann ein Volume nicht direkt zwischen einem `Job` (cert-init) und einem
-`Pod` (rabbitmq) geteilt werden — nicht in dieser Form.  Alternativen:
+In Kubernetes a volume cannot be directly shared between a `Job` (cert-init) and a
+`Pod` (rabbitmq) in this way.  Alternatives:
 
-1. **Init-Container im RabbitMQ-Pod:** cert-init wird als `initContainer` innerhalb des
-   RabbitMQ-Pods ausgeführt, der dann das lokale Volume befüllt.
-2. **Kubernetes Secret:** cert-init läuft als Job und schreibt das Zertifikat direkt in
-   ein `Secret`; RabbitMQ mountet das Secret als Volume.  Benötigt RBAC-Berechtigung
-   für den Job.
-3. **cert-manager CertificateRequest:** cert-manager mit einem step-ca Issuer-Plugin kann
-   TLS-Zertifikate direkt als K8s-Secrets ausstellen.
+1. **Init Container in the RabbitMQ Pod:** cert-init runs as an `initContainer` inside
+   the RabbitMQ Pod, populating the local volume before the main container starts.
+2. **Kubernetes Secret:** cert-init runs as a Job and writes the certificate directly
+   into a `Secret`; RabbitMQ mounts the Secret as a volume.  Requires RBAC permissions
+   for the Job.
+3. **cert-manager CertificateRequest:** cert-manager with a step-ca Issuer plugin can
+   issue TLS certificates directly as K8s Secrets.
 
-**Empfehlung:** Option 3 (cert-manager) oder Option 1 (initContainer) sind am
-K8s-natürlichsten.
+**Recommendation:** Option 3 (cert-manager) or Option 1 (initContainer) are the most
+Kubernetes-native approaches.
 
 ---
 
-## 9. Externe URL & KC_HOSTNAME
+## 9. External URL & KC_HOSTNAME
 
-In Docker Compose wird `EXTERNAL_URL` aus `.env` flexibel gesetzt.  In Kubernetes ergibt
-sich die externe URL aus dem Ingress-Hostnamen.
+In Docker Compose, `EXTERNAL_URL` is set flexibly via `.env`.  In Kubernetes, the
+external URL is derived from the Ingress hostname.
 
-`KC_HOSTNAME` muss korrekt gesetzt sein — Fehler hier führen zu kaputten Login-Seiten
-(s. [Known Pitfall 7.5](.github/skills/cdm-keycloak/SKILL.md)).
+`KC_HOSTNAME` must be set correctly — errors here cause broken login pages
+(see [Known Pitfall 7.5](.github/skills/cdm-keycloak/SKILL.md)).
 
 ```yaml
 # In Keycloak Deployment env:
 KC_HOSTNAME: "https://cdm.example.com/auth"
 ```
 
-oauth2-proxy, Grafana, RabbitMQ und iot-bridge-api referenzieren `EXTERNAL_URL` in ihren
-Environment-Variablen — all diese müssen auf den Ingress-Hostnamen aktualisiert werden.
+oauth2-proxy, Grafana, RabbitMQ, and iot-bridge-api reference `EXTERNAL_URL` in their
+environment variables — all of these must be updated to the Ingress hostname.
 
 ---
 
-## 10. Realm-Templates in Keycloak
+## 10. Realm Templates in Keycloak
 
-Die Realm-JSON-Templates (`realm-cdm.json.tpl`, `realm-provider.json.tpl`) werden beim
-Image-Build in die Keycloak-Image eingebaut.  In Kubernetes gibt es zwei Ansätze:
+The realm JSON templates (`realm-cdm.json.tpl`, `realm-provider.json.tpl`) are embedded
+in the Keycloak image at build time.  In Kubernetes there are two approaches:
 
-| Ansatz | Vorteil | Nachteil |
+| Approach | Advantage | Disadvantage |
 |---|---|---|
-| Weiterhin im Image einbauen (aktuell) | Kein Refactoring nötig | Image muss bei Template-Änderung neu gebaut werden |
-| Templates als ConfigMap mounten | Kein Image-Rebuild für Template-Änderungen | `docker-entrypoint.sh` muss aus dem Image laufen, Templates kommen von außen |
+| Keep embedding in the image (current) | No refactoring needed | Image must be rebuilt on every template change |
+| Mount templates as a ConfigMap | No image rebuild for template changes | `docker-entrypoint.sh` must run from the image; templates come from outside |
 
-Der zweite Ansatz ist langfristig empfehlenswert:
+The second approach is recommended long-term:
 
 ```yaml
 volumes:
@@ -334,93 +331,93 @@ volumeMounts:
 
 ## 11. Helm Chart vs. Kustomize vs. Plain Manifests
 
-Empfehlung: **Kustomize** für einfache Varianten, **Helm** wenn mehrere Umgebungen
-(dev/staging/prod) deployt werden.
+Recommendation: **Kustomize** for simple variants, **Helm** when deploying multiple
+environments (dev/staging/prod).
 
-Sinnvolle Reihenfolge:
-1. `kompose convert` als Ausgangspunkt → erzeugt rohe Manifeste
-2. Manuell korrigieren (StatefulSets für Postgres/InfluxDB/RabbitMQ/step-ca)
-3. Jobs für Einmal-Tasks (rabbitmq-cert-init)
-4. initContainers für Boot-Reihenfolge-Abhängigkeiten
-5. Helm Chart oder Kustomize-Overlays für `dev` / `prod`
+Suggested order:
+1. `kompose convert` as a starting point → generates raw manifests
+2. Manual corrections (StatefulSets for Postgres/InfluxDB/RabbitMQ/step-ca)
+3. Jobs for one-off tasks (rabbitmq-cert-init)
+4. initContainers for boot-order dependencies
+5. Helm Chart or Kustomize overlays for `dev` / `prod`
 
-Alternativ: existierende Community-Charts für Teilkomponenten nutzen:
+Alternatively, use existing community charts for sub-components:
 
-| Service | Empfohlener Chart |
+| Service | Recommended Chart |
 |---|---|
-| PostgreSQL (Keycloak-DB) | `bitnami/postgresql` |
-| Keycloak | `bitnami/keycloak` oder offizieller Operator |
+| PostgreSQL (Keycloak DB) | `bitnami/postgresql` |
+| Keycloak | `bitnami/keycloak` or official Operator |
 | RabbitMQ | `bitnami/rabbitmq` |
 | Grafana | `grafana/grafana` |
 | InfluxDB | `influxdata/influxdb2` |
 | cert-manager | `cert-manager/cert-manager` |
 
-`step-ca` und `iot-bridge-api` müssen custom Charts bleiben.
+`step-ca` and `iot-bridge-api` must remain custom charts.
 
 ---
 
 ## 12. RBAC & Service Accounts
 
-Folgende Kubernetes-spezifische Berechtigungen werden nötig:
+The following Kubernetes-specific permissions are required:
 
-| Service | Benötigte Berechtigung |
+| Service | Required Permission |
 |---|---|
-| rabbitmq-cert-init (Job) | `create/update` auf `Secrets` (falls Zertifikat als Secret gespeichert wird) |
-| iot-bridge-api | `read` auf `ConfigMaps` / `Secrets` für dynamische Konfiguration (optional) |
-| cert-manager Issuer | Zugriff auf step-ca API für CertificateRequest-Signing |
+| rabbitmq-cert-init (Job) | `create/update` on `Secrets` (if certificate is stored as a Secret) |
+| iot-bridge-api | `read` on `ConfigMaps` / `Secrets` for dynamic configuration (optional) |
+| cert-manager Issuer | Access to the step-ca API for CertificateRequest signing |
 
 ---
 
-## 13. Bekannte Fallstricke bei K8s-Migration
+## 13. Known Pitfalls in K8s Migration
 
-| Problem | Ursache | Lösung |
+| Problem | Cause | Solution |
 |---|---|---|
-| Keycloak login-Seite kaputt | `KC_HOSTNAME` falsch (kein `/auth`-Suffix) | Exakt `https://<ingress-host>/auth` setzen |
-| RabbitMQ Management SSO schlägt fehl | `oauth_provider_url` nicht browser-erreichbar | Auf Ingress-URL zeigen, nicht ClusterIP |
-| InfluxDB SSO schlägt fehl | oauth2-proxy erwartet direkten Port statt Ingress-Pfad | Subdomain-Ingress oder LoadBalancer für InfluxDB |
-| step-ca verliert CA nach PVC-Verlust | K8s-Volume gelöscht / PVC-Klasse ohne Reclaim | `persistentVolumeReclaimPolicy: Retain` setzen |
-| Keycloak-Pods starten, DB ist nicht bereit | Kein `depends_on` | `initContainer` mit `pg_isready` |
-| RabbitMQ TLS fehlt beim Start | cert-init Job noch nicht fertig | `initContainer` oder Job + Startup-Readiness-Probe |
-| Caddy ACME-Zertifikate → cert-manager | Caddy braucht Port 80 für HTTP-Challenge | `cert-manager` HTTP-01-Solver stattdessen |
+| Keycloak login page broken | `KC_HOSTNAME` wrong (missing `/auth` suffix) | Set exactly `https://<ingress-host>/auth` |
+| RabbitMQ Management SSO fails | `oauth_provider_url` not browser-reachable | Point to Ingress URL, not ClusterIP |
+| InfluxDB SSO fails | oauth2-proxy expects a direct port instead of Ingress path | Subdomain Ingress or LoadBalancer for InfluxDB |
+| step-ca loses CA after PVC loss | K8s volume deleted / PVC class without reclaim | Set `persistentVolumeReclaimPolicy: Retain` |
+| Keycloak pods start, DB not ready | No `depends_on` | `initContainer` with `pg_isready` |
+| RabbitMQ TLS missing at start | cert-init Job not finished yet | `initContainer` or Job + startup readiness probe |
+| Caddy ACME certs → cert-manager | Caddy needs port 80 for HTTP challenge | Use `cert-manager` HTTP-01 solver instead |
 
 ---
 
-## 14. Schätzung des Aufwands
+## 14. Effort Estimate
 
-| Teilaufgabe | Aufwand (Manntage) |
+| Sub-task | Effort (person-days) |
 |---|---|
-| CI/CD Pipeline (Image build + push) | 1–2 |
-| Basis-Manifeste (`kompose convert` + Korrekturen) | 2–3 |
-| Keycloak `start-dev` → `start` + Realm-ConfigMaps | 2–3 |
-| Ingress-Konfiguration (Pfad-Routing, InfluxDB-Subdomain) | 2–3 |
+| CI/CD pipeline (image build + push) | 1–2 |
+| Base manifests (`kompose convert` + corrections) | 2–3 |
+| Keycloak `start-dev` → `start` + Realm ConfigMaps | 2–3 |
+| Ingress configuration (path routing, InfluxDB subdomain) | 2–3 |
 | RabbitMQ cert-init → initContainer / cert-manager | 1–2 |
-| step-ca StatefulSet + PVC-Sicherung | 1–2 |
+| step-ca StatefulSet + PVC backup | 1–2 |
 | Secrets → K8s Secrets / External Secrets Operator | 1–2 |
-| Helm Chart oder Kustomize-Struktur | 3–5 |
-| Testing + Debugging (HA, Failover) | 3–5 |
-| **Gesamt** | **~16–27 Manntage** |
+| Helm Chart or Kustomize structure | 3–5 |
+| Testing + debugging (HA, failover) | 3–5 |
+| **Total** | **~16–27 person-days** |
 
 ---
 
-## 15. Empfohlene Migrations-Reihenfolge
+## 15. Recommended Migration Order
 
-1. **CI/CD**: Images bauen + in Registry pushen
-2. **Secrets**: Alle Passwörter/Tokens als K8s-Secrets anlegen
+1. **CI/CD**: Build images and push to registry
+2. **Secrets**: Create all passwords/tokens as K8s Secrets
 3. **StatefulSets**: PostgreSQL, InfluxDB, RabbitMQ, step-ca
-4. **Keycloak**: `start-dev` → `start`, Realm-Templates als ConfigMap
-5. **InitContainer / Jobs**: Boot-Reihenfolge abbilden
-6. **Ingress**: Pfad-Routing + Subdomain für InfluxDB
-7. **EXTERNAL_URL / KC_HOSTNAME**: Auf Ingress-Hostnamen anpassen
-8. **End-to-End-Test**: Login-Flow, RabbitMQ SSO, InfluxDB, step-ca Healthcheck
-9. **cert-manager**: TLS für alle Ingress-Endpoints
+4. **Keycloak**: `start-dev` → `start`, realm templates as ConfigMap
+5. **InitContainers / Jobs**: Reproduce boot order
+6. **Ingress**: Path routing + subdomain for InfluxDB
+7. **EXTERNAL_URL / KC_HOSTNAME**: Update to Ingress hostname
+8. **End-to-end test**: Login flow, RabbitMQ SSO, InfluxDB, step-ca health check
+9. **cert-manager**: TLS for all Ingress endpoints
 
 ---
 
-## Referenzen
+## References
 
 - [Keycloak Kubernetes Operator](https://www.keycloak.org/operator/installation)
 - [cert-manager step-ca Issuer](https://github.com/smallstep/step-issuer)
 - [RabbitMQ Cluster Operator](https://www.rabbitmq.com/kubernetes/operator/operator-overview)
 - [External Secrets Operator](https://external-secrets.io/)
-- [kompose](https://kompose.io/) — Docker Compose → K8s Manifeste
+- [kompose](https://kompose.io/) — Docker Compose → K8s manifests
 - CDM Skills: `.github/skills/cdm-keycloak/SKILL.md`, `.github/skills/cdm-step-ca/SKILL.md`

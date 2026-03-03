@@ -1,29 +1,29 @@
-# Some notes
+# Notes
 
 ## Important Features
 
-- Tenant Keycloak soll auch an mehrere IAM des Kunden (Google OAuth, Azure AD/Microsoft, Keycloak,...) angebunden werden können (aus docker-compose.yml)
-  * Social Auth soll über switch in ENV einfach aktiviert werden und dann einfach einen Button zur Verfügung stellen...
+- Tenant Keycloak should also be connectable to multiple customer IAM systems (Google OAuth, Azure AD/Microsoft, Keycloak, ...) — see `docker-compose.yml`
+  * Social Auth should be easy to enable via an ENV switch and simply provide a login button.
 
 
 ## Future Features
 
-### Tenant Instanz
+### Tenant Instance
 
-- Soll Device Isolation ermöglichen, so dass man "Sub-Tenants" spezifische Rechte auf selbst hinzugefügte Geräte geben kann (Self-Service-/Maker-Devices).
-  * Hier soll man einzelne Devices für Kunden anlegen können, die kein eigenes Dev-Mgmt betreiben möchten, z.B. Einzelstückzahl-Kunden eines Tenant
-- Workflow-Unterstützung für Device Decommissioning
+- Should support device isolation so that "sub-tenants" can be granted specific rights to devices they add themselves (self-service / maker devices).
+  * Individual devices should be registerable for customers who do not operate their own device management, e.g. single-unit customers of a tenant.
+- Workflow support for device decommissioning
 
-### Provider Instanz
+### Provider Instance
 
-- Workflow-Unterstützung für Tenant Commissioning/Shutdown/Suspend/Unsuspend/Decommissioning
+- Workflow support for tenant commissioning / shutdown / suspend / unsuspend / decommissioning
 
-## Allgemeine Anmerkungen
+## General Remarks
 
-- step-ca soll auf ein TPM oder HSM zugreifen, um Schlüssel zu speichern oder die Key-Files zu verschlüsseln -> Audit-Log
+- step-ca should be able to access a TPM or HSM to store keys or encrypt key files → audit log
 
-## Allgemeine Fragen
+## Open Questions
 
-- Muss die Keycloak Federation über Cedentials gelöst werden? Kann das nicht über Zertifikate passieren
-- Wie wird ein Update der Zertifikate durchgeführt? Dokumentieren für alle Use-Cases
-  * Device, Federation, MQTT/mTLS,...
+- Does Keycloak federation have to be solved via credentials? Can it be done via certificates instead?
+- How are certificate updates performed? Document for all use cases:
+  * Device, Federation, MQTT/mTLS, ...

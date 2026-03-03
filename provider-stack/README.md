@@ -1,88 +1,89 @@
 # Provider-Stack Setup (Codespaces / Dev)
 
-Diese Anleitung beschreibt den vollständigen, reproduzierbaren Ablauf für einen **sauberen Neuaufbau** des Provider-Stacks in Codespaces – inklusive Initial-Clean-Up, PKI-Initialisierung und Smoke-Test.
+This guide describes the complete, reproducible procedure for a **clean rebuild** of the
+Provider-Stack in Codespaces — including initial cleanup, PKI initialization, and smoke test.
 
-## Zielbild
+## Target State
 
-Am Ende laufen die Provider-Services stabil mit:
+At the end, all Provider services should be running stably with:
 
 - `provider-step-ca` (`healthy`)
 - `provider-keycloak` (`healthy`)
 - `provider-rabbitmq` (`healthy`)
 - `provider-timescaledb` (`healthy`)
 - `provider-caddy`, `provider-grafana`, `provider-iot-bridge-api`, `provider-pgadmin`, `provider-telegraf` (`Up`)
-- `provider-rabbitmq-cert-init` als One-Shot mit `Exited (0)`
+- `provider-rabbitmq-cert-init` as a one-shot with `Exited (0)`
 
-## 1) `.env` anlegen und Codespaces-URL setzen
+## 1) Create `.env` and set the Codespaces URL
 
 ```bash
 cd provider-stack
 cp .env.example .env
 ```
 
-Setze in `.env` mindestens:
+Set at least the following in `.env`:
 
 ```dotenv
 EXTERNAL_URL=https://<codespace-name>-8888.app.github.dev
 PGADMIN_EMAIL=admin@cdm-platform.dev
 ```
 
-Hinweise:
+Notes:
 
-- `<codespace-name>` bekommst du mit `echo $CODESPACE_NAME`.
-- `PGADMIN_EMAIL` darf **keine reservierte Domain** wie `.local` verwenden.
+- Get `<codespace-name>` by running `echo $CODESPACE_NAME`.
+- `PGADMIN_EMAIL` must **not use a reserved domain** such as `.local`.
 
-## 2) Initialer Clean-Up (vollständig)
+## 2) Initial Cleanup (complete)
 
 ```bash
 docker compose down --volumes --remove-orphans
 ```
 
-Damit startest du von einem sauberen Zustand (Container, Netzwerke und Volumes entfernt).
+This starts from a clean state (containers, networks, and volumes removed).
 
-## 3) `step-ca` zuerst starten
+## 3) Start `step-ca` first
 
 ```bash
 docker compose up -d step-ca
 ```
 
-Warte, bis der Container `healthy` ist:
+Wait until the container is `healthy`:
 
 ```bash
 docker compose ps step-ca
 ```
 
-## 4) Provisioner initialisieren (wichtig)
+## 4) Initialize provisioners (important)
 
 ```bash
 docker exec provider-step-ca /usr/local/bin/init-provisioners.sh
 ```
 
-Das legt u. a. `iot-bridge` und `tenant-sub-ca-signer` an.
+This creates (among others) the `iot-bridge` and `tenant-sub-ca-signer` provisioners.
 
-## 5) Root-CA-Fingerprint setzen
+## 5) Set the Root CA fingerprint
 
-Fingerprint auslesen:
+Read the fingerprint:
 
 ```bash
 docker exec provider-step-ca sh -lc 'step certificate fingerprint /home/step/certs/root_ca.crt'
 ```
 
-Den ausgegebenen Wert in `.env` als `STEP_CA_FINGERPRINT=<wert>` eintragen.
+Set the output value in `.env` as `STEP_CA_FINGERPRINT=<value>`.
 
-## 6) Gesamten Stack starten
+## 6) Start the full stack
 
 ```bash
 docker compose up -d
 ```
 
-Status prüfen:
+Check status:
 
 ```bash
 docker compose ps -a
 ```
 
-## 7) Kurz-Smoke-Test der Endpoints
+## 7) Quick smoke test of endpoints
 
 ```bash
 python3 - <<'PY'
@@ -98,13 +99,13 @@ for ep in endpoints:
 PY
 ```
 
-Erwartung: alle Endpoints liefern `2xx` oder `3xx`.
+Expected: all endpoints return `2xx` or `3xx`.
 
-## Typische Fehler & direkte Fixes
+## Common Errors & Direct Fixes
 
 ### `provider-pgadmin`: invalid email address
 
-Fehlerbild: `admin@cdm.local` wird als special-use/reserved domain abgewiesen.
+Symptom: `admin@cdm.local` is rejected as a special-use/reserved domain.
 
 Fix in `.env`:
 
@@ -112,7 +113,7 @@ Fix in `.env`:
 PGADMIN_EMAIL=admin@cdm-platform.dev
 ```
 
-Dann neu starten:
+Then restart:
 
 ```bash
 docker compose up -d pgadmin
@@ -122,9 +123,9 @@ docker compose up -d pgadmin
 
 Fix:
 
-1. Fingerprint wie oben auslesen.
-2. In `.env` bei `STEP_CA_FINGERPRINT` setzen.
-3. Danach:
+1. Read the fingerprint as described above.
+2. Set it in `.env` at `STEP_CA_FINGERPRINT`.
+3. Then run:
 
 ```bash
 docker compose up -d rabbitmq-cert-init rabbitmq
@@ -132,7 +133,7 @@ docker compose up -d rabbitmq-cert-init rabbitmq
 
 ### `provider-rabbitmq-cert-init`: `invalid value 'iot-bridge' for flag '--provisioner'`
 
-Ursache: Provisioner `iot-bridge` wurde noch nicht angelegt.
+Cause: The `iot-bridge` provisioner has not been created yet.
 
 Fix:
 
@@ -141,21 +142,23 @@ docker exec provider-step-ca /usr/local/bin/init-provisioners.sh
 docker compose up -d rabbitmq-cert-init rabbitmq
 ```
 
-### `provider-telegraf` Restart-Loop wegen `outputs.postgresql`
+### `provider-telegraf` restart loop due to `outputs.postgresql`
 
-Bei Telegraf `1.37` sind bestimmte Felder (`create_metrics_table_if_not_exists`, `timescaledb`-Block) nicht verfügbar.
+With Telegraf `1.37`, certain fields (`create_metrics_table_if_not_exists`, `timescaledb`
+block) are not available.
 
-Fix: diese Felder in `monitoring/telegraf/telegraf.conf` entfernen (bereits im aktuellen Stand umgesetzt).
+Fix: remove these fields from `monitoring/telegraf/telegraf.conf` (already applied in the
+current state).
 
-## Nützliche Kurzbefehle
+## Useful Quick Commands
 
 ```bash
-# Gesamtstatus
+# Overall status
 docker compose ps -a
 
-# Logs eines Services
+# Logs for a service
 docker compose logs --no-color --tail=120 <service>
 
-# Komplett neu aufsetzen
+# Full reset
 docker compose down --volumes --remove-orphans && docker compose up -d
 ```
