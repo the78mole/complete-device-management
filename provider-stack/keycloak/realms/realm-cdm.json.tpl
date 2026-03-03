@@ -14,7 +14,17 @@
     "realm": [
       { "name": "cdm-admin",    "description": "Platform administrator" },
       { "name": "cdm-operator", "description": "Fleet operator" },
-      { "name": "cdm-viewer",   "description": "Read-only access" }
+      { "name": "cdm-viewer",   "description": "Read-only access" },
+      {
+        "name": "matrix-viewer",
+        "description": "Read-only access to users and roles for the Role Matrix page",
+        "composite": true,
+        "composites": {
+          "client": {
+            "realm-management": ["view-users", "query-users", "view-realm"]
+          }
+        }
+      }
     ]
   },
   "users": [
@@ -26,7 +36,7 @@
       "enabled": true,
       "emailVerified": true,
       "attributes": { "tenant": ["cdm"] },
-      "realmRoles": ["cdm-admin"],
+      "realmRoles": ["cdm-admin", "matrix-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "changeme", "temporary": true }

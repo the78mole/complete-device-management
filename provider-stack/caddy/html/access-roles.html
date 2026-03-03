@@ -35,55 +35,25 @@
   <!-- ── Main ───────────────────────────────────────────────── -->
   <div class="container py-4">
 
-    <!-- ── Login form ─────────────────────────────────────── -->
-    <div id="login-section">
-      <div class="login-card p-4">
-        <h5 class="mb-1" style="font-weight:700">Keycloak Admin login</h5>
-        <p class="mb-3" style="font-size:0.8rem;color:#8b949e">
-          Requires a <strong>master-realm admin</strong> account. Credentials are used only to
-          obtain an Admin REST API token and are never stored.
-        </p>
-        <div class="mb-3">
-          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Keycloak Base URL</label>
-          <input id="inp-base" type="text" class="form-control"
-                 placeholder="http://localhost:8888" autocomplete="off" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Username</label>
-          <input id="inp-user" type="text" class="form-control"
-                 value="admin" autocomplete="username" />
-        </div>
-        <div class="mb-3">
-          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Password</label>
-          <input id="inp-pass" type="password" class="form-control"
-                 placeholder="" autocomplete="current-password" />
-        </div>
-        <div id="login-error" class="d-none err-banner mb-3"></div>
-        <button id="btn-load" class="btn btn-primary w-100">Load Matrix</button>
-      </div>
+    <!-- ── Realm session bar ───────────────────────────────── -->
+    <div id="session-bar" class="d-flex flex-wrap gap-3 mb-4">
+      <!-- filled dynamically for each realm -->
     </div>
 
-    <!-- ── Matrix content ──────────────────────────────────── -->
-    <div id="content-section" class="d-none">
-
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <div class="legend-row">
-          <span><span style="color:#3fb950;font-size:1.1rem">&#x2714;</span> Role assigned</span>
-          <span><span style="color:#484f58">&middot;</span> Not assigned</span>
-          <span><span class="role-chip chip-app">APP</span> Application roles</span>
-          <span><span class="role-chip chip-prov">PROV</span> Ops/platform roles</span>
-          <span><span class="role-chip chip-sys">SYS</span> Keycloak built-in</span>
-        </div>
-        <div class="d-flex gap-2 align-items-center">
-          <span id="last-refresh" style="font-size:0.75rem;color:#484f58"></span>
-          <button id="btn-refresh" class="btn btn-sm btn-outline-secondary">&#x21BA; Refresh</button>
-          <button id="btn-relogin" class="btn btn-sm btn-outline-danger">Logout</button>
-        </div>
+    <!-- ── Legend ──────────────────────────────────────────── -->
+    <div id="legend" class="d-none d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+      <div class="legend-row">
+        <span><span style="color:#3fb950;font-size:1.1rem">&#x2714;</span> Role assigned</span>
+        <span><span style="color:#484f58">&middot;</span> Not assigned</span>
+        <span><span class="role-chip chip-app">APP</span> Application roles</span>
+        <span><span class="role-chip chip-prov">PROV</span> Ops/platform roles</span>
+        <span><span class="role-chip chip-sys">SYS</span> Keycloak built-in</span>
       </div>
-
-      <div id="matrix-container"></div>
-      <div id="load-error" class="d-none err-banner mt-3"></div>
+      <span id="last-refresh" style="font-size:0.75rem;color:#484f58"></span>
     </div>
+
+    <!-- ── Matrix output ───────────────────────────────────── -->
+    <div id="matrix-container"></div>
 
   </div>
 
@@ -92,11 +62,13 @@
           style="border-color:#21262d!important;font-size:0.78rem;color:#484f58">
     <div class="container d-flex justify-content-between flex-wrap gap-2">
       <span>CDM Provider Stack &mdash; User &times; Role Matrix</span>
-      <span>Credentials are transmitted only to your own Keycloak instance.</span>
+      <span>Requires the <code>matrix-viewer</code> realm role in each realm.</span>
     </div>
   </footer>
 
   <script type="module">
+    import Keycloak from '/js/keycloak.js';
+
     // ──────────────────────────────────────────────────────────
     // Constants
     // ──────────────────────────────────────────────────────────
@@ -112,7 +84,72 @@
     ];
 
     // ──────────────────────────────────────────────────────────
-    // Helpers
+    // Keycloak helpers
+    // ──────────────────────────────────────────────────────────
+    function makeKC(realm) {
+      return new Keycloak({ url: '/auth', realm, clientId: 'dashboard' });
+    }
+
+    async function trySilentSSO(realm) {
+      try {
+        const kc   = makeKC(realm);
+        const auth = await kc.init({
+          onLoad: 'check-sso',
+          silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+          pkceMethod: 'S256',
+          checkLoginIframe: false,
+        });
+        return auth ? kc : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function hasMatrixViewerRole(kc) {
+      const t = kc.tokenParsed;
+      // Check realm roles array (realm_access.roles or custom "roles" claim)
+      const roles = t?.realm_access?.roles ?? t?.roles ?? [];
+      // Also accept realm-admin (superadmin) directly
+      return roles.includes('matrix-viewer') || roles.includes('realm-admin');
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Admin REST helpers
+    // ──────────────────────────────────────────────────────────
+    async function kcGet(path, token) {
+      const r = await fetch(`/auth${path}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status} \u2014 ${path}`);
+      return r.json();
+    }
+
+    async function fetchRoles(realm, token) {
+      const roles = await kcGet(`/admin/realms/${realm}/roles`, token);
+      return roles
+        .filter(r => !SKIP_ROLES.has(r.name))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    async function fetchUsers(realm, token) {
+      const users = await kcGet(`/admin/realms/${realm}/users?max=500`, token);
+      const enriched = await Promise.all(users.map(async u => {
+        let realmRoles = [];
+        try {
+          const rm = await kcGet(
+            `/admin/realms/${realm}/users/${u.id}/role-mappings/realm`,
+            token
+          );
+          realmRoles = rm.map(r => r.name);
+        } catch {/* tolerate per-user failure */}
+        return { ...u, realmRoles };
+      }));
+      return enriched.sort((a, b) => (a.username ?? '').localeCompare(b.username ?? ''));
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Render helpers
     // ──────────────────────────────────────────────────────────
     function esc(s) {
       return String(s ?? '')
@@ -126,65 +163,7 @@
       return 'chip-app';
     }
 
-    // ──────────────────────────────────────────────────────────
-    // Keycloak Admin REST
-    // ──────────────────────────────────────────────────────────
-    async function fetchToken(base, user, pass) {
-      const r = await fetch(`${base}/auth/realms/master/protocol/openid-connect/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'password',
-          client_id:  'admin-cli',
-          username:   user,
-          password:   pass,
-        }),
-      });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error(body.error_description || `HTTP ${r.status}`);
-      }
-      const d = await r.json();
-      return d.access_token;
-    }
-
-    async function kcGet(base, path, token) {
-      const r = await fetch(`${base}/auth${path}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        cache: 'no-store',
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status} — ${path}`);
-      return r.json();
-    }
-
-    async function fetchRoles(base, realm, token) {
-      const roles = await kcGet(base, `/admin/realms/${realm}/roles`, token);
-      return roles
-        .filter(r => !SKIP_ROLES.has(r.name))
-        .sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    async function fetchUsers(base, realm, token) {
-      const users = await kcGet(base, `/admin/realms/${realm}/users?max=500`, token);
-      const enriched = await Promise.all(users.map(async u => {
-        let roles = [];
-        try {
-          const rm = await kcGet(
-            base,
-            `/admin/realms/${realm}/users/${u.id}/role-mappings/realm`,
-            token
-          );
-          roles = rm.map(r => r.name);
-        } catch {/* tolerate per-user failure */}
-        return { ...u, realmRoles: roles };
-      }));
-      return enriched.sort((a, b) => (a.username ?? '').localeCompare(b.username ?? ''));
-    }
-
-    // ──────────────────────────────────────────────────────────
-    // Render
-    // ──────────────────────────────────────────────────────────
-    function buildSection(realm, roles, users) {
+    function buildMatrix(realm, roles, users) {
       const realmLabel = realm === 'provider' ? 'PROV' : 'CDM';
       const realmCls   = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
 
@@ -206,7 +185,6 @@
         const statusCls = user.enabled ? 'status-active' : 'status-disabled';
         const statusTxt = user.enabled ? 'active' : 'disabled';
         const assigned  = new Set(user.realmRoles);
-
         tbody += `<tr>
           <td class="col-user">
             <span class="username">${esc(user.username)}</span>
@@ -229,98 +207,129 @@
       </div>`;
     }
 
-    async function loadMatrix(base, token) {
-      const container = document.getElementById('matrix-container');
-      container.innerHTML = '';
-      document.getElementById('load-error').classList.add('d-none');
+    // ──────────────────────────────────────────────────────────
+    // Session bar rendering
+    // ──────────────────────────────────────────────────────────
+    function renderSessionBar(sessions) {
+      const bar = document.getElementById('session-bar');
+      bar.innerHTML = '';
 
       for (const realm of REALMS) {
-        let roles, users;
-        try {
-          [roles, users] = await Promise.all([
-            fetchRoles(base, realm, token),
-            fetchUsers(base, realm, token),
-          ]);
-        } catch (err) {
-          container.insertAdjacentHTML('beforeend',
-            `<div class="err-banner mb-3">\u274c realm <strong>${esc(realm)}</strong>: ${esc(err.message)}</div>`);
-          continue;
-        }
+        const kc = sessions[realm];
+        const realmCls = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
+        const div = document.createElement('div');
+        div.style.cssText = 'background:#161b22;border:1px solid #30363d;border-radius:8px;padding:0.6rem 1rem;display:flex;align-items:center;gap:0.75rem;font-size:0.82rem;';
 
-        const heading = realm === 'provider' ? '\u{1F3E2} Provider realm' : '\u{1F310} CDM realm';
-        container.insertAdjacentHTML('beforeend',
-          `<div class="d-flex align-items-baseline gap-2 mb-2 mt-3">
-            <span style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8b949e">${heading}</span>
-            <span style="font-size:0.72rem;color:#484f58">${users.length} user(s) \u00b7 ${roles.length} role(s)</span>
-          </div>`);
-        container.insertAdjacentHTML('beforeend', buildSection(realm, roles, users));
+        if (kc) {
+          const username = kc.tokenParsed?.preferred_username ?? '?';
+          const hasPerm  = hasMatrixViewerRole(kc);
+          const permIcon = hasPerm ? '\u2714' : '\u26a0\ufe0f';
+          const permTip  = hasPerm ? 'matrix-viewer role present' : 'missing matrix-viewer role \u2014 no data access';
+          div.innerHTML = `
+            <span class="realm-tag ${realmCls}">${realm.toUpperCase()}</span>
+            <span style="color:#56d364">\u25cf</span>
+            <span style="color:#c9d1d9">${esc(username)}</span>
+            <span title="${permTip}" style="color:${hasPerm ? '#3fb950' : '#d29922'}">${permIcon}</span>
+            <button class="btn btn-sm btn-outline-secondary ms-auto" style="font-size:0.72rem;padding:0.15rem 0.5rem"
+                    data-logout="${realm}">Logout</button>`;
+        } else {
+          div.innerHTML = `
+            <span class="realm-tag ${realmCls}">${realm.toUpperCase()}</span>
+            <span style="color:#484f58">\u25cf</span>
+            <span style="color:#484f58">not logged in</span>
+            <button class="btn btn-sm btn-primary ms-auto" style="font-size:0.72rem;padding:0.15rem 0.5rem"
+                    data-login="${realm}">Login \u2192</button>`;
+        }
+        bar.appendChild(div);
       }
 
+      // Wire buttons
+      bar.querySelectorAll('[data-logout]').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const kc = sessions[btn.dataset.logout];
+          kc?.logout({ redirectUri: window.location.href });
+        })
+      );
+      bar.querySelectorAll('[data-login]').forEach(btn =>
+        btn.addEventListener('click', () => {
+          const kc = makeKC(btn.dataset.login);
+          kc.init({ pkceMethod: 'S256', checkLoginIframe: false })
+            .then(() => kc.login({ redirectUri: window.location.href }));
+        })
+      );
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Load matrix for one realm
+    // ──────────────────────────────────────────────────────────
+    async function loadRealmSection(realm, kc) {
+      const container = document.getElementById('matrix-container');
+      const realmCls  = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
+      const heading   = realm === 'provider' ? '\u{1F3E2} Provider realm' : '\u{1F310} CDM realm';
+
+      // Placeholder while loading
+      const placeholder = document.createElement('div');
+      placeholder.id = `section-${realm}`;
+      placeholder.innerHTML = `<div class="d-flex align-items-baseline gap-2 mb-2 mt-3">
+        <span style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8b949e">${heading}</span>
+        <span style="font-size:0.72rem;color:#484f58">\u2026 loading</span>
+      </div>`;
+      container.appendChild(placeholder);
+
+      try {
+        const [roles, users] = await Promise.all([
+          fetchRoles(realm, kc.token),
+          fetchUsers(realm, kc.token),
+        ]);
+        placeholder.innerHTML = `
+          <div class="d-flex align-items-baseline gap-2 mb-2 mt-3">
+            <span style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8b949e">${heading}</span>
+            <span style="font-size:0.72rem;color:#484f58">${users.length} user(s) \u00b7 ${roles.length} role(s)</span>
+          </div>
+          ${buildMatrix(realm, roles, users)}`;
+      } catch (err) {
+        placeholder.innerHTML = `
+          <div class="d-flex align-items-baseline gap-2 mb-2 mt-3">
+            <span style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8b949e">${heading}</span>
+          </div>
+          <div class="err-banner mb-4">\u274c ${esc(err.message)}</div>`;
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Bootstrap
+    // ──────────────────────────────────────────────────────────
+
+    // Silent SSO must run sequentially (Keycloak.js uses a shared iframe)
+    const sessions = {};
+    for (const realm of REALMS) {
+      sessions[realm] = await trySilentSSO(realm);
+    }
+
+    renderSessionBar(sessions);
+
+    // Load matrix for each realm that has an authenticated session with permissions
+    const loadable = REALMS.filter(r => sessions[r] && hasMatrixViewerRole(sessions[r]));
+    if (loadable.length > 0) {
+      document.getElementById('legend').classList.remove('d-none');
+      await Promise.all(loadable.map(r => loadRealmSection(r, sessions[r])));
       document.getElementById('last-refresh').textContent =
         'Updated ' + new Date().toLocaleTimeString('de-DE');
     }
 
-    // ──────────────────────────────────────────────────────────
-    // DOM & state
-    // ──────────────────────────────────────────────────────────
-    let _token = null;
-    let _base  = null;
-
-    const inpBase = document.getElementById('inp-base');
-    const inpUser = document.getElementById('inp-user');
-    const inpPass = document.getElementById('inp-pass');
-
-    // Pre-fill base URL from current origin
-    inpBase.value = window.location.origin;
-
-    document.getElementById('btn-load').addEventListener('click', async () => {
-      const btn = document.getElementById('btn-load');
-      const errEl = document.getElementById('login-error');
-      errEl.classList.add('d-none');
-      btn.disabled = true;
-      btn.textContent = 'Loading\u2026';
-
-      const base = inpBase.value.trim().replace(/\/$/, '');
-      try {
-        _token = await fetchToken(base, inpUser.value.trim(), inpPass.value);
-        _base  = base;
-        inpPass.value = '';  // clear password from DOM
-
-        document.getElementById('login-section').classList.add('d-none');
-        document.getElementById('content-section').classList.remove('d-none');
-        await loadMatrix(_base, _token);
-      } catch (e) {
-        errEl.textContent = '\u274c ' + e.message;
-        errEl.classList.remove('d-none');
-        btn.disabled     = false;
-        btn.textContent  = 'Load Matrix';
+    // Show "no permission" notes for realms that are logged in but lack the role
+    for (const realm of REALMS) {
+      if (sessions[realm] && !hasMatrixViewerRole(sessions[realm])) {
+        const container = document.getElementById('matrix-container');
+        const realmCls  = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
+        container.insertAdjacentHTML('beforeend', `
+          <div class="err-banner mb-3" style="border-color:#d29922;background:#2a1f00;color:#d29922">
+            \u26a0\ufe0f <span class="realm-tag ${realmCls}">${realm.toUpperCase()}</span>
+            &nbsp;Logged in, but the <code>matrix-viewer</code> role is not assigned to this account.
+          </div>`);
       }
-    });
+    }
 
-    // Enter key submits form
-    [inpBase, inpUser, inpPass].forEach(el =>
-      el.addEventListener('keydown', e => {
-        if (e.key === 'Enter') document.getElementById('btn-load').click();
-      })
-    );
-
-    document.getElementById('btn-refresh').addEventListener('click', async () => {
-      if (!_token || !_base) return;
-      try {
-        await loadMatrix(_base, _token);
-      } catch (e) {
-        const eb = document.getElementById('load-error');
-        eb.textContent = '\u274c ' + e.message;
-        eb.classList.remove('d-none');
-      }
-    });
-
-    document.getElementById('btn-relogin').addEventListener('click', () => {
-      _token = null; _base = null;
-      document.getElementById('content-section').classList.add('d-none');
-      document.getElementById('login-section').classList.remove('d-none');
-      document.getElementById('matrix-container').innerHTML = '';
-    });
   </script>
 
 </body>

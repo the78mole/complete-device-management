@@ -24,6 +24,16 @@
       {
         "name": "pgadmin-users",
         "description": "Users allowed to access pgAdmin via OIDC"
+      },
+      {
+        "name": "matrix-viewer",
+        "description": "Read-only access to users and roles for the Role Matrix page",
+        "composite": true,
+        "composites": {
+          "client": {
+            "realm-management": ["view-users", "query-users", "view-realm"]
+          }
+        }
       }
     ]
   },
@@ -35,7 +45,7 @@
       "lastName": "Superadmin",
       "enabled": true,
       "emailVerified": true,
-      "realmRoles": ["platform-admin", "pgadmin-users"],
+      "realmRoles": ["platform-admin", "pgadmin-users", "matrix-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${KC_ADMIN_PASSWORD}", "temporary": false }
@@ -48,7 +58,7 @@
       "lastName": "Operator",
       "enabled": true,
       "emailVerified": true,
-      "realmRoles": ["platform-operator", "pgadmin-users"],
+      "realmRoles": ["platform-operator", "pgadmin-users", "matrix-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${PROVIDER_OPERATOR_PASSWORD}", "temporary": true }
