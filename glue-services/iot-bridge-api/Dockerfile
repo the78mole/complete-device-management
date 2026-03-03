@@ -13,7 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 
 # Run as non-root
-RUN useradd -r -u 1001 appuser && chown -R appuser:appuser /app
+RUN useradd -r -u 1001 appuser \
+    && chown -R appuser:appuser /app \
+    && mkdir -p /data && chown appuser:appuser /data
 
 # The Python base image sets SSL_CERT_FILE to /etc/ssl/certs/ca-certificates.crt which
 # lives in a root-only directory. Override to the world-readable bundle so the non-root

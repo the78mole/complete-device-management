@@ -59,6 +59,71 @@ def _get_cdm_admin(request: Request) -> dict | None:
     return cast(dict[Any, Any], user)
 
 
+async def _require_cdm_admin(request: Request) -> dict:
+    """Require cdm-admin via portal session OR Bearer token.
+
+    Checks the Starlette session first (portal login).  If no session is
+    present, falls back to validating an ``Authorization: Bearer <token>``
+    header against the Keycloak userinfo endpoint.
+
+    Raises:
+        HTTPException(401): No credentials provided.
+        HTTPException(403): Credentials valid but role insufficient.
+    """
+    from fastapi import HTTPException as _HTTPException  # local import to avoid circular
+
+    # 1. Portal session (server-side, most trusted)
+    user = _get_cdm_admin(request)
+    if user:
+        return user
+
+    # 2. Bearer token (Keycloak.js / dashboard client)
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise _HTTPException(status_code=401, detail="Authentication required")
+
+    token = auth[7:]
+    from app.deps import get_settings as _get_settings
+    settings = _get_settings()
+
+    async with httpx.AsyncClient(verify=False) as http:
+        r = await http.get(
+            f"{settings.keycloak_url}/realms/cdm/protocol/openid-connect/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    if not r.is_success:
+        raise _HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Keycloak userinfo does NOT include realm_access.roles by default –
+    # extract them directly from the JWT payload (token already validated above).
+    import base64 as _b64
+    import json as _json
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (4 - len(payload_b64) % 4)
+        claims = _json.loads(_b64.b64decode(payload_b64))
+    except Exception:
+        raise _HTTPException(status_code=401, detail="Malformed token")
+
+    # KC 26: roles in realm_access.roles; some mappers also put them in flat "roles" claim
+    roles: list[str] = (
+        claims.get("realm_access", {}).get("roles", [])
+        or claims.get("roles", [])
+    )
+    if not (set(roles) & ADMIN_ROLES):
+        raise _HTTPException(
+            status_code=403,
+            detail="Access denied – cdm-admin or platform-admin role required",
+        )
+
+    return {
+        "realm": "cdm",
+        "roles": roles,
+        "preferred_username": claims.get("preferred_username", ""),
+    }
+
+
 # ── Helper factories ─────────────────────────────────────────────────────────
 
 

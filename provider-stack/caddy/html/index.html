@@ -347,6 +347,12 @@
         </tbody>
       </table>
     </div>
+    <!-- Add Tenant Button – nur für cdm-admin / platform-admin sichtbar -->
+    <div class="d-flex justify-content-end mt-2 px-1 pb-1 d-none" id="add-tenant-row">
+      <a href="/add-tenant.html" class="btn btn-primary btn-service">
+        🏢 Neuen Tenant anlegen →
+      </a>
+    </div>
   </div>
 
   <!-- ── Footer ─────────────────────────────────────────────── -->
@@ -494,6 +500,13 @@
     const sessions = {};
     sessions['cdm'] = await trySilentSSO('cdm');
     renderRealmBox('cdm', sessions['cdm']);
+
+    // Show "Add Tenant" button for admins
+    const ADMIN_ROLES = new Set(['cdm-admin', 'platform-admin']);
+    const cdmRoles = sessions['cdm']?.tokenParsed?.realm_access?.roles || [];
+    if (cdmRoles.some(r => ADMIN_ROLES.has(r))) {
+      document.getElementById('add-tenant-row').classList.remove('d-none');
+    }
   </script>
 
 </body>

@@ -59,6 +59,7 @@ from app.models import (
 )
 from app.routers.admin_portal import (
     _get_cdm_admin,
+    _require_cdm_admin,
     _kc_admin_token,
     _rabbitmq,
     _random_password,
@@ -226,8 +227,12 @@ async def prepare_tenant(body: TenantPrepareRequest, request: Request) -> Tenant
     When the Tenant-Stack starts up its ``init-sub-ca.sh`` presents the key to
     ``POST /portal/admin/join``, receives the full provisioning bundle, and the
     key is immediately invalidated.
+
+    Accepts:
+      - Starlette portal session (server-side, portal login)
+      - ``Authorization: Bearer <Keycloak dashboard-client token>``
     """
-    _get_cdm_admin(request)
+    await _require_cdm_admin(request)
     settings: Settings = get_settings()
 
     tenant_id = body.tenant_id
