@@ -3,8 +3,8 @@
 generate-access-matrix.py — CDM Provider Stack
 
 Queries the Keycloak Admin REST API and prints a Markdown access matrix that
-shows which users in the cdm and provider realms have which permissions on
-each provider-stack endpoint.
+shows which users in the cdm realm have which permissions on each
+provider-stack endpoint.
 
 Usage:
     # From the provider-stack directory with .env sourced:
@@ -269,7 +269,7 @@ def main() -> None:
     print("[*] Token obtained.", file=sys.stderr)
 
     users_by_realm: dict[str, list[dict]] = {}
-    for realm in ("cdm", "provider"):
+    for realm in ("cdm",):
         print(f"[*] Fetching users from realm '{realm}' ...", file=sys.stderr)
         try:
             users_by_realm[realm] = get_users_with_roles(base_url, token, realm)

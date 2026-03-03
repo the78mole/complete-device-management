@@ -5,9 +5,10 @@
 # substitutes environment variables and writes ready-to-import JSON files
 # into /opt/keycloak/data/import/ before starting Keycloak with --import-realm.
 #
-# Provider-stack manages two realms only:
-#   realm-cdm.json.tpl      – platform users, Grafana/IoT-Bridge/Portal clients
-#   realm-provider.json.tpl – platform operations staff (platform-admin, platform-operator)
+# Provider-stack manages a single CDM realm:
+#   realm-cdm.json.tpl – all users (cdm-admin, cdm-operator, platform-admin,
+#                          provider-operator) and all clients (Grafana, IoT Bridge,
+#                          Portal, Dashboard, RabbitMQ, pgAdmin)
 #
 # Adding a new realm:
 #   1. Place realm-<name>.json.tpl into keycloak/realms/ (host side)
@@ -76,7 +77,7 @@ done
     exit 0
   fi
 
-  for REALM in master cdm provider; do
+  for REALM in master cdm; do
     AC_ID=$("$KCADM" get clients --config "$KCFG" -r "$REALM" \
       -q clientId=account-console --fields id 2>/dev/null \
       | grep '"id"' | sed 's/.*"id" : "\([^"]*\)".*/\1/')

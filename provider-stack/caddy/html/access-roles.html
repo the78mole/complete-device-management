@@ -23,8 +23,7 @@
           <h1 class="mb-0">User &times; Role Matrix</h1>
           <p class="mt-1 mb-0" style="color:#8b949e;font-size:0.88rem">
             Keycloak accounts and their assigned roles &mdash;
-            <span class="realm-tag realm-cdm">CDM</span> &amp;
-            <span class="realm-tag realm-prov">PROVIDER</span> realms
+            <span class="realm-tag realm-cdm">CDM</span> realm
           </p>
         </div>
       </div>
@@ -72,7 +71,7 @@
     // ──────────────────────────────────────────────────────────
     // Constants
     // ──────────────────────────────────────────────────────────
-    const REALMS = ['cdm', 'provider'];
+    const REALMS = ['cdm'];
 
     const SKIP_ROLES = new Set([
       'uma_authorization', 'offline_access', 'create-realm',

@@ -3,7 +3,7 @@
 #
 # Manages platform-wide services shared across all tenants:
 #   step-ca      → Root PKI (X.509 certificates)
-#   keycloak     → Identity provider (realms: cdm, provider)
+#   keycloak     → Identity provider (realm: cdm)
 #   rabbitmq     → Central AMQP broker with per-tenant vHosts
 #   timescaledb  → Time-series database (PostgreSQL 17 + TimescaleDB)
 #   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
@@ -310,7 +310,7 @@ services:
       PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
       PGADMIN_CONFIG_AUTHENTICATION_SOURCES: "['oauth2']"
       PGADMIN_CONFIG_OAUTH2_AUTO_CREATE_USER: "True"
-      PGADMIN_CONFIG_OAUTH2_CONFIG: "[{'OAUTH2_NAME':'keycloak','OAUTH2_DISPLAY_NAME':'Keycloak','OAUTH2_CLIENT_ID':'pgadmin','OAUTH2_CLIENT_SECRET':'${PGADMIN_OIDC_SECRET:-changeme}','OAUTH2_AUTHORIZATION_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/provider/protocol/openid-connect/auth','OAUTH2_TOKEN_URL':'http://keycloak:8080/auth/realms/provider/protocol/openid-connect/token','OAUTH2_SERVER_METADATA_URL':'http://pgadmin-oidc-proxy:9099/openid-configuration','OAUTH2_API_BASE_URL':'http://keycloak:8080/auth/realms/provider/protocol/openid-connect/','OAUTH2_USERINFO_ENDPOINT':'userinfo','OAUTH2_SCOPE':'openid email profile','OAUTH2_USERNAME_CLAIM':'preferred_username','OAUTH2_REDIRECT_URI':'${EXTERNAL_URL:-http://localhost:8888}/pgadmin/oauth2/authorize','OAUTH2_ADDITIONAL_CLAIMS':{'roles':['pgadmin-users']},'OAUTH2_ICON':'fa-key','OAUTH2_BUTTON_COLOR':'#0d6efd','OAUTH2_LOGOUT_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/provider/protocol/openid-connect/logout?post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/pgadmin/'}]"
+      PGADMIN_CONFIG_OAUTH2_CONFIG: "[{'OAUTH2_NAME':'keycloak','OAUTH2_DISPLAY_NAME':'Keycloak','OAUTH2_CLIENT_ID':'pgadmin','OAUTH2_CLIENT_SECRET':'${PGADMIN_OIDC_SECRET:-changeme}','OAUTH2_AUTHORIZATION_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth','OAUTH2_TOKEN_URL':'http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token','OAUTH2_SERVER_METADATA_URL':'http://pgadmin-oidc-proxy:9099/openid-configuration','OAUTH2_API_BASE_URL':'http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/','OAUTH2_USERINFO_ENDPOINT':'userinfo','OAUTH2_SCOPE':'openid email profile','OAUTH2_USERNAME_CLAIM':'preferred_username','OAUTH2_REDIRECT_URI':'${EXTERNAL_URL:-http://localhost:8888}/pgadmin/oauth2/authorize','OAUTH2_ADDITIONAL_CLAIMS':{'roles':['pgadmin-users']},'OAUTH2_ICON':'fa-key','OAUTH2_BUTTON_COLOR':'#0d6efd','OAUTH2_LOGOUT_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/logout?post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/pgadmin/'}]"
     volumes:
       - pgadmin-data:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro

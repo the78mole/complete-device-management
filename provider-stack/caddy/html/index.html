@@ -172,8 +172,7 @@
         </div>
         <!-- ── Session / Login (per realm) ───────────────── -->
         <div id="session-bar" class="d-flex gap-2 mt-1 flex-shrink-0 flex-wrap">
-          <div id="realm-box-cdm"      class="realm-box"></div>
-          <div id="realm-box-provider" class="realm-box"></div>
+          <div id="realm-box-cdm" class="realm-box"></div>
         </div>
       </div>
     </div>
@@ -507,11 +506,8 @@
     // ── Bootstrap ───────────────────────────────────────────────────────────
     // Silent SSO must run sequentially (shared iframe)
     const sessions = {};
-    for (const realm of ['cdm', 'provider']) {
-      sessions[realm] = await trySilentSSO(realm);
-    }
-    renderRealmBox('cdm',      sessions['cdm']);
-    renderRealmBox('provider', sessions['provider']);
+    sessions['cdm'] = await trySilentSSO('cdm');
+    renderRealmBox('cdm', sessions['cdm']);
   </script>
 
 </body>
