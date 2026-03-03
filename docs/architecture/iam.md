@@ -118,6 +118,9 @@ receive full administrator access to RabbitMQ on SSO login.
 | `platform-admin` | Admin | Full access |
 | `platform-operator` | Editor | Read-only on tenants |
 
+For the complete cross-service access matrix including pgAdmin, RabbitMQ, and
+Keycloak Admin Console, see [Access Matrix](access-matrix.md).
+
 ---
 
 ## Updating Client Secrets

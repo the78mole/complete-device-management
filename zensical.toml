@@ -40,6 +40,7 @@ nav = [
     { "Stack Topology" = "architecture/stack-topology.md" },
     { "PKI (step-ca)" = "architecture/pki.md" },
     { "Identity & Access Management" = "architecture/iam.md" },
+    { "Access Matrix" = "architecture/access-matrix.md" },
     { "Data Flow" = "architecture/data-flow.md" },
   ]},
   { "Workflows" = [

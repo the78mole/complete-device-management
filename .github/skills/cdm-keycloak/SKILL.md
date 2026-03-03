@@ -64,7 +64,7 @@ OIDC clients registered here.
 | `grafana` | Grafana (Provider Dashboards) | confidential | `GRAFANA_OIDC_SECRET` |
 | `iot-bridge` | IoT Bridge API | confidential + service-account | `BRIDGE_OIDC_SECRET` |
 | `portal` | CDM Tenant Portal (iot-bridge-api) | confidential | `PORTAL_OIDC_SECRET` |
-| `influxdb-proxy` | InfluxDB oauth2-proxy sidecar | confidential | `INFLUXDB_PROXY_OIDC_SECRET` |
+| `pgadmin` | pgAdmin OIDC proxy (TimescaleDB admin) | confidential | `PGADMIN_OIDC_SECRET` |
 
 > **hawkBit, ThingsBoard, Terminal Proxy** OIDC clients are registered in each
 > Tenant-Stack's own Keycloak instance (Phase 2), not in the provider-stack `cdm` realm.
@@ -195,7 +195,7 @@ All variables are substituted in every `*.json.tpl` file by `docker-entrypoint.s
 | `${GRAFANA_OIDC_SECRET}` | cdm | Grafana OIDC client secret |
 | `${BRIDGE_OIDC_SECRET}` | cdm | IoT Bridge OIDC client secret |
 | `${PORTAL_OIDC_SECRET}` | cdm | Portal OIDC client secret |
-| `${INFLUXDB_PROXY_OIDC_SECRET}` | cdm | InfluxDB oauth2-proxy OIDC client secret |
+| `${PGADMIN_OIDC_SECRET}` | cdm | pgAdmin OIDC proxy client secret |
 | `${PROVIDER_OPERATOR_PASSWORD}` | provider | provider-operator initial password |
 
 > **Tenant-specific variables** (`TENANT1_*`, `TENANT2_*`, `HB_OIDC_SECRET`, `TB_OIDC_SECRET`, …)
@@ -485,7 +485,7 @@ GET  /api/portal/logout     → Session clear + Keycloak RP-initiated logout
 
 | Role | Services shown |
 |---|---|
-| `cdm-admin` / `platform-admin` | Keycloak Admin, ThingsBoard, Grafana, hawkBit, InfluxDB, RabbitMQ, IoT Bridge Swagger, step-ca, Account Portal |
+| `cdm-admin` / `platform-admin` | Keycloak Admin, Grafana, pgAdmin, RabbitMQ, IoT Bridge Swagger, step-ca, Account Portal; ThingsBoard + hawkBit (tenant-stacks, if joined) |
 | `cdm-operator` / `platform-operator` | ThingsBoard, Grafana, hawkBit, Account Portal |
 | `cdm-viewer` | Grafana, Account Portal |
 
