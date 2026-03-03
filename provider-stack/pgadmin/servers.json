@@ -1,0 +1,15 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "TimescaleDB – CDM",
+      "Group": "Provider",
+      "Host": "timescaledb",
+      "Port": 5432,
+      "MaintenanceDB": "cdm",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "Shared": true,
+      "PassFile": "/var/lib/pgadmin/pgpassfile"
+    }
+  }
+}

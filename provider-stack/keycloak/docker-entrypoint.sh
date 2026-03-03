@@ -37,6 +37,7 @@ for tpl in "$TEMPLATE_DIR"/*.json.tpl; do
       -e "s|\${GRAFANA_BROKER_SECRET}|${GRAFANA_BROKER_SECRET:-changeme}|g" \
       -e "s|\${BRIDGE_OIDC_SECRET}|${BRIDGE_OIDC_SECRET:-}|g" \
       -e "s|\${PORTAL_OIDC_SECRET}|${PORTAL_OIDC_SECRET:-changeme}|g" \
+      -e "s|\${PGADMIN_OIDC_SECRET}|${PGADMIN_OIDC_SECRET:-changeme}|g" \
       -e "s|\${RABBITMQ_MANAGEMENT_OIDC_SECRET}|${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}|g" \
       -e "s|\${PROVIDER_OPERATOR_PASSWORD}|${PROVIDER_OPERATOR_PASSWORD:-changeme}|g" \
       -e "s|\${EXTERNAL_URL}|${EXTERNAL_URL:-http://localhost:8888}|g" \

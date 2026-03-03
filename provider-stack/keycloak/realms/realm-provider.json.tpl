@@ -20,6 +20,10 @@
       {
         "name": "platform-operator",
         "description": "Day-to-day platform operations; read access to tenants"
+      },
+      {
+        "name": "pgadmin-users",
+        "description": "Users allowed to access pgAdmin via OIDC"
       }
     ]
   },
@@ -31,7 +35,7 @@
       "lastName": "Superadmin",
       "enabled": true,
       "emailVerified": true,
-      "realmRoles": ["platform-admin"],
+      "realmRoles": ["platform-admin", "pgadmin-users"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${KC_ADMIN_PASSWORD}", "temporary": false }
@@ -44,7 +48,7 @@
       "lastName": "Operator",
       "enabled": true,
       "emailVerified": true,
-      "realmRoles": ["platform-operator"],
+      "realmRoles": ["platform-operator", "pgadmin-users"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
         { "type": "password", "value": "${PROVIDER_OPERATOR_PASSWORD}", "temporary": true }
@@ -201,6 +205,75 @@
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "pgadmin",
+      "name": "pgAdmin",
+      "description": "OIDC login for pgAdmin (provider realm)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${PGADMIN_OIDC_SECRET}",
+      "redirectUris": [
+        "${EXTERNAL_URL}/pgadmin/oauth2/authorize",
+        "${EXTERNAL_URL}/pgadmin/oauth2/authorize*",
+        "http://localhost:443/pgadmin/oauth2/authorize",
+        "http://localhost:443/pgadmin/oauth2/authorize*",
+        "http://localhost:8888/pgadmin/oauth2/authorize",
+        "http://localhost:8888/pgadmin/oauth2/authorize*"
+      ],
+      "webOrigins": ["${EXTERNAL_URL}", "http://localhost:8888"],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "post.logout.redirect.uris": "${EXTERNAL_URL}/pgadmin/*"
+      },
+      "defaultClientScopes": ["openid", "profile", "email", "roles"],
+      "protocolMappers": [
+        {
+          "name": "preferred-username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "preferred_username",
+            "user.attribute": "username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "email",
+            "user.attribute": "email",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
             "userinfo.token.claim": "true"
           }
         }

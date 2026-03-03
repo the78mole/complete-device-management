@@ -92,6 +92,28 @@
         }
     }
 
+    # ── pgAdmin (/pgadmin, /pgadmin/) ─────────────────────────────────────
+    # Match both /pgadmin and /pgadmin/* to avoid fallback to landing page
+    # when a client drops the trailing slash.
+    # Explicit header overrides are required because GitHub Codespaces adds
+    # X-Forwarded-Port: 443, causing pgAdmin to construct an invalid
+    # redirect_uri like http://localhost:443/... instead of the real URL.
+    # NOTE: X-Forwarded-Proto is intentionally NOT overridden here so that
+    # the 'https' value set by the Codespaces tunnel passes through intact.
+    # Caddy's local {scheme} is always 'http' (no TLS listener) and would
+    # break the redirect_uri scheme if forwarded.
+    # We re-set it from the incoming header value so the Codespaces https
+    # value (already present in the request from the tunnel) survives Caddy's
+    # default header rewrite.
+    @pgadmin path /pgadmin /pgadmin/*
+    handle @pgadmin {
+        reverse_proxy pgadmin:80 {
+            header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+            header_up X-Forwarded-Host  {http.request.header.X-Forwarded-Host}
+            header_up -X-Forwarded-Port
+        }
+    }
+
     # ── Landing page (/) ─────────────────────────────────────────────────
     handle {
         root * /srv/html

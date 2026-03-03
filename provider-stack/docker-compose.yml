@@ -238,23 +238,61 @@ services:
       retries: 5
       start_period: 30s
 
+  # ── pgAdmin OIDC proxy ───────────────────────────────────────────
+  # Tiny HTTP server that rewrites the Keycloak discovery document so that
+  # jwks_uri points to the internal keycloak:8080 URL. Required because the
+  # real discovery doc returns an external Codespaces URL which is behind a
+  # GitHub auth wall and unreachable from Docker containers.
+  pgadmin-oidc-proxy:
+    image: python:3.12-alpine
+    container_name: provider-pgadmin-oidc-proxy
+    restart: unless-stopped
+    command: python3 /app/oidc-proxy.py
+    volumes:
+      - ./pgadmin/oidc-proxy.py:/app/oidc-proxy.py:ro
+    environment:
+      KEYCLOAK_INTERNAL_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "provider"
+      PROXY_PORT: "9099"
+    networks:
+      - provider-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
   # ── pgAdmin (TimescaleDB admin UI) ───────────────────────────────
   # Served via Caddy at /pgadmin/ – no direct port exposed.
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: provider-pgadmin
     restart: unless-stopped
+    entrypoint: ["/pgadmin-init/docker-entrypoint.sh"]
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@cdm.local}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+      TSDB_PASSWORD: ${TSDB_PASSWORD:-changeme}
+      PGPASSFILE: /var/lib/pgadmin/pgpassfile
       SCRIPT_NAME: /pgadmin
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT: "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT: "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT: "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT: "0"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      PGADMIN_CONFIG_AUTHENTICATION_SOURCES: "['oauth2']"
+      PGADMIN_CONFIG_OAUTH2_AUTO_CREATE_USER: "True"
+      PGADMIN_CONFIG_OAUTH2_CONFIG: "[{'OAUTH2_NAME':'keycloak','OAUTH2_DISPLAY_NAME':'Keycloak','OAUTH2_CLIENT_ID':'pgadmin','OAUTH2_CLIENT_SECRET':'${PGADMIN_OIDC_SECRET:-changeme}','OAUTH2_AUTHORIZATION_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/provider/protocol/openid-connect/auth','OAUTH2_TOKEN_URL':'http://keycloak:8080/auth/realms/provider/protocol/openid-connect/token','OAUTH2_SERVER_METADATA_URL':'http://pgadmin-oidc-proxy:9099/openid-configuration','OAUTH2_API_BASE_URL':'http://keycloak:8080/auth/realms/provider/protocol/openid-connect/','OAUTH2_USERINFO_ENDPOINT':'userinfo','OAUTH2_SCOPE':'openid email profile','OAUTH2_USERNAME_CLAIM':'preferred_username','OAUTH2_REDIRECT_URI':'${EXTERNAL_URL:-http://localhost:8888}/pgadmin/oauth2/authorize','OAUTH2_ADDITIONAL_CLAIMS':{'roles':['pgadmin-users']},'OAUTH2_ICON':'fa-key','OAUTH2_BUTTON_COLOR':'#0d6efd','OAUTH2_LOGOUT_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/provider/protocol/openid-connect/logout?post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/pgadmin/'}]"
     volumes:
       - pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/docker-entrypoint.sh:/pgadmin-init/docker-entrypoint.sh:ro
     networks:
       - provider-net
     depends_on:
       timescaledb:
         condition: service_healthy
+      pgadmin-oidc-proxy:
+        condition: service_started
 
   # ── Grafana ──────────────────────────────────────────────────────
   grafana:
