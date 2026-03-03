@@ -18,10 +18,10 @@ from cryptography.x509.oid import NameOID
 from fastapi.testclient import TestClient
 
 from app.clients.hawkbit import HawkBitClient
-from app.clients.timescaledb import TimescaleDBClient
 from app.clients.step_ca import StepCAClient
+from app.clients.timescaledb import TimescaleDBClient
 from app.clients.wireguard import WireGuardConfig
-from app.deps import get_hawkbit_client, get_timescaledb_client, get_step_ca_client, get_wg_config
+from app.deps import get_hawkbit_client, get_step_ca_client, get_timescaledb_client, get_wg_config
 from app.main import app
 
 # ── Constants ─────────────────────────────────────────────────────────────────
