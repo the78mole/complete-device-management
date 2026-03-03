@@ -10,7 +10,6 @@ TimescaleDB extension) and how to use the Grafana dashboards.
 ```mermaid
 graph LR
     subgraph edge[Edge Device]
-        TEL[Telegraf]
         MQC[MQTT client]
     end
 
@@ -23,69 +22,66 @@ graph LR
 
     subgraph provider[Provider-Stack]
         RMQ[RabbitMQ]
+        TLG[Telegraf]
         TSDB_P[TimescaleDB]
         GRF_P["Grafana (platform)"]
         TSDB_P --> GRF_P
     end
 
-    TEL -->|"PostgreSQL wire protocol"| TSDB_T
     MQC -->|MQTTS| TB
     TB -->|Rule Engine| ALM["Alarms / Notifications"]
     TB -->|"AMQP (optional)"| RMQ
-    RMQ -->|cdm-metrics vHost| TSDB_P
+    RMQ -.->|"MQTT consumer (mTLS)\ncdm/provider/#"| TLG
+    TLG -->|SQL| TSDB_P
+    TLG -.->|"HTTP health checks"| TB
 ```
 
-**Principle:** High-frequency, high-cardinality data (every 10 seconds per device) goes
-directly to the Tenant TimescaleDB.  Business-logic data (device state, alarms, OTA status)
-goes through ThingsBoard.  Optionally, the ThingsBoard Rule Engine forwards aggregated
-platform-health metrics via RabbitMQ to the Provider TimescaleDB for fleet-wide visibility.
+**Principle:** The **Provider-Stack Telegraf** instance collects platform infrastructure
+health data — it polls HTTP health endpoints for Keycloak, Grafana, IoT Bridge API,
+RabbitMQ, and step-ca, collects RabbitMQ management metrics, and subscribes via
+`mqtt_consumer` (mTLS) to the `cdm/provider/#` topic on RabbitMQ for system-monitor
+metrics.  All data is written to the **Provider TimescaleDB** (`cdm` database) and
+visualized in the provider Grafana instance.  Device telemetry (CPU, memory, sensors)
+goes through **ThingsBoard** in the Tenant-Stack.
 
 ---
 
 ## Telegraf Configuration
 
-The Telegraf config is at `device-stack/telegraf/telegraf.conf`. Key sections:
+The Telegraf config is at `provider-stack/monitoring/telegraf/telegraf.conf`. Key sections:
+
+### Global tags
+
+```toml
+[global_tags]
+  component = "provider"
+```
+
+All measurements are tagged with `component = "provider"`. There is no per-device tag;
+Provider Telegraf monitors platform infrastructure, not individual devices.
 
 ### Inputs
 
 | Plugin | Metrics | Interval |
 |---|---|---|
-| `cpu` | usage_user, usage_system, usage_idle | 10s |
-| `mem` | used_percent, available, free | 10s |
-| `disk` | used_percent, free, total | 30s |
-| `net` | bytes_sent, bytes_recv, drop_in, drop_out | 10s |
-| `exec` | Custom metrics from user scripts | configurable |
-| `mqtt_consumer` | Parses device MQTT messages as tags | on message |
+| `http_response` | HTTP 2xx / response_time for Keycloak, Grafana, IoT Bridge API, RabbitMQ, step-ca | 60s |
+| `rabbitmq` | Queue depths, message rates, connection counts (Basic Auth) | 60s |
+| `mqtt_consumer` (mTLS) | Platform system metrics published on `cdm/provider/#` via RabbitMQ | on message |
 
-### Output — Tenant TimescaleDB
+The `mqtt_consumer` connects to `tls://rabbitmq:8883` using a client certificate
+(CN=`telegraf`) issued by Provider step-ca.  RabbitMQ maps the CN to the `telegraf`
+user via EXTERNAL SASL — no password required.
+
+### Output — Provider TimescaleDB
 
 ```toml
 [[outputs.postgresql]]
-  connection = "postgresql://telegraf:${TSDB_TELEGRAF_PASSWORD}@timescaledb:5432/${TSDB_DATABASE}?sslmode=disable"
+  connection = "postgresql://telegraf:${TSDB_TELEGRAF_PASSWORD}@${TSDB_HOST}:${TSDB_PORT}/${TSDB_DATABASE}?sslmode=disable"
   schema = "public"
   tags_as_foreign_keys = false
-  create_metrics_table_if_not_exists = true
-  [outputs.postgresql.timescaledb]
-    enabled = true
-    disable_compression = false
-    chunk_time_interval = "1d"
 ```
 
-Telegraf automatically creates one hypertable per measurement (e.g. `cpu`, `mem`, `disk`).
-The `time` column is the hypertable partition key.
-
-### Adding Custom Metrics
-
-To collect application-specific metrics, add an `exec` input:
-
-```toml
-[[inputs.exec]]
-  commands = ["/opt/cdm/metrics/my-app-metrics.sh"]
-  timeout = "5s"
-  data_format = "json"
-  interval = "30s"
-  name_override = "my_app"
-```
+Telegraf automatically creates one hypertable per measurement in the `cdm` database.
 
 ---
 
@@ -104,9 +100,10 @@ To collect application-specific metrics, add an `exec` input:
 
 | Table (hypertable) | Retention | Content |
 |---|---|---|
-| `iot_metrics` | 90 days | Aggregated metrics from all tenants via RabbitMQ |
-| `device_events` | 1 year | Enrollment events, revocations |
-| `<measurement>` | configurable | Auto-created by Telegraf per measurement |
+| `http_response` | 30 days | HTTP health-check results (response code + time) per provider service |
+| `rabbitmq` | 30 days | RabbitMQ queue depths, message rates, connection counts |
+| `provider_system` | 90 days | System-monitor metrics from `cdm/provider/#` MQTT topic |
+| `<measurement>` | configurable | Auto-created by Telegraf per MQTT measurement name |
 
 Tables and hypertables are created automatically by `monitoring/timescaledb/init-scripts/01-init-schema.sh`.
 Telegraf creates additional tables on first write.
@@ -115,54 +112,41 @@ Telegraf creates additional tables on first write.
 
 ## Grafana Dashboards
 
-Grafana is pre-provisioned with two dashboards:
+Grafana is pre-provisioned with the **System Monitor** dashboard.
 
-### Device Overview
+### System Monitor
 
-Shows for a selected device (variable `$device_id`):
+The System Monitor dashboard (`provider-stack/monitoring/grafana/dashboards/system-monitor.json`)
+shows provider infrastructure health:
 
-- CPU usage (sparkline + gauge)
-- Memory used %
-- Disk used %
-- Network throughput (bytes sent/recv)
+- CPU load averages (1m / 5m / 15m) — timeseries + gauge
+- RAM used % — timeseries + gauge + current value
 
-### Fleet Summary
+All queries read from the `provider_system` hypertable:
 
-Shows across all devices:
+```sql
+SELECT time AS "time",
+       cpu_load_1m AS "1m",
+       cpu_load_5m AS "5m",
+       cpu_load_15m AS "15m"
+FROM provider_system
+WHERE $__timeFilter(time)
+ORDER BY time;
+```
 
-- Online device count (last heartbeat < 5 min)
-- P50 / P95 CPU usage across fleet
-- OTA success rate (from `device_events` table)
-- Devices with disk > 80%
-
-In Grafana, the datasource type is **PostgreSQL** with TimescaleDB enabled:
-- **Configuration → Data Sources → TimescaleDB** — ensure the datasource is working.
-- Queries use standard SQL with TimescaleDB functions:
-  ```sql
-  SELECT
-    time_bucket('1 minute', time) AS bucket,
-    avg(usage_user) AS cpu_avg
-  FROM cpu
-  WHERE device_id = '${device_id}'
-    AND time > NOW() - INTERVAL '1 hour'
-  GROUP BY bucket
-  ORDER BY bucket;
-  ```
+The datasource type is **`grafana-postgresql-datasource`** (not the legacy `postgres` type)
+with `timescaledb: true` set in `jsonData`.
 
 ---
 
 ## Alerting
 
-ThingsBoard handles device-level alerting:
+ThingsBoard handles **device-level alerting** (offline devices, alarms, OTA status changes).
 
-- High CPU (> 90% for 5 min) → alarm in ThingsBoard → notification email/Slack
-- Disk full (> 95%) → critical alarm
-- Device offline (no telemetry for 10 min) → `Inactive` state in ThingsBoard
+Grafana can alert on **Provider infrastructure health** using data in TimescaleDB:
 
-Grafana + TimescaleDB handles fleet-level alerting:
-
-- OTA error rate > 5% → Grafana Alert → PagerDuty / email
-- Average memory usage across fleet > 80% → warning alert
+- Service endpoint down (no successful `http_response` for 5 min) → Grafana Alert
+- RabbitMQ queue depth exceeding threshold → warning alert
 
 ---
 
@@ -170,8 +154,8 @@ Grafana + TimescaleDB handles fleet-level alerting:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| No metrics in TimescaleDB | Telegraf can't reach TimescaleDB | Check `TSDB_DATABASE`, `TSDB_TELEGRAF_PASSWORD` in device `.env` |
-| Grafana shows "No data" | Wrong table name or time range | Verify table name matches; widen time range |
+| No metrics in TimescaleDB | Telegraf can't reach TimescaleDB | Check `TSDB_DATABASE`, `TSDB_TELEGRAF_PASSWORD` in `provider-stack/.env` |
+| Grafana shows "No data" | Wrong table name or time range | Verify table is `http_response`, `rabbitmq`, or `provider_system`; widen time range |
 | ThingsBoard telemetry stops | MQTT client disconnected | Check `mqtt-client` logs; verify cert validity |
-| Missing device in Fleet dashboard | Telegraf tag `device_id` not set | Add `[global_tags] device_id = "${DEVICE_ID}"` to `telegraf.conf` |
-| Telegraf: `password authentication failed` | Wrong `TSDB_TELEGRAF_PASSWORD` | Check `.env` and restart `docker compose restart telegraf` |
+| Telegraf MQTT consumer errors | mTLS cert not issued | `docker compose restart mqtt-certs-init telegraf` |
+| Telegraf: `password authentication failed` | Wrong `TSDB_TELEGRAF_PASSWORD` | Check `.env` and run `docker compose restart telegraf` |

@@ -152,7 +152,7 @@ graph TB
     subgraph provider["Provider-Stack"]
         RMQ_P["RabbitMQ :5672"]
         KC_P["Keycloak :8888/auth"]
-        IDB_P["TimescaleDB :8086 (pgAdmin)"]
+        IDB_P[(TimescaleDB :5432)]
         SCA_P["step-ca :9000"]
         IBA_P["IoT Bridge API"]
     end

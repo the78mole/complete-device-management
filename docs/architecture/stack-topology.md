@@ -14,6 +14,7 @@ graph TB
         KC_P["Keycloak<br>(realms: cdm, provider)"]
         RMQ["RabbitMQ<br>(vHost per tenant)"]
         TSDB_P["TimescaleDB<br>(provider metrics)"]
+        TLG["Telegraf<br>(service health)"]
         GRF_P["Grafana<br>(platform dashboards)"]
         SCA_P["step-ca<br>(Root CA + Intermediate CA)"]
         IBA["IoT Bridge API<br>(management API)"]
@@ -35,7 +36,6 @@ graph TB
         BST["bootstrap<br>(enroll.sh)"]
         MQC["mqtt-client"]
         WGC["wireguard-client"]
-        TLG["telegraf"]
         UPD["rauc-updater"]
         TTD["ttyd"]
     end
@@ -54,7 +54,9 @@ graph TB
     MQC -->|"MQTTS mTLS"| TB
     WGC -->|"WireGuard VPN"| WGS
     UPD -->|"DDI poll"| HB
-    TLG -->|"PostgreSQL"| TSDB_T
+
+    %% Provider Telegraf
+    TLG -->|"SQL"| TSDB_P
 
     %% Tenant → Provider
     TB -->|"metrics (AMQP)"| RMQ

@@ -75,7 +75,7 @@ runs behind Caddy on the same port 8888.
     **Ports** tab in the VS Code sidebar.
 
 !!! info "OIDC secrets on first boot"
-    `GRAFANA_OIDC_SECRET`, `BRIDGE_OIDC_SECRET`, and
+    `GRAFANA_OIDC_SECRET`, `BRIDGE_OIDC_SECRET`, `PGADMIN_OIDC_SECRET`, and
     `RABBITMQ_MANAGEMENT_OIDC_SECRET` can remain as `changeme` for the initial start.
     You will copy the real Keycloak-generated values in step [A5](#a5----retrieve-oidc-secrets).
 
@@ -132,12 +132,13 @@ STEP_CA_FINGERPRINT=<printed value>
    | `cdm` | `grafana` | `GRAFANA_OIDC_SECRET` |
    | `cdm` | `iot-bridge` | `BRIDGE_OIDC_SECRET` |
    | `cdm` | `portal` | `PORTAL_OIDC_SECRET` |
+   | `cdm` | `pgadmin` | `PGADMIN_OIDC_SECRET` |
    | `provider` | `rabbitmq-management` | `RABBITMQ_MANAGEMENT_OIDC_SECRET` |
 
 3. Update `.env` and restart affected services:
 
 ```bash
-docker compose restart keycloak grafana iot-bridge-api rabbitmq
+docker compose restart keycloak grafana iot-bridge-api pgadmin rabbitmq
 ```
 
 ### A6 — Grant superadmin cross-realm access

@@ -5,7 +5,7 @@ running as Docker Compose stacks.
 
 | Directory | Purpose |
 |---|---|
-| `provider-stack/` | Central platform services (Keycloak, RabbitMQ, InfluxDB, Grafana, step-ca Root CA, IoT Bridge API, Caddy) |
+| `provider-stack/` | Central platform services (Keycloak, RabbitMQ, TimescaleDB, pgAdmin, Grafana, Telegraf, step-ca Root CA, IoT Bridge API, Caddy) |
 | `tenant-stack/` | Per-tenant services (ThingsBoard, hawkBit, WireGuard, Terminal Proxy, Keycloak tenant realm, step-ca Sub-CA, InfluxDB, Grafana, IoT Bridge API, Caddy) |
 | `device-stack/` | Edge-device simulation (bootstrap, MQTT telemetry, OTA updater, WireGuard VPN client) |
 | `glue-services/` | Shared microservice source: `iot-bridge-api` (FastAPI) and `terminal-proxy` (Node.js/TypeScript) |
@@ -18,8 +18,8 @@ running as Docker Compose stacks.
   Each stack is fully independent; they communicate via MQTT/mTLS (RabbitMQ vHost per tenant)
   and the IoT Bridge API JOIN workflow.
 - **Entry point (both stacks)**: **Caddy** on port **8888** (`*/caddy/Caddyfile`).
-  All services reachable via path-based routing EXCEPT ThingsBoard (:9090 direct) and
-  InfluxDB (:8086 direct) due to SPA webpack absolute-path limitations.
+  All services reachable via path-based routing EXCEPT ThingsBoard (:9090 direct)
+  due to SPA webpack absolute-path limitations.
 - **Identity (Provider-Stack)**: Keycloak 26.x at `/auth/`, realms `cdm` and `provider`.
   See `.github/skills/cdm-keycloak/SKILL.md` for full realm/user/client reference.
 - **Identity (Tenant-Stack)**: Each Tenant-Stack runs its own Keycloak, realm `${TENANT_ID}`.
@@ -44,7 +44,7 @@ running as Docker Compose stacks.
 | `/api/` | IoT Bridge API 8000 | FastAPI, strip prefix, `ROOT_PATH=/api` |
 | `/rabbitmq/` | RabbitMQ Management 15672 | `management.path_prefix=/rabbitmq` |
 | `/pki/` | step-ca 9000 | HTTPS upstream, `tls_insecure_skip_verify` |
-| `:8086` | InfluxDB / oauth2-proxy | Direct port (SPA limitation) |
+| `/pgadmin/` | pgAdmin 80 | OIDC via Keycloak `cdm` realm |
 
 ## Tenant-Stack routing table
 
@@ -78,6 +78,6 @@ running as Docker Compose stacks.
 
 - **Keycloak**: `.github/skills/cdm-keycloak/SKILL.md`
 - **RabbitMQ OAuth2/OIDC**: `.github/skills/cdm-rabbitmq/SKILL.md`
-- **InfluxDB OAuth2-Proxy & Token Injection**: `.github/skills/cdm-influxdb-proxy/SKILL.md`
+- **TimescaleDB, pgAdmin & Telegraf (Provider monitoring)**: `.github/skills/cdm-timescaledb/SKILL.md`
 - **step-ca PKI (Root CA, Sub-CA, certificates)**: `.github/skills/cdm-step-ca/SKILL.md`
 - **Zensical (docs)**: `.github/skills/zensical/SKILL.md`

@@ -19,6 +19,7 @@ graph TB
     subgraph provider["Provider-Stack"]
         KC_P["Keycloak<br>(cdm + provider realms)"]
         RMQ["RabbitMQ<br>(central broker)"]
+        TLG["Telegraf<br>(service health)"]
         IDB_P["TimescaleDB<br>(platform metrics)"]
         GRF_P["Grafana<br>(platform dashboards)"]
         SCA_P["step-ca<br>(Root CA)"]
@@ -45,12 +46,10 @@ graph TB
         BST["bootstrap"]
         WGC["wireguard-client"]
         MQC["mqtt-client"]
-        TLG["telegraf"]
         RAU["rauc-updater"]
         TTD["ttyd"]
         BST --> WGC
         BST --> MQC
-        BST --> TLG
         BST --> RAU
     end
 
@@ -64,13 +63,14 @@ graph TB
     %% Device connections
     MQC -->|"MQTTS mTLS (8883)"| TB
     WGC <-->|"WireGuard VPN"| WGS
-    TLG -->|"MQTT / HTTP"| IDB_T
     RAU -->|"DDI poll"| HB
     TXP -->|"WS → WireGuard IP → ttyd"| TTD
 
     %% Tenant → Provider
     TB -.->|"metrics (AMQP)"| RMQ
     RMQ -->|"cdm-metrics vHost"| IDB_P
+    RMQ -.->|"MQTT consumer (mTLS)"| TLG
+    TLG -->|"SQL"| IDB_P
     IDB_P --> GRF_P
 
     %% Management
