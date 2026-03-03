@@ -20,7 +20,7 @@
 
 The platform is split into two independently deployable stacks:
 
-- **Provider-Stack** — operated by the CDM platform team. Provides the trust anchor (Root CA, Keycloak `cdm` realm), central message broker (RabbitMQ) and platform-wide observability (InfluxDB, Grafana).
+- **Provider-Stack** — operated by the CDM platform team. Provides the trust anchor (Root CA, Keycloak `cdm` realm), central message broker (RabbitMQ) and platform-wide observability (TimescaleDB, Grafana).
 - **Tenant-Stack** — one stack per customer. Provides device-facing services: ThingsBoard MQTT, hawkBit OTA, WireGuard VPN, Terminal Proxy, and tenant-scoped telemetry.
 
 Key capabilities:
@@ -28,7 +28,7 @@ Key capabilities:
 - **Zero-Touch Device Provisioning** — devices boot, generate a key pair, enroll against the Tenant step-ca Sub-CA, receive a signed mTLS certificate (chain to Provider Root CA), and are automatically registered in ThingsBoard and hawkBit.
 - **Secure OTA Updates** — Eclipse hawkBit (Tenant-Stack) manages software campaigns; `rauc-hawkbit-updater` on devices executes RAUC A/B OS updates.
 - **Remote Troubleshooting** — WireGuard VPN + `ttyd` web terminal, proxied securely through a JWT-validated WebSocket gateway embedded in the ThingsBoard UI (both in Tenant-Stack).
-- **High-Frequency Telemetry** — Telegraf → Tenant InfluxDB pipeline bypasses ThingsBoard's DB for performance; aggregated metrics flow via RabbitMQ to Provider InfluxDB for fleet-wide dashboards.
+- **High-Frequency Telemetry** — Telegraf → Tenant TimescaleDB pipeline bypasses ThingsBoard's DB for performance; aggregated metrics flow via RabbitMQ to Provider TimescaleDB for fleet-wide dashboards.
 - **Single Sign-On** — Keycloak realm federation links each Tenant Keycloak into the Provider `cdm` realm; one login across all services.
 - **Private PKI** — Two-tier hierarchy: Provider Root CA → Provider Intermediate CA → Tenant Sub-CA → Device certificates.
 
@@ -74,12 +74,12 @@ flowchart BT
         KC[Keycloak IAM<br>cdm + provider realms]
         SCA[step-ca Root CA]
         RMQ[RabbitMQ]
-        IDB_P[InfluxDB]
+        TSDB_P[TimescaleDB<br>+ pgAdmin]
         GRF_P[Grafana]
         IBA_P[IoT Bridge API]
 
         SCA <-->|Sign Sub-CA| IBA_P
-        RMQ --> IDB_P --> GRF_P
+        RMQ --> TSDB_P --> GRF_P
     end
 
     subgraph tenant[Tenant-Stack]
@@ -89,7 +89,7 @@ flowchart BT
         SCA_T[step-ca Sub-CA]
         WGS[WireGuard Server]
         TXP[Terminal Proxy]
-        IDB_T[InfluxDB]
+        TSDB_T[TimescaleDB]
         GRF_T[Grafana]
 
         KC_T -->|federation| KC
@@ -109,7 +109,7 @@ flowchart BT
 
     MQC -->|MQTTS mTLS| TB
     UPD -->|DDI poll| HB
-    TLG -->|InfluxDB HTTP| IDB_T
+    TLG -->|PostgreSQL| TSDB_T
     TTD <-->|WebSocket WireGuard| TXP
     WGC <-->|WireGuard VPN| WGS
     BST -->|enroll CSR| IBA_T
@@ -127,7 +127,7 @@ flowchart BT
 | IoT Platform | [ThingsBoard CE](https://thingsboard.io/) | Tenant | Device registry, MQTT broker, Rule Engine, UI |
 | OTA Backend | [Eclipse hawkBit](https://eclipse.dev/hawkbit/) | Tenant | Software campaign management |
 | PKI | [smallstep step-ca](https://smallstep.com/docs/step-ca/) | Both | Provider: Root+ICA; Tenant: Sub-CA for device certs |
-| Time-Series DB | [InfluxDB v2](https://www.influxdata.com/) | Both | Provider: platform metrics; Tenant: device telemetry |
+| Time-Series DB | [TimescaleDB](https://www.timescale.com/) | Both | Provider: platform metrics; Tenant: device telemetry (PostgreSQL extension) |
 | Visualization | [Grafana](https://grafana.com/) | Both | Fleet dashboards (Provider) + device dashboards (Tenant) |
 | VPN | [WireGuard](https://www.wireguard.com/) | Tenant | Zero-trust device tunnel |
 | Web Terminal | [ttyd](https://github.com/tsl0922/ttyd) + Terminal Proxy | Tenant | Secure browser-based shell |
@@ -145,11 +145,11 @@ flowchart BT
 │   ├── workflows/          # CI (tests, lint, docs build) + gh-pages deploy
 │   ├── skills/             # Keycloak runbook scripts + SKILL.md
 │   └── ISSUE_TEMPLATE/     # Bug report & feature request forms
-├── provider-stack/         # Provider-Stack: Caddy, Keycloak, RabbitMQ, InfluxDB, Grafana, step-ca
+├── provider-stack/         # Provider-Stack: Caddy, Keycloak, RabbitMQ, TimescaleDB, Grafana, step-ca
 │   ├── docker-compose.yml
 │   ├── caddy/              # Caddyfile, landing page
 │   ├── keycloak/           # Realm templates (cdm + provider), init scripts
-│   ├── monitoring/         # InfluxDB init, Grafana provisioning
+│   ├── monitoring/         # TimescaleDB init, Grafana provisioning
 │   ├── rabbitmq/           # RabbitMQ config, vHost definitions
 │   └── step-ca/            # Root CA + ICA Dockerfile, cert templates
 ├── glue-services/
@@ -286,7 +286,7 @@ docker compose up -d
 docker compose ps   # wait until all containers are healthy
 ```
 
-This starts: Caddy, Keycloak + Postgres, RabbitMQ, InfluxDB, Grafana, step-ca (Root CA + ICA), IoT Bridge API.
+This starts: Caddy, Keycloak + Postgres, RabbitMQ, TimescaleDB, Grafana, step-ca (Root CA + ICA), IoT Bridge API.
 
 ### 3. Retrieve the Root CA Fingerprint
 
@@ -328,7 +328,7 @@ then all other services start automatically.
 | Grafana | http://localhost:8888/grafana/ | admin / from `.env` |
 | RabbitMQ Management | http://localhost:8888/rabbitmq/ | admin / from `.env` |
 | IoT Bridge API docs | http://localhost:8888/api/docs | — |
-| InfluxDB | http://localhost:8086/ | admin / from `.env` |
+| pgAdmin | http://localhost:8888/pgadmin/ | admin / from `.env` |
 | step-ca | https://localhost:9000/health | — |
 
 > **Codespaces:** Replace `http://localhost:8888` with `https://<codespace-name>-8888.app.github.dev`  

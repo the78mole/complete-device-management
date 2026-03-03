@@ -67,7 +67,7 @@ PGADMIN_EMAIL=admin@cdm.local
 PGADMIN_PASSWORD=<strong-password>
 ```
 
-For **GitHub Codespaces**, no additional InfluxDB proxy variables needed — pgAdmin
+For **GitHub Codespaces**, no additional database proxy variables needed — pgAdmin
 runs behind Caddy on the same port 8888.
 
 !!! tip "Find your Codespace name"
@@ -163,7 +163,6 @@ Follow [A1](#a1----clone-and-enter-the-stack) and [A2](#a2----create-env), then 
 ```dotenv
 # Replace with the actual server IP or internal DNS name
 EXTERNAL_URL=http://192.168.1.100:8888      # or http://cdm.internal:8888
-INFLUX_EXTERNAL_URL=http://192.168.1.100:8086
 CADDY_SITE_ADDRESS=       # empty → plain HTTP :8888
 CADDY_AUTO_HTTPS=off
 ```
@@ -226,16 +225,11 @@ Production-specific settings:
 ```dotenv
 # ── URLs ─────────────────────────────────────────────────────────────────────
 EXTERNAL_URL=https://cdm.example.com          # your FQDN, no trailing slash
-INFLUX_EXTERNAL_URL=https://influx.example.com  # see note below
 
 # ── Caddy ─────────────────────────────────────────────────────────────────────
 CADDY_SITE_ADDRESS=cdm.example.com   # Caddy requests LE cert for this domain
 CADDY_AUTO_HTTPS=on
 CADDY_ACME_EMAIL=ops@example.com     # Let's Encrypt notifications
-
-# ── oauth2-proxy (HTTPS cookies required) ────────────────────────────────────
-INFLUX_PROXY_COOKIE_SECURE=true
-INFLUX_PROXY_COOKIE_SAMESITE=none
 
 # ── Generate all secrets fresh ───────────────────────────────────────────────
 KC_ADMIN_PASSWORD=$(openssl rand -hex 16)
@@ -243,9 +237,10 @@ KC_DB_PASSWORD=$(openssl rand -hex 16)
 STEP_CA_PASSWORD=$(openssl rand -hex 32)
 STEP_CA_PROVISIONER_PASSWORD=$(openssl rand -hex 32)
 RABBITMQ_ADMIN_PASSWORD=$(openssl rand -hex 16)
-INFLUX_ADMIN_PASSWORD=$(openssl rand -hex 16)
-INFLUX_TOKEN=$(openssl rand -hex 32)
-INFLUX_PROXY_COOKIE_SECRET=$(openssl rand -hex 32)
+TSDB_PASSWORD=$(openssl rand -hex 16)
+TSDB_TELEGRAF_PASSWORD=$(openssl rand -hex 16)
+TSDB_GRAFANA_PASSWORD=$(openssl rand -hex 16)
+PGADMIN_PASSWORD=$(openssl rand -hex 16)
 PORTAL_SESSION_SECRET=$(openssl rand -hex 32)
 ```
 

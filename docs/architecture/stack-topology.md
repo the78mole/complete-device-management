@@ -13,7 +13,7 @@ graph TB
         CADDY_P["Caddy :8888 (entry point)"]
         KC_P["Keycloak<br>(realms: cdm, provider)"]
         RMQ["RabbitMQ<br>(vHost per tenant)"]
-        IDB_P["InfluxDB<br>(provider metrics)"]
+        TSDB_P["TimescaleDB<br>(provider metrics)"]
         GRF_P["Grafana<br>(platform dashboards)"]
         SCA_P["step-ca<br>(Root CA + Intermediate CA)"]
         IBA["IoT Bridge API<br>(management API)"]
@@ -27,7 +27,7 @@ graph TB
         SCA_T["step-ca<br>(Issuing Sub-CA)"]
         WGS["WireGuard Server"]
         TXP["Terminal Proxy"]
-        IDB_T["InfluxDB<br>(device telemetry)"]
+        TSDB_T["TimescaleDB<br>(device telemetry)"]
         GRF_T["Grafana<br>(tenant dashboards)"]
     end
 
@@ -54,11 +54,11 @@ graph TB
     MQC -->|"MQTTS mTLS"| TB
     WGC -->|"WireGuard VPN"| WGS
     UPD -->|"DDI poll"| HB
-    TLG -->|"InfluxDB line protocol"| IDB_T
+    TLG -->|"PostgreSQL"| TSDB_T
 
     %% Tenant → Provider
     TB -->|"metrics (AMQP)"| RMQ
-    IDB_T -.->|"aggregated metrics"| IDB_P
+    TSDB_T -.->|"aggregated metrics"| TSDB_P
 
     %% Terminal
     TXP -->|"WS → WireGuard IP → ttyd"| TTD
@@ -137,8 +137,8 @@ a dedicated vHost (e.g. `/tenant-acme`) to ensure complete message isolation.
 
 | vHost | Producer | Consumer | Content |
 |---|---|---|---|
-| `cdm-metrics` | Provider Telegraf, IoT Bridge API | Provider InfluxDB | Platform health metrics |
-| `/tenant-acme` | Tenant-Stack MQTT bridge | Provider InfluxDB (aggregated) | Device telemetry |
+| `cdm-metrics` | Provider Telegraf, IoT Bridge API | Provider TimescaleDB | Platform health metrics |
+| `/tenant-acme` | Tenant-Stack MQTT bridge | Provider TimescaleDB (aggregated) | Device telemetry |
 | `/tenant-beta` | … | … | … |
 
 The Provider IoT Bridge API creates the vHost, AMQP user, and permissions automatically

@@ -13,7 +13,7 @@ Manages two realms:
 
 | Realm | Purpose | OIDC Clients |
 |---|---|---|
-| `cdm` | Platform services and cross-tenant SSO | `grafana`, `iot-bridge`, `portal`, `influxdb-proxy` |
+| `cdm` | Platform services and cross-tenant SSO | `grafana`, `iot-bridge`, `portal`, `pgadmin` |
 | `provider` | Platform operations staff | `grafana-broker` (Identity Provider link), `rabbitmq-management` (RabbitMQ SSO) |
 
 **`cdm` realm roles:**
@@ -40,7 +40,7 @@ provider credentials.
 
 | Realm | Purpose | OIDC Clients |
 |---|---|---|
-| `<tenant-id>` | Tenant-specific services | `thingsboard`, `hawkbit`, `grafana`, `portal`, `influxdb-proxy` |
+| `<tenant-id>` | Tenant-specific services | `thingsboard`, `hawkbit`, `grafana`, `portal`, `pgadmin` |
 
 ---
 
@@ -78,7 +78,7 @@ When a tenant JOIN request is approved, the IoT Bridge API automatically:
 | `grafana` | Grafana (Provider Dashboards) | confidential | `GRAFANA_OIDC_SECRET` |
 | `iot-bridge` | IoT Bridge API | confidential + service-account | `BRIDGE_OIDC_SECRET` |
 | `portal` | CDM Provider Portal | confidential | `PORTAL_OIDC_SECRET` |
-| `influxdb-proxy` | InfluxDB oauth2-proxy | confidential | `INFLUXDB_PROXY_OIDC_SECRET` |
+| `pgadmin` | pgAdmin OIDC proxy | confidential | `PGADMIN_OIDC_SECRET` |
 
 All `redirectUris` and `webOrigins` are set to `*` to support dynamic Codespaces hostnames.
 
@@ -129,7 +129,7 @@ receive full administrator access to RabbitMQ on SSO login.
    GRAFANA_OIDC_SECRET=<from Keycloak cdm realm>
    BRIDGE_OIDC_SECRET=<from Keycloak cdm realm>
    PORTAL_OIDC_SECRET=<from Keycloak cdm realm>
-   INFLUXDB_PROXY_OIDC_SECRET=<from Keycloak cdm realm>
+   PGADMIN_OIDC_SECRET=<from Keycloak provider realm → pgadmin>
    RABBITMQ_MANAGEMENT_OIDC_SECRET=<from Keycloak provider realm → rabbitmq-management>
    ```
 4. Restart affected services:

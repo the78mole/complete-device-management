@@ -34,7 +34,7 @@ The platform uses a **two-stack architecture** for multi-tenancy:
 - **Provider-Stack** — operated by the CDM platform team.  Hosts the trust anchor
   (Keycloak `cdm` realm, Root CA, RabbitMQ), collects platform-health metrics.
 - **Tenant-Stack** — one stack per customer.  Hosts ThingsBoard, hawkBit, WireGuard,
-  device telemetry InfluxDB, and a tenant-scoped Keycloak realm that federates into the
+  device telemetry TimescaleDB, and a tenant-scoped Keycloak realm that federates into the
   Provider Keycloak.
 
 The `iot-bridge-api` in each Tenant-Stack manages device enrollment and synchronises

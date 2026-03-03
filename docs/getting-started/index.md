@@ -9,7 +9,7 @@ Device enrollment and Tenant-Stack setup are covered in the follow-on pages.
 
 ```mermaid
 graph LR
-    PS["Provider-Stack<br/>Caddy, Keycloak, RabbitMQ<br/>InfluxDB, Grafana, step-ca"]
+    PS["Provider-Stack<br/>Caddy, Keycloak, RabbitMQ<br/>TimescaleDB, Grafana, step-ca"]
     TS["Tenant-Stack<br/>ThingsBoard, hawkBit<br/>WireGuard, Terminal Proxy"]
     DS["Device-Stack<br/>mqtt-client, telegraf<br/>rauc-updater, wireguard-client"]
 

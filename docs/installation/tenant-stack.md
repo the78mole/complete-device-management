@@ -17,7 +17,8 @@ workflow to establish a chain of trust and cross-tenant telemetry forwarding.
 | step-ca | `{TENANT_ID}-step-ca` | Issuing Sub-CA (optionally signed by Provider Root CA) |
 | WireGuard | `{TENANT_ID}-wireguard` | Device VPN server |
 | Terminal Proxy | `{TENANT_ID}-terminal-proxy` | Browser terminal via WireGuard |
-| InfluxDB | `{TENANT_ID}-influxdb` | Device telemetry time-series |
+| TimescaleDB | `{TENANT_ID}-tb-db` | Device telemetry and ThingsBoard time-series storage |
+| pgAdmin | `{TENANT_ID}-pgadmin` | Database management UI |
 | Grafana | `{TENANT_ID}-grafana` | Tenant dashboards |
 | IoT Bridge API | `{TENANT_ID}-iot-bridge-api` | Device enrollment, cert issuance, WG provisioning |
 
@@ -30,7 +31,6 @@ workflow to establish a chain of trust and cross-tenant telemetry forwarding.
 | Caddy (entry point) | 8888 | HTTP/HTTPS | Path-based routing for all services |
 | ThingsBoard UI | 9090 | HTTP | Direct port (SPA sub-path limitation) |
 | ThingsBoard MQTT TLS | 8883 | MQTTS / mTLS | Direct, device connections |
-| InfluxDB / oauth2-proxy | 8086 | HTTP | Direct port (SPA limitation) |
 | step-ca | 9000 | HTTPS | Direct, device cert enrollment |
 | WireGuard | 51820 | UDP | Direct, device VPN |
 | Keycloak | `/auth/` via Caddy | HTTP | |
@@ -92,8 +92,10 @@ sed -i \
   -e "s/HB_OIDC_SECRET=changeme/HB_OIDC_SECRET=$(rnd)/" \
   -e "s/BRIDGE_OIDC_SECRET=changeme/BRIDGE_OIDC_SECRET=$(rnd)/" \
   -e "s/PORTAL_OIDC_SECRET=changeme/PORTAL_OIDC_SECRET=$(rnd)/" \
-  -e "s/INFLUX_PROXY_OIDC_SECRET=changeme/INFLUX_PROXY_OIDC_SECRET=$(rnd)/" \
-  -e "s/INFLUX_TOKEN=my-super-secret-influx-token/INFLUX_TOKEN=$(rnd)$(rnd)/" \
+  -e "s/TSDB_PASSWORD=changeme/TSDB_PASSWORD=$(rnd)/" \
+  -e "s/TSDB_TELEGRAF_PASSWORD=changeme/TSDB_TELEGRAF_PASSWORD=$(rnd)/" \
+  -e "s/TSDB_GRAFANA_PASSWORD=changeme/TSDB_GRAFANA_PASSWORD=$(rnd)/" \
+  -e "s/PGADMIN_PASSWORD=changeme/PGADMIN_PASSWORD=$(rnd)/" \
   .env
 ```
 

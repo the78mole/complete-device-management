@@ -5,7 +5,7 @@ using **Complete Device Management**.
 
 !!! info "Stack context"
     Device management plane (ThingsBoard, hawkBit, WireGuard) lives in the **Tenant-Stack**.
-    Platform-wide fleet dashboards are in the **Provider-Stack** (Grafana → Provider InfluxDB).
+    Platform-wide fleet dashboards are in the **Provider-Stack** (Grafana → Provider TimescaleDB).
 
 ---
 
@@ -41,7 +41,7 @@ Bake the following into the Yocto OS image before shipping:
 ```
 /opt/cdm/enroll.sh        — enrollment script
 /opt/cdm/ca-fingerprint   — Tenant step-ca Sub-CA fingerprint
-/etc/cdm/device-config    — TENANT_API_URL, TB_MQTT_HOST, HAWKBIT_URL, INFLUXDB_URL
+/etc/cdm/device-config    — TENANT_API_URL, TB_MQTT_HOST, HAWKBIT_URL, TSDB_URL
 ```
 
 The device ID is derived from the hardware serial number at first boot.
@@ -90,5 +90,5 @@ If a device reports `ota_status: failure`:
 |---|---|
 | < 100 devices | Single Docker Compose node is sufficient |
 | 100–1000 devices | Separate DB nodes (managed PostgreSQL, MySQL); keep app containers on Docker Compose |
-| > 1000 devices | Move to Kubernetes with Helm charts; scale ThingsBoard and InfluxDB horizontally |
-| > 10,000 devices | Consider ThingsBoard PE (cluster mode), InfluxDB Clustered, and hawkBit cluster |
+| > 1000 devices | Move to Kubernetes with Helm charts; scale ThingsBoard and TimescaleDB horizontally |
+| > 10,000 devices | Consider ThingsBoard PE (cluster mode), TimescaleDB distributed hypertables, and hawkBit cluster |

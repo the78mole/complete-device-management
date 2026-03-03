@@ -16,7 +16,7 @@ planning — not a finished migration guide.
 | Networking & Ingress | high | high |
 | Init Containers / Jobs | medium | medium |
 | Keycloak (start mode) | medium | high |
-| InfluxDB Direct Port (SPA) | high | high |
+| TimescaleDB (StatefulSet) | medium | medium |
 | Replacing `depends_on` | medium | medium |
 | No Docker Compose Secrets API | medium | medium |
 | RabbitMQ TLS (Shared Volume) | medium | medium |
@@ -73,8 +73,7 @@ K8s Secrets.  In the current Compose configuration there are **more than 20 secr
 ```
 KC_ADMIN_PASSWORD, KC_DB_PASSWORD, STEP_CA_PASSWORD, STEP_CA_PROVISIONER_PASSWORD,
 RABBITMQ_ADMIN_PASSWORD, RABBITMQ_MANAGEMENT_OIDC_SECRET,
-INFLUX_TOKEN, INFLUX_PROXY_COOKIE_SECRET, INFLUXDB_PROXY_OIDC_SECRET,
-GRAFANA_OIDC_SECRET, GRAFANA_BROKER_SECRET, BRIDGE_OIDC_SECRET,
+TSDB_PASSWORD, GRAFANA_OIDC_SECRET, GRAFANA_BROKER_SECRET, BRIDGE_OIDC_SECRET,
 PORTAL_OIDC_SECRET, PORTAL_SESSION_SECRET, PROVIDER_OPERATOR_PASSWORD, ...
 ```
 
@@ -86,13 +85,12 @@ PORTAL_OIDC_SECRET, PORTAL_SESSION_SECRET, PROVIDER_OPERATOR_PASSWORD, ...
 ## 3. PersistentVolumeClaims
 
 Each named Docker volume becomes a `PersistentVolumeClaim`.  The Provider-Stack has
-9 volumes:
+8 volumes:
 
 | Docker Volume | Type | Recommended StorageClass |
 |---|---|---|
 | `keycloak-db-data` (PostgreSQL) | RWO | `standard` / SSD-backed |
-| `influxdb-data` | RWO | SSD-backed (high I/O) |
-| `influxdb-config` | RWO | `standard` |
+| `timescaledb-data` (TimescaleDB) | RWO | SSD-backed (high I/O) |
 | `grafana-data` | RWO | `standard` |
 | `rabbitmq-data` | RWO | SSD-backed |
 | `rabbitmq-tls` | RWO (**shared**, see section 8) | `standard` |
@@ -110,7 +108,7 @@ one replica per service** (unless a shared filesystem like NFS/EFS is used).
 ### 4.1 Internal Service Discovery
 
 Docker Compose uses the service name directly as a DNS hostname (`keycloak:8080`,
-`influxdb:8086`, …).  Kubernetes requires `ClusterIP` Services:
+`timescaledb:5432`, …).  Kubernetes requires `ClusterIP` Services:
 
 ```yaml
 # Example: keycloak Service
@@ -126,7 +124,7 @@ spec:
       targetPort: 8080
 ```
 
-All internal hostnames (`keycloak:8080`, `step-ca:9000`, `rabbitmq:15672`, etc.) remain
+All internal hostnames (`keycloak:8080`, `step-ca:9000`, `rabbitmq:15672`, `timescaledb:5432`, etc.) remain
 usable as long as the Kubernetes Services get the same names.
 
 ### 4.2 Ingress for External Access
@@ -148,23 +146,21 @@ The current path-routing rules from the Caddyfile must be mapped as `Ingress` re
 In nginx-ingress: `nginx.ingress.kubernetes.io/rewrite-target: /$2` with a regex path.
 In Traefik: `StripPrefix` middleware.
 
-### 4.3 InfluxDB — SPA Direct Port Problem (critical!)
+### 4.3 TimescaleDB — StatefulSet & Data Persistence
 
-InfluxDB runs on **port 8086 directly** (no Caddy path) because the InfluxDB SPA uses
-hardcoded absolute paths.  In Docker Compose, port 8086 is exposed via
-`influxdb-proxy:4180`.
+TimescaleDB (a PostgreSQL extension) replaces InfluxDB as the time-series backend.  Unlike
+the previous InfluxDB setup, TimescaleDB exposes a standard **PostgreSQL port 5432** which
+routes cleanly through a K8s `ClusterIP` Service — no direct-port SPA workaround is needed.
 
-Kubernetes has **no direct equivalent to `ports: - "8086:4180"`** at the Caddy level.
-Options:
+Key K8s considerations:
 
-| Option | Effort | Drawbacks |
-|---|---|---|
-| `NodePort` Service on port 8086 | low | Not for production, IP-dependent |
-| `LoadBalancer` Service with external IP | medium | Requires a cloud LB per port; expensive |
-| Separate Ingress on subdomain `influx.example.com` | medium | Requires DNS entry; works well |
-| Caddy as a sidecar directly in the pod (as-is) | low | Not K8s-native |
-
-**Recommendation:** Subdomain Ingress (`influx.example.com`) with TLS via cert-manager.
+| Topic | Recommendation |
+|---|---|
+| Deployment type | `StatefulSet` with 1 replica (no built-in HA) |
+| Storage | `ReadWriteOnce` PVC, SSD-backed StorageClass |
+| Backups | Use `pg_dump` CronJob or a managed Postgres service |
+| HA | For HA: use [Crunchy Postgres Operator](https://access.crunchydata.com/documentation/postgres-operator/) or managed cloud Postgres |
+| Community chart | `bitnami/postgresql` with TimescaleDB image `timescale/timescaledb:latest-pg17` |
 
 ### 4.4 RabbitMQ MQTT Ports (1883, 5672, 8883)
 
@@ -336,7 +332,7 @@ environments (dev/staging/prod).
 
 Suggested order:
 1. `kompose convert` as a starting point → generates raw manifests
-2. Manual corrections (StatefulSets for Postgres/InfluxDB/RabbitMQ/step-ca)
+2. Manual corrections (StatefulSets for Postgres/TimescaleDB/RabbitMQ/step-ca)
 3. Jobs for one-off tasks (rabbitmq-cert-init)
 4. initContainers for boot-order dependencies
 5. Helm Chart or Kustomize overlays for `dev` / `prod`
@@ -349,7 +345,7 @@ Alternatively, use existing community charts for sub-components:
 | Keycloak | `bitnami/keycloak` or official Operator |
 | RabbitMQ | `bitnami/rabbitmq` |
 | Grafana | `grafana/grafana` |
-| InfluxDB | `influxdata/influxdb2` |
+| TimescaleDB | `timescale/timescaledb` (PostgreSQL-based) |
 | cert-manager | `cert-manager/cert-manager` |
 
 `step-ca` and `iot-bridge-api` must remain custom charts.
@@ -374,7 +370,7 @@ The following Kubernetes-specific permissions are required:
 |---|---|---|
 | Keycloak login page broken | `KC_HOSTNAME` wrong (missing `/auth` suffix) | Set exactly `https://<ingress-host>/auth` |
 | RabbitMQ Management SSO fails | `oauth_provider_url` not browser-reachable | Point to Ingress URL, not ClusterIP |
-| InfluxDB SSO fails | oauth2-proxy expects a direct port instead of Ingress path | Subdomain Ingress or LoadBalancer for InfluxDB |
+| pgAdmin pods fail to start | Keycloak OIDC proxy misconfigured | Set correct `KC_HOSTNAME` in pgadmin-oidc-proxy env |
 | step-ca loses CA after PVC loss | K8s volume deleted / PVC class without reclaim | Set `persistentVolumeReclaimPolicy: Retain` |
 | Keycloak pods start, DB not ready | No `depends_on` | `initContainer` with `pg_isready` |
 | RabbitMQ TLS missing at start | cert-init Job not finished yet | `initContainer` or Job + startup readiness probe |
@@ -389,7 +385,7 @@ The following Kubernetes-specific permissions are required:
 | CI/CD pipeline (image build + push) | 1–2 |
 | Base manifests (`kompose convert` + corrections) | 2–3 |
 | Keycloak `start-dev` → `start` + Realm ConfigMaps | 2–3 |
-| Ingress configuration (path routing, InfluxDB subdomain) | 2–3 |
+| Ingress configuration (path routing, pgAdmin sub-path) | 1–2 |
 | RabbitMQ cert-init → initContainer / cert-manager | 1–2 |
 | step-ca StatefulSet + PVC backup | 1–2 |
 | Secrets → K8s Secrets / External Secrets Operator | 1–2 |
@@ -403,12 +399,12 @@ The following Kubernetes-specific permissions are required:
 
 1. **CI/CD**: Build images and push to registry
 2. **Secrets**: Create all passwords/tokens as K8s Secrets
-3. **StatefulSets**: PostgreSQL, InfluxDB, RabbitMQ, step-ca
+3. **StatefulSets**: PostgreSQL (Keycloak DB), TimescaleDB, RabbitMQ, step-ca
 4. **Keycloak**: `start-dev` → `start`, realm templates as ConfigMap
 5. **InitContainers / Jobs**: Reproduce boot order
-6. **Ingress**: Path routing + subdomain for InfluxDB
+6. **Ingress**: Path routing + sub-path for pgAdmin
 7. **EXTERNAL_URL / KC_HOSTNAME**: Update to Ingress hostname
-8. **End-to-end test**: Login flow, RabbitMQ SSO, InfluxDB, step-ca health check
+8. **End-to-end test**: Login flow, RabbitMQ SSO, TimescaleDB, step-ca health check
 9. **cert-manager**: TLS for all Ingress endpoints
 
 ---

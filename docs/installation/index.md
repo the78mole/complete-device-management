@@ -13,7 +13,7 @@ This page lists prerequisites and points you to the individual setup guides.
 | RAM (Provider-Stack) | 6 GB | 8 GB recommended |
 | RAM (Tenant-Stack) | 8 GB | 16 GB recommended (ThingsBoard) |
 | RAM (Device simulation) | 2 GB | |
-| Disk (per stack) | 10 GB free | InfluxDB data grows over time |
+| Disk (per stack) | 10 GB free | TimescaleDB data grows over time |
 | OS | Linux (amd64) | macOS works for development; Windows via WSL 2 |
 | `git` | 2.40+ | |
 | `step` CLI | 0.25+ | Required on the host only if you manage certs manually |
@@ -59,7 +59,7 @@ Requires a running Tenant-Stack.
 | Grafana | `:8888/grafana/` | HTTP |
 | IoT Bridge API | `:8888/api/` | HTTP |
 | RabbitMQ Management | `:8888/rabbitmq/` | HTTP |
-| InfluxDB | `:8086` | HTTP (direct) |
+| pgAdmin | `:8888/pgadmin/` | HTTP |
 | step-ca | `:9000` | HTTPS (direct) |
 
 ## Port Map — Tenant-Stack *(planned)*
@@ -73,7 +73,7 @@ Requires a running Tenant-Stack.
 | hawkBit | `:8888/hawkbit/` | HTTPS |
 | WireGuard | `:51820` | UDP |
 | Terminal Proxy | `:8888/terminal/` | WSS |
-| InfluxDB | `:8086` | HTTPS (direct) |
+| pgAdmin | `:8888/pgadmin/` | HTTPS |
 | step-ca | `:9000` | HTTPS (direct) |
 
 !!! warning "Firewall"
