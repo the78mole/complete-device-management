@@ -9,7 +9,7 @@
       "Username": "postgres",
       "SSLMode": "prefer",
       "Shared": true,
-      "PassFile": "/var/lib/pgadmin/pgpassfile"
+      "Service": "cdm_admin"
     }
   }
 }

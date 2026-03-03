@@ -300,6 +300,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
       TSDB_PASSWORD: ${TSDB_PASSWORD:-changeme}
       PGPASSFILE: /var/lib/pgadmin/pgpassfile
+      PGSERVICEFILE: /var/lib/pgadmin/pg_service.conf
       SCRIPT_NAME: /pgadmin
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
       PGADMIN_CONFIG_PROXY_X_FOR_COUNT: "1"
