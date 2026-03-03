@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM – User × Role Matrix</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+  <style>
+    /* ── Base ──────────────────────────────────────────────── */
+    body { background: #0d1117; color: #e6edf3; min-height: 100vh; }
+    .hero {
+      background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+      border-bottom: 1px solid #30363d;
+      padding: 1.8rem 0 1.4rem;
+    }
+    .hero h1 { font-size: 1.7rem; font-weight: 700; }
+    .btn-back { font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 6px; }
+    .realm-tag {
+      display: inline-block; font-size: 0.62rem; font-weight: 700;
+      letter-spacing: 0.6px; text-transform: uppercase;
+      padding: 0.1rem 0.42rem; border-radius: 4px; line-height: 1.5;
+    }
+    .realm-cdm  { background:#1f4a8e; color:#79b8ff; border:1px solid #388bfd44; }
+    .realm-prov { background:#4a2a00; color:#f0c060; border:1px solid #d29922aa; }
+
+    /* ── Login card ────────────────────────────────────────── */
+    .login-card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+      max-width: 26rem; margin: 3rem auto;
+    }
+    .login-card input {
+      background: #0d1117; border-color: #30363d; color: #e6edf3;
+      font-size: 0.88rem;
+    }
+    .login-card input:focus {
+      background: #161b22; border-color: #58a6ff;
+      color: #e6edf3; box-shadow: 0 0 0 0.2rem rgba(88,166,255,.15);
+    }
+
+    /* ── Role-Matrix table ─────────────────────────────────── */
+    .matrix-wrap { overflow-x: auto; border: 1px solid #30363d; border-radius: 10px; }
+    table.matrix {
+      border-collapse: separate; border-spacing: 0;
+      width: 100%; min-width: max-content; background: #161b22;
+    }
+    /* Sticky first column */
+    table.matrix th.col-user,
+    table.matrix td.col-user {
+      position: sticky; left: 0; z-index: 2;
+      background: #161b22; border-right: 1px solid #30363d;
+      min-width: 11rem; max-width: 16rem;
+    }
+    table.matrix thead th.col-user { z-index: 3; }
+
+    /* Rotated role headers */
+    table.matrix th.col-role {
+      height: 9rem; min-width: 2.4rem; max-width: 2.8rem;
+      vertical-align: bottom; padding: 0 0.5rem 0.5rem;
+      border-bottom: 2px solid #30363d; white-space: nowrap;
+    }
+    table.matrix th.col-role > div {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      font-size: 0.75rem; font-weight: 600;
+      color: #c9d1d9; letter-spacing: 0.4px; line-height: 1.3;
+      max-height: 8rem; overflow: hidden; text-overflow: ellipsis; display: block;
+    }
+    /* Data rows */
+    table.matrix tbody tr:hover td,
+    table.matrix tbody tr:hover td.col-user { background: #1c2128; }
+    table.matrix td {
+      border-bottom: 1px solid #21262d;
+      font-size: 0.82rem; padding: 0;
+      text-align: center; vertical-align: middle;
+    }
+    table.matrix td.col-user { padding: 0.55rem 0.75rem; text-align: left; }
+
+    .username    { font-weight: 600; color: #e6edf3; display: block; }
+    .user-email  { font-size: 0.7rem; color: #8b949e; display: block; }
+    .user-status { font-size: 0.65rem; display: inline-block; padding: 0.1rem 0.35rem;
+                   border-radius: 3px; margin-top: 0.15rem; }
+    .status-active   { background:#1a3a2a; color:#56d364; }
+    .status-disabled { background:#3b1919; color:#f85149; }
+
+    td.cell-yes { color:#3fb950; font-size:1.1rem; }
+    td.cell-no  { color:#21262d; font-size:0.85rem; }
+
+    /* Role-tag chips */
+    .role-chip {
+      display: inline-block; font-size: 0.62rem; font-weight: 700;
+      letter-spacing: 0.5px; text-transform: uppercase;
+      padding: 0.1rem 0.42rem; border-radius: 4px; margin: 0.1rem;
+    }
+    .chip-sys  { background:#21262d; color:#8b949e; border:1px solid #30363d; }
+    .chip-app  { background:#1f4a8e; color:#79b8ff; border:1px solid #388bfd44; }
+    .chip-prov { background:#4a2a00; color:#f0c060; border:1px solid #d29922aa; }
+
+    /* Legend */
+    .legend-row { display:flex; flex-wrap:wrap; gap:1rem; font-size:0.78rem; color:#8b949e; }
+    .legend-row span { display:flex; align-items:center; gap:0.35rem; }
+
+    /* Error banner */
+    .err-banner {
+      background:#3b1919; border:1px solid #f85149; border-radius:8px;
+      color:#f85149; font-size:0.85rem; padding:0.75rem 1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Hero ───────────────────────────────────────────────── -->
+  <div class="hero">
+    <div class="container d-flex align-items-center justify-content-between gap-3 flex-wrap">
+      <div class="d-flex align-items-center gap-3">
+        <span style="font-size:2.2rem">&#x1F465;</span>
+        <div>
+          <h1 class="mb-0">User &times; Role Matrix</h1>
+          <p class="mt-1 mb-0" style="color:#8b949e;font-size:0.88rem">
+            Keycloak accounts and their assigned roles &mdash;
+            <span class="realm-tag realm-cdm">CDM</span> &amp;
+            <span class="realm-tag realm-prov">PROVIDER</span> realms
+          </p>
+        </div>
+      </div>
+      <a href="/" class="btn btn-outline-secondary btn-back">&larr; Dashboard</a>
+    </div>
+  </div>
+
+  <!-- ── Main ───────────────────────────────────────────────── -->
+  <div class="container py-4">
+
+    <!-- ── Login form ─────────────────────────────────────── -->
+    <div id="login-section">
+      <div class="login-card p-4">
+        <h5 class="mb-1" style="font-weight:700">Keycloak Admin login</h5>
+        <p class="mb-3" style="font-size:0.8rem;color:#8b949e">
+          Requires a <strong>master-realm admin</strong> account. Credentials are used only to
+          obtain an Admin REST API token and are never stored.
+        </p>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Keycloak Base URL</label>
+          <input id="inp-base" type="text" class="form-control"
+                 placeholder="http://localhost:8888" autocomplete="off" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Username</label>
+          <input id="inp-user" type="text" class="form-control"
+                 value="admin" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:0.8rem;color:#8b949e">Password</label>
+          <input id="inp-pass" type="password" class="form-control"
+                 placeholder="" autocomplete="current-password" />
+        </div>
+        <div id="login-error" class="d-none err-banner mb-3"></div>
+        <button id="btn-load" class="btn btn-primary w-100">Load Matrix</button>
+      </div>
+    </div>
+
+    <!-- ── Matrix content ──────────────────────────────────── -->
+    <div id="content-section" class="d-none">
+
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div class="legend-row">
+          <span><span style="color:#3fb950;font-size:1.1rem">&#x2714;</span> Role assigned</span>
+          <span><span style="color:#484f58">&middot;</span> Not assigned</span>
+          <span><span class="role-chip chip-app">APP</span> Application roles</span>
+          <span><span class="role-chip chip-prov">PROV</span> Ops/platform roles</span>
+          <span><span class="role-chip chip-sys">SYS</span> Keycloak built-in</span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+          <span id="last-refresh" style="font-size:0.75rem;color:#484f58"></span>
+          <button id="btn-refresh" class="btn btn-sm btn-outline-secondary">&#x21BA; Refresh</button>
+          <button id="btn-relogin" class="btn btn-sm btn-outline-danger">Logout</button>
+        </div>
+      </div>
+
+      <div id="matrix-container"></div>
+      <div id="load-error" class="d-none err-banner mt-3"></div>
+    </div>
+
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────── -->
+  <footer class="border-top mt-5 py-3"
+          style="border-color:#21262d!important;font-size:0.78rem;color:#484f58">
+    <div class="container d-flex justify-content-between flex-wrap gap-2">
+      <span>CDM Provider Stack &mdash; User &times; Role Matrix</span>
+      <span>Credentials are transmitted only to your own Keycloak instance.</span>
+    </div>
+  </footer>
+
+  <script type="module">
+    // ──────────────────────────────────────────────────────────
+    // Constants
+    // ──────────────────────────────────────────────────────────
+    const REALMS = ['cdm', 'provider'];
+
+    const SKIP_ROLES = new Set([
+      'uma_authorization', 'offline_access', 'create-realm',
+    ]);
+
+    const SYS_PREFIXES = [
+      'default-roles-', 'manage-', 'view-', 'query-',
+      'create-', 'impersonation', 'realm-admin',
+    ];
+
+    // ──────────────────────────────────────────────────────────
+    // Helpers
+    // ──────────────────────────────────────────────────────────
+    function esc(s) {
+      return String(s ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function roleClass(name) {
+      if (SYS_PREFIXES.some(p => name.startsWith(p))) return 'chip-sys';
+      if (['platform-admin','platform-operator'].includes(name)) return 'chip-prov';
+      return 'chip-app';
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Keycloak Admin REST
+    // ──────────────────────────────────────────────────────────
+    async function fetchToken(base, user, pass) {
+      const r = await fetch(`${base}/auth/realms/master/protocol/openid-connect/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'password',
+          client_id:  'admin-cli',
+          username:   user,
+          password:   pass,
+        }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error_description || `HTTP ${r.status}`);
+      }
+      const d = await r.json();
+      return d.access_token;
+    }
+
+    async function kcGet(base, path, token) {
+      const r = await fetch(`${base}/auth${path}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status} — ${path}`);
+      return r.json();
+    }
+
+    async function fetchRoles(base, realm, token) {
+      const roles = await kcGet(base, `/admin/realms/${realm}/roles`, token);
+      return roles
+        .filter(r => !SKIP_ROLES.has(r.name))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    async function fetchUsers(base, realm, token) {
+      const users = await kcGet(base, `/admin/realms/${realm}/users?max=500`, token);
+      const enriched = await Promise.all(users.map(async u => {
+        let roles = [];
+        try {
+          const rm = await kcGet(
+            base,
+            `/admin/realms/${realm}/users/${u.id}/role-mappings/realm`,
+            token
+          );
+          roles = rm.map(r => r.name);
+        } catch {/* tolerate per-user failure */}
+        return { ...u, realmRoles: roles };
+      }));
+      return enriched.sort((a, b) => (a.username ?? '').localeCompare(b.username ?? ''));
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Render
+    // ──────────────────────────────────────────────────────────
+    function buildSection(realm, roles, users) {
+      const realmLabel = realm === 'provider' ? 'PROV' : 'CDM';
+      const realmCls   = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
+
+      let thead = `<thead><tr>
+        <th class="col-user ps-3" style="vertical-align:bottom;padding-bottom:0.75rem">
+          <span class="realm-tag ${realmCls}">${realmLabel}</span>
+          <span style="font-size:0.72rem;font-weight:600;color:#8b949e;margin-left:0.5rem">User</span>
+        </th>`;
+      for (const role of roles) {
+        const cls = roleClass(role.name);
+        thead += `<th class="col-role" title="${esc(role.name)}">
+          <div><span class="role-chip ${cls}">${esc(role.name)}</span></div>
+        </th>`;
+      }
+      thead += '</tr></thead>';
+
+      let tbody = '<tbody>';
+      for (const user of users) {
+        const statusCls = user.enabled ? 'status-active' : 'status-disabled';
+        const statusTxt = user.enabled ? 'active' : 'disabled';
+        const assigned  = new Set(user.realmRoles);
+
+        tbody += `<tr>
+          <td class="col-user">
+            <span class="username">${esc(user.username)}</span>
+            ${user.email ? `<span class="user-email">${esc(user.email)}</span>` : ''}
+            <span class="user-status ${statusCls}">${statusTxt}</span>
+          </td>`;
+        for (const role of roles) {
+          if (assigned.has(role.name)) {
+            tbody += `<td class="cell-yes" title="${esc(role.name)} \u2714">\u2714</td>`;
+          } else {
+            tbody += `<td class="cell-no"  title="${esc(role.name)}">\u00b7</td>`;
+          }
+        }
+        tbody += '</tr>';
+      }
+      tbody += '</tbody>';
+
+      return `<div class="matrix-wrap mb-4">
+        <table class="matrix">${thead}${tbody}</table>
+      </div>`;
+    }
+
+    async function loadMatrix(base, token) {
+      const container = document.getElementById('matrix-container');
+      container.innerHTML = '';
+      document.getElementById('load-error').classList.add('d-none');
+
+      for (const realm of REALMS) {
+        let roles, users;
+        try {
+          [roles, users] = await Promise.all([
+            fetchRoles(base, realm, token),
+            fetchUsers(base, realm, token),
+          ]);
+        } catch (err) {
+          container.insertAdjacentHTML('beforeend',
+            `<div class="err-banner mb-3">\u274c realm <strong>${esc(realm)}</strong>: ${esc(err.message)}</div>`);
+          continue;
+        }
+
+        const heading = realm === 'provider' ? '\u{1F3E2} Provider realm' : '\u{1F310} CDM realm';
+        container.insertAdjacentHTML('beforeend',
+          `<div class="d-flex align-items-baseline gap-2 mb-2 mt-3">
+            <span style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#8b949e">${heading}</span>
+            <span style="font-size:0.72rem;color:#484f58">${users.length} user(s) \u00b7 ${roles.length} role(s)</span>
+          </div>`);
+        container.insertAdjacentHTML('beforeend', buildSection(realm, roles, users));
+      }
+
+      document.getElementById('last-refresh').textContent =
+        'Updated ' + new Date().toLocaleTimeString('de-DE');
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // DOM & state
+    // ──────────────────────────────────────────────────────────
+    let _token = null;
+    let _base  = null;
+
+    const inpBase = document.getElementById('inp-base');
+    const inpUser = document.getElementById('inp-user');
+    const inpPass = document.getElementById('inp-pass');
+
+    // Pre-fill base URL from current origin
+    inpBase.value = window.location.origin;
+
+    document.getElementById('btn-load').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-load');
+      const errEl = document.getElementById('login-error');
+      errEl.classList.add('d-none');
+      btn.disabled = true;
+      btn.textContent = 'Loading\u2026';
+
+      const base = inpBase.value.trim().replace(/\/$/, '');
+      try {
+        _token = await fetchToken(base, inpUser.value.trim(), inpPass.value);
+        _base  = base;
+        inpPass.value = '';  // clear password from DOM
+
+        document.getElementById('login-section').classList.add('d-none');
+        document.getElementById('content-section').classList.remove('d-none');
+        await loadMatrix(_base, _token);
+      } catch (e) {
+        errEl.textContent = '\u274c ' + e.message;
+        errEl.classList.remove('d-none');
+        btn.disabled     = false;
+        btn.textContent  = 'Load Matrix';
+      }
+    });
+
+    // Enter key submits form
+    [inpBase, inpUser, inpPass].forEach(el =>
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('btn-load').click();
+      })
+    );
+
+    document.getElementById('btn-refresh').addEventListener('click', async () => {
+      if (!_token || !_base) return;
+      try {
+        await loadMatrix(_base, _token);
+      } catch (e) {
+        const eb = document.getElementById('load-error');
+        eb.textContent = '\u274c ' + e.message;
+        eb.classList.remove('d-none');
+      }
+    });
+
+    document.getElementById('btn-relogin').addEventListener('click', () => {
+      _token = null; _base = null;
+      document.getElementById('content-section').classList.add('d-none');
+      document.getElementById('login-section').classList.remove('d-none');
+      document.getElementById('matrix-container').innerHTML = '';
+    });
+  </script>
+
+</body>
+</html>
