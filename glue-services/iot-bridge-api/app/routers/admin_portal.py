@@ -103,8 +103,8 @@ async def _require_cdm_admin(request: Request) -> dict:
         payload_b64 = token.split(".")[1]
         payload_b64 += "=" * (4 - len(payload_b64) % 4)
         claims = _json.loads(_b64.b64decode(payload_b64))
-    except Exception:
-        raise _HTTPException(status_code=401, detail="Malformed token")
+    except Exception as err:
+        raise _HTTPException(status_code=401, detail="Malformed token") from err
 
     # KC 26: roles in realm_access.roles; some mappers also put them in flat "roles" claim
     roles: list[str] = (

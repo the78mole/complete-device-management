@@ -59,10 +59,10 @@ from app.models import (
 )
 from app.routers.admin_portal import (
     _get_cdm_admin,
-    _require_cdm_admin,
     _kc_admin_token,
     _rabbitmq,
     _random_password,
+    _require_cdm_admin,
     _step_ca_admin,
 )
 
