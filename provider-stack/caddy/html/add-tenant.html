@@ -271,12 +271,7 @@
             Folgende Zeilen in <code>tenant-stack/.env</code> eintragen, dann
             <code>docker compose up -d</code> starten:
           </p>
-          <div class="env-block" id="res-env-block">
-<span class="text-secondary"># Tenant-Stack .env — Provider-Anbindung</span>
-TENANT_ID=<span class="env-val" id="env-tenant-id">…</span>
-TENANT_DISPLAY_NAME=<span class="env-val" id="env-display-name">…</span>
-PROVIDER_URL=<span class="env-val" id="env-provider-url">…</span>
-JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
+          <div class="env-block" id="res-env-block"></div>
           <button class="btn btn-outline-info btn-copy mt-2" onclick="copyEnvBlock()">
             📋 Konfiguration kopieren
           </button>
@@ -480,10 +475,17 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
 
       el('res-join-key').textContent = d.join_key;
       el('res-expiry').textContent   = `Gültig bis: ${expiryStr}`;
-      el('env-tenant-id').textContent   = d.tenant_id;
-      el('env-display-name').textContent = d.display_name;
-      el('env-provider-url').textContent = apiBase;
-      el('env-join-key').textContent     = d.join_key;
+      const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      el('res-env-block').innerHTML =
+        `<span class="text-secondary"># Tenant-Stack .env — Provider-Anbindung</span>
+` +
+        `TENANT_ID=<span class="env-val">${esc(d.tenant_id)}</span>
+` +
+        `TENANT_DISPLAY_NAME=<span class="env-val">${esc(d.display_name)}</span>
+` +
+        `PROVIDER_URL=<span class="env-val">${esc(apiBase)}</span>
+` +
+        `JOIN_KEY=<span class="env-val">${esc(d.join_key)}</span>`;
 
       // E-Mail-Text
       const emailBody = [
