@@ -153,9 +153,17 @@
       <p class="text-secondary" id="guard-error-msg">
         Diese Seite ist nur für <code>cdm-admin</code> oder <code>platform-admin</code> zugänglich.
       </p>
+      <p class="text-secondary" id="guard-hint" style="font-size:0.82rem;display:none">
+        Melde dich mit einem Konto an, das die Rolle <code>cdm-admin</code> oder
+        <code>platform-admin</code> besitzt (z.&thinsp;B. <strong>admin</strong> oder
+        <strong>cdm-admin</strong>).
+      </p>
       <div class="d-flex gap-2 justify-content-center mt-3">
         <button id="btn-login" class="btn btn-primary" style="display:none">
           Anmelden →
+        </button>
+        <button id="btn-switch-account" class="btn btn-warning" style="display:none">
+          ↩ Mit anderem Konto anmelden
         </button>
         <a href="/" class="btn btn-outline-secondary">← Zurück</a>
       </div>
@@ -381,8 +389,14 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
         if (!hasRole) {
           el('guard-error-title').textContent = 'Unzureichende Berechtigungen';
           el('guard-error-msg').innerHTML =
-            `Angemeldet als <strong>${_kc.tokenParsed.preferred_username}</strong>, aber die Rolle ` +
-            `<code>cdm-admin</code> oder <code>platform-admin</code> fehlt.`;
+            `Angemeldet als <strong>${_kc.tokenParsed.preferred_username}</strong> ` +
+            `(Rollen: <code>${roles.filter(r => !['uma_authorization','offline_access'].includes(r)).join(', ') || '—'}</code>), ` +
+            `aber <code>cdm-admin</code> oder <code>platform-admin</code> fehlt.`;
+          el('guard-hint').style.display = '';
+          el('btn-switch-account').style.display = '';
+          el('btn-switch-account').addEventListener('click', () =>
+            _kc.logout({ redirectUri: window.location.href })
+          );
           show('guard-error');
           return;
         }
