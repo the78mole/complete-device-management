@@ -4,11 +4,12 @@
 # Single entry point on :{$CADDY_PORT:8888}
 # Path-based reverse proxy to all tenant-stack services.
 #
-# Services NOT routed through Caddy (SPA sub-path limitation):
-#   :9090  → ThingsBoard (accessed directly)
-#   :8883  → ThingsBoard MQTT TLS (direct, device connections)
-#   :51820 → WireGuard (UDP, direct)
-#   :9000  → step-ca (mTLS CMP/ACME, direct)
+# Services NOT routed through Caddy (SPA sub-path limitation),
+# exposed on host via ${TB_HOST_PORT}, ${WG_PORT}, etc. (see .env):
+#   ThingsBoard UI  → ${TB_HOST_PORT:-9090}  (direct, SPA limitation)
+#   ThingsBoard MQTT TLS → ${TB_MQTT_TLS_HOST_PORT:-8883} (device connections)
+#   WireGuard       → ${WG_PORT:-51820}/udp  (device VPN)
+#   step-ca         → ${STEP_CA_HOST_PORT:-9000} (mTLS CMP/ACME, direct)
 # pgAdmin is routed through Caddy at /pgadmin/ (no direct port needed).
 # ─────────────────────────────────────────────────────────────────
 

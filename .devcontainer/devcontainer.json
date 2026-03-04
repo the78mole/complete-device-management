@@ -19,7 +19,17 @@
   //   5672  – RabbitMQ AMQP          (provider-stack)
   //   8883  – MQTT TLS               (provider-stack RabbitMQ + tenant-stack ThingsBoard)
   //   8090  – Terminal Proxy          (tenant-stack, WebSocket)
-  "forwardPorts": [8888, 8080, 9000, 8000, 9090, 8086, 1883, 5672, 8883, 8090],
+  //
+  // Tenant-stack side-by-side ports (+10000 offset, set in tenant-stack/.env.example):
+  //   18888 – Caddy reverse proxy     (tenant-stack)
+  //   18080 – Keycloak                (tenant-stack)
+  //   19000 – step-ca PKI             (tenant-stack)
+  //   18000 – IoT Bridge API          (tenant-stack)
+  //   19090 – ThingsBoard UI          (tenant-stack, direct)
+  //   18883 – MQTT TLS               (tenant-stack ThingsBoard)
+  //   18090 – Terminal Proxy          (tenant-stack)
+  "forwardPorts": [8888, 8080, 9000, 8000, 9090, 8086, 1883, 5672, 8883, 8090,
+                   18888, 18080, 19000, 18000, 19090, 18883, 18090],
 
   "portsAttributes": {
     "8888": {
@@ -66,6 +76,39 @@
     },
     "8090": {
       "label": "Terminal Proxy (WebSocket, tenant)",
+      "onAutoForward": "silent"
+    },
+    "18888": {
+      "label": "CDM – Caddy (Tenant Stack)",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    },
+    "18080": {
+      "label": "Keycloak (tenant)",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    },
+    "19000": {
+      "label": "step-ca PKI (tenant)",
+      "onAutoForward": "silent",
+      "protocol": "https"
+    },
+    "18000": {
+      "label": "IoT Bridge API (tenant)",
+      "onAutoForward": "silent",
+      "protocol": "http"
+    },
+    "19090": {
+      "label": "ThingsBoard UI (tenant)",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    },
+    "18883": {
+      "label": "MQTT TLS (ThingsBoard tenant)",
+      "onAutoForward": "silent"
+    },
+    "18090": {
+      "label": "Terminal Proxy (tenant)",
       "onAutoForward": "silent"
     }
   },

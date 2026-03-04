@@ -28,12 +28,18 @@
 # NOT included here (→ provider-stack):
 #   Root CA, central RabbitMQ, platform-wide TimescaleDB/Grafana
 #
-# Port mapping:
-#   8888       → Caddy  (main entry point, path-based routing)
-#   9090       → ThingsBoard UI (direct, SPA can't use sub-path)
-#   8883       → ThingsBoard MQTT over TLS (direct, device connections)
-#   51820/udp  → WireGuard (direct, device VPN)
-#   9000       → step-ca (HTTPS, direct)
+# Port mapping (host:container) – env-var-controlled for easy offset:
+#   ${CADDY_PORT:-8888}:8888                → Caddy  (main entry point, path-based routing)
+#   ${TB_HOST_PORT:-9090}:9090              → ThingsBoard UI (direct, SPA can't use sub-path)
+#   ${TB_MQTT_TLS_HOST_PORT:-8883}:8883     → ThingsBoard MQTT over TLS (direct, device connections)
+#   ${WG_PORT:-51820}:51820/udp             → WireGuard (direct, device VPN)
+#   ${STEP_CA_HOST_PORT:-9000}:9000         → step-ca (HTTPS, direct)
+#   ${KC_HOST_PORT:-8080}:8080              → Keycloak (direct)
+#   ${BRIDGE_HOST_PORT:-8000}:8000          → IoT Bridge API (direct)
+#   ${TERMINAL_HOST_PORT:-8090}:8090        → Terminal Proxy (direct)
+#
+# To run tenant-stack alongside provider-stack in one environment set a
+# +10000 port offset in .env (see .env.example "Host port overrides" block).
 
 networks:
   tenant-net:
