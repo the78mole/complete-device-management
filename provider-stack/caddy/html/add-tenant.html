@@ -220,15 +220,18 @@
     .env-val { color: #003080 !important; }
     .text-secondary { color: #666 !important; }
 
-    /* Email textarea */
-    textarea.form-control {
+    /* Email textarea → hide in print, show pre mirror instead */
+    textarea.form-control { display: none !important; }
+    #res-email-pre {
+      display: block !important;
       border: 1pt solid #aaa !important;
       background: #f8f8f8 !important;
       font-size: 8.5pt !important;
+      font-family: 'Courier New', monospace !important;
       padding: 2mm 3mm !important;
-      resize: none;
-      height: auto !important;
-      overflow: visible !important;
+      white-space: pre-wrap !important;
+      word-break: break-word !important;
+      margin: 0 !important;
     }
 
     /* Date/URL helper text */
@@ -416,6 +419,7 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
         </div>
         <div class="p-4">
           <textarea id="res-email-text" class="form-control" rows="9" style="font-size:0.8rem;background:#0d1117;color:#c9d1d9;border-color:#30363d" readonly></textarea>
+          <pre id="res-email-pre" style="display:none"></pre>
           <button class="btn btn-outline-secondary btn-copy mt-2" onclick="copyText('email-text')">
             📋 Text kopieren
           </button>
@@ -634,6 +638,7 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
       ].join('\n');
 
       el('res-email-text').value = emailBody;
+      el('res-email-pre').textContent = emailBody;
       if (d._email) {
         el('res-email-card').querySelector('.card-header').textContent =
           `✉️ Nachricht an Tenant (${d._email})`;

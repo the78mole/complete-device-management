@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import secrets
 import string
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
@@ -31,6 +32,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+import app.clients.join_key_store as jks
 from app.clients.join_store import load_store
 from app.clients.rabbitmq import RabbitMQClient, RabbitMQError
 from app.clients.step_ca import StepCAAdminClient, StepCAError
@@ -440,6 +442,23 @@ async def admin_dashboard(
         logger.exception("Could not load JOIN requests: %s", exc)
         join_requests = []
 
+    # Load prepared (but not yet joined) tenant slots from join_key_store
+    try:
+        all_keys = await jks.load_keys(settings)
+        now = datetime.now(UTC)
+        prepared_tenants = sorted(
+            [
+                e
+                for e in all_keys.values()
+                if e.get("status") == "open" and datetime.fromisoformat(e["expires_at"]) > now
+            ],
+            key=lambda e: e.get("created_at", ""),
+            reverse=True,
+        )
+    except Exception as exc:
+        logger.exception("Could not load JOIN keys: %s", exc)
+        prepared_tenants = []
+
     return templates.TemplateResponse(
         request,
         "portal/admin_dashboard.html",
@@ -453,6 +472,7 @@ async def admin_dashboard(
                 "http://keycloak:8080", settings.external_url
             ),
             "join_requests": join_requests,
+            "prepared_tenants": prepared_tenants,
         },
     )
 
@@ -629,3 +649,46 @@ async def add_oidc_provisioner(
     except StepCAError as exc:
         logger.exception("step-ca provisioner creation failed: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=502)
+
+
+# ── Prepared tenant slot management ─────────────────────────────────────────
+
+
+@router.delete("/tenants/prepared/{tenant_id}", name="admin_revoke_prepared")
+async def revoke_prepared(
+    tenant_id: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+):
+    """Revoke all open JOIN keys for a prepared (not yet joined) tenant slot.
+
+    Returns JSON::
+
+        {"revoked": <count>, "tenant_id": "<id>"}
+    """
+    user = _get_cdm_admin(request)
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    all_keys = await jks.load_keys(settings)
+    revoked: list[str] = []
+    for key, entry in all_keys.items():
+        if entry.get("tenant_id") == tenant_id and entry.get("status") == "open":
+            entry["status"] = "revoked"
+            all_keys[key] = entry
+            revoked.append(key)
+
+    if not revoked:
+        return JSONResponse(
+            {"error": f"No open JOIN key found for tenant {tenant_id!r}"},
+            status_code=404,
+        )
+
+    await jks.save_keys(all_keys, settings)
+    logger.info(
+        "Revoked %d JOIN key(s) for tenant '%s' (by %s).",
+        len(revoked),
+        tenant_id,
+        user.get("preferred_username", "unknown"),
+    )
+    return JSONResponse({"revoked": len(revoked), "tenant_id": tenant_id})
