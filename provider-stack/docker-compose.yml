@@ -272,7 +272,7 @@ services:
   # real discovery doc returns an external Codespaces URL which is behind a
   # GitHub auth wall and unreachable from Docker containers.
   pgadmin-oidc-proxy:
-    image: python:3.12-alpine
+    image: python:3.14-alpine
     container_name: provider-pgadmin-oidc-proxy
     restart: unless-stopped
     command: python3 /app/oidc-proxy.py
