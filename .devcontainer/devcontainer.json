@@ -101,9 +101,7 @@
     "ghcr.io/devcontainers/features/python:1": {
       "toolsToInstall": "flake8,autopep8,black,yapf,mypy,pydocstyle,pycodestyle,bandit,pipenv,virtualenv,pytest,pylint,ruff,pre-commit",
     },
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "24"
-    },
+    "ghcr.io/devcontainers/features/node:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {
       "extensions": "the78mole/gh-moles"
     }
@@ -118,8 +116,9 @@
     "DOCKER_API_VERSION": "1.43"
   },
 
-  // Fix Git "unsafe/dubious ownership" for the mounted workspace
-  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && pre-commit install",
+  // Fix Git "unsafe/dubious ownership" for the mounted workspace, install
+  // pre-commit hooks, and print a tool-version summary.
+  "postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
 
   "remoteUser": "vscode",
   "customizations": {
