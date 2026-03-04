@@ -64,13 +64,23 @@ async def _require_cdm_admin(request: Request) -> dict:
 
     Checks the Starlette session first (portal login).  If no session is
     present, falls back to validating an ``Authorization: Bearer <token>``
-    header against the Keycloak userinfo endpoint.
+    header via JWKS signature verification against the internal Keycloak URL.
+
+    Using JWKS-based validation (instead of the /userinfo endpoint) avoids the
+    Keycloak 26 breaking change where /userinfo requires an ``aud`` claim in the
+    token that matches the calling client — a requirement that breaks tokens
+    issued against an external URL (e.g. GitHub Codespaces) when the API calls
+    the internal Docker hostname.
 
     Raises:
-        HTTPException(401): No credentials provided.
+        HTTPException(401): No credentials provided or token invalid/expired.
         HTTPException(403): Credentials valid but role insufficient.
     """
+    import json as _json
+
     from fastapi import HTTPException as _HTTPException  # local import to avoid circular
+    from jwcrypto import jwk as _jwk
+    from jwcrypto import jwt as _jwcjwt
 
     # 1. Portal session (server-side, most trusted)
     user = _get_cdm_admin(request)
@@ -83,30 +93,32 @@ async def _require_cdm_admin(request: Request) -> dict:
         raise _HTTPException(status_code=401, detail="Authentication required")
 
     token = auth[7:]
-    from app.deps import get_settings as _get_settings
+    settings = get_settings()
 
-    settings = _get_settings()
-
-    async with httpx.AsyncClient(verify=False) as http:
-        r = await http.get(
-            f"{settings.keycloak_url}/realms/cdm/protocol/openid-connect/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-    if not r.is_success:
-        raise _HTTPException(status_code=401, detail="Invalid or expired token")
-
-    # Keycloak userinfo does NOT include realm_access.roles by default –
-    # extract them directly from the JWT payload (token already validated above).
-    import base64 as _b64
-    import json as _json
-
+    # Fetch JWKS from the internal Keycloak URL.
+    # The JWKS public key is realm-specific but not URL-specific, so signature
+    # verification succeeds even if the token's ``iss`` contains the external
+    # Codespaces hostname rather than the internal Docker hostname.
     try:
-        payload_b64 = token.split(".")[1]
-        payload_b64 += "=" * (4 - len(payload_b64) % 4)
-        claims = _json.loads(_b64.b64decode(payload_b64))
+        async with httpx.AsyncClient(verify=False) as http:
+            resp = await http.get(
+                f"{settings.keycloak_url}/realms/cdm/protocol/openid-connect/certs",
+                timeout=10,
+            )
+        resp.raise_for_status()
+        jwks_bytes = resp.content
     except Exception as err:
-        raise _HTTPException(status_code=401, detail="Malformed token") from err
+        logger.warning("Failed to fetch JWKS from Keycloak: %s", err)
+        raise _HTTPException(status_code=401, detail="Unable to validate token") from err
+
+    # Verify JWT signature using jwcrypto (checks signature + exp/nbf claims).
+    try:
+        key_set = _jwk.JWKSet()
+        key_set.import_keyset(jwks_bytes)
+        tok_obj = _jwcjwt.JWT(key=key_set, jwt=token)
+        claims = _json.loads(tok_obj.claims)
+    except Exception as err:
+        raise _HTTPException(status_code=401, detail="Invalid or expired token") from err
 
     # KC 26: roles in realm_access.roles; some mappers also put them in flat "roles" claim
     roles: list[str] = claims.get("realm_access", {}).get("roles", []) or claims.get("roles", [])
