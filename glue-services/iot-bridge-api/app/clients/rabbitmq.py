@@ -179,4 +179,5 @@ def _enc(value: str) -> str:
     RabbitMQ Management API requires ``%2F`` for the default ``/`` vHost.
     """
     from urllib.parse import quote
+
     return quote(value, safe="")

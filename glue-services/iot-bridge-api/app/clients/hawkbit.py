@@ -33,9 +33,7 @@ class HawkBitClient:
         if resp.status_code == 404:
             return None
         if not resp.is_success:
-            raise HawkBitError(
-                f"hawkBit GET target returned {resp.status_code}: {resp.text}"
-            )
+            raise HawkBitError(f"hawkBit GET target returned {resp.status_code}: {resp.text}")
         return resp.json()  # type: ignore[no-any-return]
 
     async def create_target(
@@ -78,9 +76,7 @@ class HawkBitClient:
 
         return target
 
-    async def _put_attributes(
-        self, controller_id: str, attributes: dict[str, str]
-    ) -> None:
+    async def _put_attributes(self, controller_id: str, attributes: dict[str, str]) -> None:
         """Attach key/value attributes to an existing target."""
         async with httpx.AsyncClient() as client:
             resp = await client.put(
@@ -90,6 +86,4 @@ class HawkBitClient:
                 timeout=10.0,
             )
         if not resp.is_success:
-            raise HawkBitError(
-                f"hawkBit PUT attributes returned {resp.status_code}: {resp.text}"
-            )
+            raise HawkBitError(f"hawkBit PUT attributes returned {resp.status_code}: {resp.text}")

@@ -84,6 +84,7 @@ async def _require_cdm_admin(request: Request) -> dict:
 
     token = auth[7:]
     from app.deps import get_settings as _get_settings
+
     settings = _get_settings()
 
     async with httpx.AsyncClient(verify=False) as http:
@@ -99,6 +100,7 @@ async def _require_cdm_admin(request: Request) -> dict:
     # extract them directly from the JWT payload (token already validated above).
     import base64 as _b64
     import json as _json
+
     try:
         payload_b64 = token.split(".")[1]
         payload_b64 += "=" * (4 - len(payload_b64) % 4)
@@ -107,10 +109,7 @@ async def _require_cdm_admin(request: Request) -> dict:
         raise _HTTPException(status_code=401, detail="Malformed token") from err
 
     # KC 26: roles in realm_access.roles; some mappers also put them in flat "roles" claim
-    roles: list[str] = (
-        claims.get("realm_access", {}).get("roles", [])
-        or claims.get("roles", [])
-    )
+    roles: list[str] = claims.get("realm_access", {}).get("roles", []) or claims.get("roles", [])
     if not (set(roles) & ADMIN_ROLES):
         raise _HTTPException(
             status_code=403,
@@ -259,9 +258,9 @@ async def _kc_create_realm(
         "bruteForceProtected": True,
         "roles": {
             "realm": [
-                {"name": "cdm-admin",    "description": "Tenant administrator"},
+                {"name": "cdm-admin", "description": "Tenant administrator"},
                 {"name": "cdm-operator", "description": "Fleet operator"},
-                {"name": "cdm-viewer",   "description": "Read-only access"},
+                {"name": "cdm-viewer", "description": "Read-only access"},
             ]
         },
         "clients": [
@@ -396,10 +395,7 @@ async def admin_dashboard(
         realms = await _kc_list_realms(kc_token, settings)
         # Filter out system realms
         system_realms = {"master"}
-        tenant_realms = [
-            r for r in realms
-            if r["realm"] not in system_realms
-        ]
+        tenant_realms = [r for r in realms if r["realm"] not in system_realms]
     except Exception as exc:
         logger.exception("Could not load Keycloak realms: %s", exc)
         tenant_realms = []
@@ -415,9 +411,7 @@ async def admin_dashboard(
     try:
         step_admin = _step_ca_admin(settings)
         provisioners = await step_admin.list_provisioners()
-        oidc_provisioner_names = {
-            p["name"] for p in provisioners if p.get("type") == "OIDC"
-        }
+        oidc_provisioner_names = {p["name"] for p in provisioners if p.get("type") == "OIDC"}
     except Exception as exc:
         logger.exception("Could not load step-ca provisioners: %s", exc)
         oidc_provisioner_names = set()
@@ -499,8 +493,7 @@ async def create_tenant(
         kc_token = await _kc_admin_token(settings)
         await _kc_create_realm(realm_id, display_name, kc_token, settings)
         await _kc_create_user(
-            realm_id, admin_user, admin_email, admin_password,
-            ["cdm-admin"], kc_token, settings
+            realm_id, admin_user, admin_email, admin_password, ["cdm-admin"], kc_token, settings
         )
         results["keycloak"] = "created"
     except Exception as exc:
@@ -519,19 +512,21 @@ async def create_tenant(
         logger.exception("RabbitMQ provisioning failed for '%s': %s", realm_id, exc)
         errors["rabbitmq"] = str(exc)
 
-    return JSONResponse({
-        "realm_id": realm_id,
-        "display_name": display_name,
-        "admin_user": admin_user,
-        "admin_email": admin_email,
-        "admin_password": admin_password,
-        "results": results,
-        "errors": errors,
-        "hint": (
-            "Save the admin_password — it will not be shown again. "
-            "The admin user must change it on first login (temporary=true)."
-        ),
-    })
+    return JSONResponse(
+        {
+            "realm_id": realm_id,
+            "display_name": display_name,
+            "admin_user": admin_user,
+            "admin_email": admin_email,
+            "admin_password": admin_password,
+            "results": results,
+            "errors": errors,
+            "hint": (
+                "Save the admin_password — it will not be shown again. "
+                "The admin user must change it on first login (temporary=true)."
+            ),
+        }
+    )
 
 
 @router.delete("/tenants/{realm_id}", name="admin_delete_tenant")
@@ -598,8 +593,7 @@ async def add_oidc_provisioner(
 
     # Build Keycloak OIDC discovery URL (internal URL for step-ca to resolve)
     configuration_endpoint = (
-        f"{settings.keycloak_url}/realms/{realm_id}"
-        f"/.well-known/openid-configuration"
+        f"{settings.keycloak_url}/realms/{realm_id}/.well-known/openid-configuration"
     )
     provisioner_name = f"{realm_id}-keycloak"
 
@@ -612,12 +606,14 @@ async def add_oidc_provisioner(
             configuration_endpoint=configuration_endpoint,
             admin_emails=admin_emails or None,
         )
-        return JSONResponse({
-            "realm_id": realm_id,
-            "provisioner_name": provisioner_name,
-            "configuration_endpoint": configuration_endpoint,
-            "result": result,
-        })
+        return JSONResponse(
+            {
+                "realm_id": realm_id,
+                "provisioner_name": provisioner_name,
+                "configuration_endpoint": configuration_endpoint,
+                "result": result,
+            }
+        )
     except StepCAError as exc:
         logger.exception("step-ca provisioner creation failed: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=502)

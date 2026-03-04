@@ -105,8 +105,8 @@ All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic
 > `roles` claim of the access token.  Grafana maps this claim to its internal role via
 > `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH`.
 
-**Admin console**: `/auth/admin/cdm/console/`  
-**Account portal**: `/auth/realms/cdm/account/`  
+**Admin console**: `/auth/admin/cdm/console/`
+**Account portal**: `/auth/realms/cdm/account/`
 **Template file**: `provider-stack/keycloak/realms/realm-cdm.json.tpl`
 
 ### 2.3 Tenant realms — Phase 2
@@ -137,7 +137,7 @@ All `redirectUris` and `webOrigins` are set to `*` (wildcard) to support dynamic
      `aud: account` in the access token; KC 26 validates `aud` strictly)
    - Adds `manage-account` and `view-profile` as composites of `default-roles-{realm}` so
      newly created users automatically receive the Account REST API roles
-   
+
    The subshell starts with `set +eu` to prevent the Keycloak `set -eu` entrypoint from
    terminating the retry loop on the first poll failure.
 
@@ -296,13 +296,13 @@ curl -sf -X POST -H "Authorization: Bearer $TOKEN" \
 
 ## 6. Adding a new realm
 
-1. Create `provider-stack/keycloak/realms/realm-<name>.json.tpl`  
+1. Create `provider-stack/keycloak/realms/realm-<name>.json.tpl`
    (copy `realm-cdm.json.tpl` as starting point)
-2. Add any new `${NEW_VAR}` password placeholders  
-3. Register them in `provider-stack/keycloak/docker-entrypoint.sh` as new `-e "s|${NEW_VAR}|...|g"` lines  
-4. Add the variables to `provider-stack/docker-compose.yml` under the `keycloak:` `environment:` block  
-5. Add them to `provider-stack/.env` and `provider-stack/.env.example`  
-6. Add the realm to `provider-stack/keycloak/init-tenants.sh` `MANAGED_REALMS` array  
+2. Add any new `${NEW_VAR}` password placeholders
+3. Register them in `provider-stack/keycloak/docker-entrypoint.sh` as new `-e "s|${NEW_VAR}|...|g"` lines
+4. Add the variables to `provider-stack/docker-compose.yml` under the `keycloak:` `environment:` block
+5. Add them to `provider-stack/.env` and `provider-stack/.env.example`
+6. Add the realm to `provider-stack/keycloak/init-tenants.sh` `MANAGED_REALMS` array
 7. Rebuild and restart:
    ```bash
    cd provider-stack

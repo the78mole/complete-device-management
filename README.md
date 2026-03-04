@@ -53,7 +53,7 @@ flowchart RL
       DA1 --> T1
       DA2 --> T1
    end
-   
+
    subgraph tg2[Tentant XYZ Robotics]
       T2[Tenant<br>Stack]
       DB1[Device B1]
@@ -330,7 +330,7 @@ then all other services start automatically.
 | pgAdmin | http://localhost:8888/pgadmin/ | admin / from `.env` |
 | step-ca | https://localhost:9000/health | — |
 
-> **Codespaces:** Replace `http://localhost:8888` with `https://<codespace-name>-8888.app.github.dev`  
+> **Codespaces:** Replace `http://localhost:8888` with `https://<codespace-name>-8888.app.github.dev`
 > (your `CODESPACE_NAME` appears in the terminal as part of the shell prompt; ports are listed in the VS Code **Ports** panel).
 
 ---

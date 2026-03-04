@@ -15,4 +15,3 @@ datasources:
       timescaledb: true
     isDefault: true
     editable: false
-

@@ -79,13 +79,9 @@ async def thingsboard_webhook(
     try:
         existing = await hawkbit.get_target(device_id)
     except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503, detail=f"hawkBit unreachable: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"hawkBit unreachable: {exc}") from exc
     except HawkBitError as exc:
-        raise HTTPException(
-            status_code=502, detail=f"hawkBit query failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"hawkBit query failed: {exc}") from exc
 
     if existing:
         logger.info("Device %s already provisioned in hawkBit – skipping.", device_id)
@@ -104,13 +100,9 @@ async def thingsboard_webhook(
             attributes={"device_type": device_type, "source": "thingsboard_webhook"},
         )
     except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503, detail=f"hawkBit unreachable: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"hawkBit unreachable: {exc}") from exc
     except HawkBitError as exc:
-        raise HTTPException(
-            status_code=502, detail=f"hawkBit provisioning failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"hawkBit provisioning failed: {exc}") from exc
 
     logger.info("Created hawkBit target for device %s.", device_id)
 
@@ -146,9 +138,7 @@ async def thingsboard_telemetry(
     """
     device_id = _extract_device_id(event)
     if not device_id:
-        logger.warning(
-            "Telemetry webhook received with no identifiable device_id: %s", event
-        )
+        logger.warning("Telemetry webhook received with no identifiable device_id: %s", event)
         return TelemetryWebhookResponse(
             status="ignored",
             reason="No device_id found in event metadata",

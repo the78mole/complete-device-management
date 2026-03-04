@@ -51,9 +51,7 @@ class TimescaleDBClient:
         user: str = "telegraf",
         password: str = "",
     ) -> None:
-        self._dsn = (
-            f"postgresql://{user}:{password}@{host}:{port}/{database}"
-        )
+        self._dsn = f"postgresql://{user}:{password}@{host}:{port}/{database}"
         self._pool: asyncpg.Pool | None = None
 
     async def _get_pool(self) -> asyncpg.Pool:
@@ -66,9 +64,7 @@ class TimescaleDBClient:
                     command_timeout=10,
                 )
             except Exception as exc:
-                raise TimescaleDBError(
-                    f"Failed to connect to TimescaleDB: {exc}"
-                ) from exc
+                raise TimescaleDBError(f"Failed to connect to TimescaleDB: {exc}") from exc
         return self._pool
 
     async def write_metrics(
@@ -117,9 +113,7 @@ class TimescaleDBClient:
             async with pool.acquire() as conn:
                 await conn.executemany(_INSERT_SQL, records)
         except asyncpg.PostgresError as exc:
-            raise TimescaleDBError(
-                f"TimescaleDB write failed: {exc}"
-            ) from exc
+            raise TimescaleDBError(f"TimescaleDB write failed: {exc}") from exc
 
     async def close(self) -> None:
         """Close the connection pool gracefully."""

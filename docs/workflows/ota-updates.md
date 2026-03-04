@@ -1,7 +1,7 @@
 # OTA Update Workflow
 
 !!! info "Phase 2 — Tenant-Stack"
-    hawkBit and RAUC update components are part of the **Tenant-Stack** (Phase 2).  
+    hawkBit and RAUC update components are part of the **Tenant-Stack** (Phase 2).
     See [Tenant-Stack Setup](../installation/tenant-stack.md) and
     [Tenant Onboarding](../use-cases/tenant-onboarding.md) for prerequisites.
 

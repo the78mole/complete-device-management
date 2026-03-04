@@ -75,6 +75,7 @@ router = APIRouter(prefix="/portal/admin", tags=["join"])
 # Join-request store helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def _get_request(tenant_id: str, settings: Settings) -> dict[str, Any]:
     """Return a single JOIN request by tenant_id, or raise 404."""
     store = await load_store(settings)
@@ -89,6 +90,7 @@ async def _get_request(tenant_id: str, settings: Settings) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Keycloak helpers (IdP federation)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def _kc_create_federation_client(
     tenant_id: str,
@@ -125,8 +127,7 @@ async def _kc_create_federation_client(
     #   {tenant_keycloak_url}/realms/{tenant_id}/broker/cdm-provider/endpoint
     if tenant_keycloak_url:
         broker_callback = (
-            f"{tenant_keycloak_url.rstrip('/')}/realms/{tenant_id}"
-            "/broker/cdm-provider/endpoint"
+            f"{tenant_keycloak_url.rstrip('/')}/realms/{tenant_id}/broker/cdm-provider/endpoint"
         )
         redirect_uris = [broker_callback, broker_callback + "/*"]
     else:
@@ -172,9 +173,7 @@ async def _kc_create_federation_client(
                 f" {resp.status_code}: {resp.text[:300]}"
             ),
         )
-    logger.info(
-        "Keycloak federation client '%s' created in Provider cdm realm.", client_id
-    )
+    logger.info("Keycloak federation client '%s' created in Provider cdm realm.", client_id)
     return client_id, client_secret
 
 
@@ -213,6 +212,7 @@ def _step_ca_client(settings: Settings) -> StepCAClient:
 # ─────────────────────────────────────────────────────────────────────────────
 # New key-based handshake endpoints
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/tenants/prepare",
@@ -323,8 +323,7 @@ async def _run_provisioning(
     cdm_idp_client_id = ""
     cdm_idp_client_secret = ""
     cdm_discovery_url = (
-        f"{settings.external_url.rstrip('/')}/auth/realms/cdm"
-        "/.well-known/openid-configuration"
+        f"{settings.external_url.rstrip('/')}/auth/realms/cdm/.well-known/openid-configuration"
     )
     try:
         token = await _kc_admin_token(settings)
@@ -392,7 +391,10 @@ async def join_handshake(
 
     logger.info(
         "JOIN handshake started for tenant '%s' (%s) using key %s…%s.",
-        tenant_id, display_name, join_key[:4], join_key[-4:],
+        tenant_id,
+        display_name,
+        join_key[:4],
+        join_key[-4:],
     )
 
     bundle = await _run_provisioning(tenant_id, display_name, payload, settings)
@@ -404,6 +406,7 @@ async def join_handshake(
 # ─────────────────────────────────────────────────────────────────────────────
 # Legacy approval-based endpoints (still supported)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/join-request/{tenant_id}",
@@ -604,8 +607,7 @@ async def approve_join_request(
     cdm_idp_client_id = ""
     cdm_idp_client_secret = ""
     cdm_discovery_url = (
-        f"{settings.external_url.rstrip('/')}/auth/realms/cdm"
-        "/.well-known/openid-configuration"
+        f"{settings.external_url.rstrip('/')}/auth/realms/cdm/.well-known/openid-configuration"
     )
     try:
         token = await _kc_admin_token(settings)
@@ -618,7 +620,8 @@ async def approve_join_request(
         results["keycloak_federation"] = "client_created"
         logger.info(
             "Keycloak federation client '%s' created for tenant '%s'.",
-            cdm_idp_client_id, tenant_id,
+            cdm_idp_client_id,
+            tenant_id,
         )
     except Exception as exc:  # noqa: BLE001
         errors["keycloak_federation"] = str(exc)

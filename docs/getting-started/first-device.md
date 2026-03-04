@@ -130,4 +130,3 @@ step ca revoke --cert device.crt --key device.key \
 Then delete the device in ThingsBoard and hawkBit.
 For escalated revocation (compromise of the Sub-CA), see
 [Security Incident Response](../use-cases/security-incident-response.md).
-

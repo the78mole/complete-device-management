@@ -17,4 +17,3 @@ datasources:
       schema: public
     isDefault: true
     editable: false
-

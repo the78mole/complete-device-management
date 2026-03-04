@@ -10,7 +10,7 @@ Built with [Yocto 5.0 LTS "scarthgap"](https://docs.yoctoproject.org/5.0/) using
 
 On first boot the `cdm-enroll.service` systemd unit runs `cdm-enroll.sh`, which generates an EC P-256 key pair, POSTs a CSR to the Tenant IoT Bridge API, and persists the signed certificate to `/var/lib/cdm/certs/`. Subsequent boots detect `/var/lib/cdm/.enrolled` and skip enrollment.
 
-> Full features (WireGuard, OTA, Telegraf) are intentionally out of scope.  
+> Full features (WireGuard, OTA, Telegraf) are intentionally out of scope.
 > See [`../docker-based/`](../docker-based/) for the complete feature set.
 
 ---

@@ -64,41 +64,28 @@ class StepCAClient:
             data: dict[str, Any] = resp.json()
 
         for prov in data.get("provisioners", []):
-            if (
-                prov.get("name") == self._provisioner_name
-                and prov.get("type") == "JWK"
-            ):
+            if prov.get("name") == self._provisioner_name and prov.get("type") == "JWK":
                 encrypted_key_str: str = prov.get("encryptedKey", "")
                 if not encrypted_key_str:
                     raise StepCAError(
                         f"Provisioner '{self._provisioner_name}' has no encryptedKey"
                     )
                 # Decrypt the JWE (PBES2-HS256+A128KW) using the provisioner password
-                password_key = jwk.JWK.from_password(
-                    self._provisioner_password.encode("utf-8")
-                )
+                password_key = jwk.JWK.from_password(self._provisioner_password.encode("utf-8"))
                 jwe_obj = JWE()
                 jwe_obj.deserialize(encrypted_key_str, password_key)
-                private_key_data: dict[str, Any] = json.loads(
-                    jwe_obj.payload.decode("utf-8")
-                )
+                private_key_data: dict[str, Any] = json.loads(jwe_obj.payload.decode("utf-8"))
                 self._signing_key = jwk.JWK(**private_key_data)
                 return self._signing_key
 
-        raise StepCAError(
-            f"JWK provisioner '{self._provisioner_name}' not found in step-ca"
-        )
+        raise StepCAError(f"JWK provisioner '{self._provisioner_name}' not found in step-ca")
 
     @staticmethod
     def _csr_fingerprint(csr_pem: str) -> str:
         """SHA-256 fingerprint of the CSR DER bytes (required in the OTT claims)."""
         csr = x509.load_pem_x509_csr(csr_pem.encode())
         der = csr.public_bytes(Encoding.DER)
-        return (
-            base64.urlsafe_b64encode(hashlib.sha256(der).digest())
-            .rstrip(b"=")
-            .decode()
-        )
+        return base64.urlsafe_b64encode(hashlib.sha256(der).digest()).rstrip(b"=").decode()
 
     async def _make_ott(self, subject: str, sans: list[str], csr_pem: str) -> str:
         """Build and sign a short-lived one-time token (OTT) for /1.0/sign."""
@@ -149,9 +136,7 @@ class StepCAClient:
                 timeout=30.0,
             )
             if not resp.is_success:
-                raise StepCAError(
-                    f"step-ca /1.0/sign returned {resp.status_code}: {resp.text}"
-                )
+                raise StepCAError(f"step-ca /1.0/sign returned {resp.status_code}: {resp.text}")
             data: dict[str, str] = resp.json()
 
         return data["crt"], data["ca"]
@@ -198,23 +183,16 @@ class StepCAAdminClient:
             data: dict[str, Any] = resp.json()
 
         for prov in data.get("provisioners", []):
-            if (
-                prov.get("name") == self._admin_provisioner
-                and prov.get("type") == "JWK"
-            ):
+            if prov.get("name") == self._admin_provisioner and prov.get("type") == "JWK":
                 encrypted_key_str: str = prov.get("encryptedKey", "")
                 if not encrypted_key_str:
                     raise StepCAError(
                         f"Admin provisioner '{self._admin_provisioner}' has no encryptedKey"
                     )
-                password_key = jwk.JWK.from_password(
-                    self._admin_password.encode("utf-8")
-                )
+                password_key = jwk.JWK.from_password(self._admin_password.encode("utf-8"))
                 jwe_obj = JWE()
                 jwe_obj.deserialize(encrypted_key_str, password_key)
-                private_key_data: dict[str, Any] = json.loads(
-                    jwe_obj.payload.decode("utf-8")
-                )
+                private_key_data: dict[str, Any] = json.loads(jwe_obj.payload.decode("utf-8"))
                 self._admin_key = jwk.JWK(**private_key_data)
                 return self._admin_key
 
@@ -364,18 +342,12 @@ class StepCAAdminClient:
                 break
 
         if sub_ca_key is None:
-            raise StepCAError(
-                f"JWK provisioner '{sub_ca_provisioner_name}' not found in step-ca"
-            )
+            raise StepCAError(f"JWK provisioner '{sub_ca_provisioner_name}' not found in step-ca")
 
         # ── 2. Compute CSR fingerprint (binds OTT to this specific CSR) ───────
         csr = x509.load_pem_x509_csr(csr_pem.encode())
         der = csr.public_bytes(Encoding.DER)
-        csr_sha = (
-            base64.urlsafe_b64encode(hashlib.sha256(der).digest())
-            .rstrip(b"=")
-            .decode()
-        )
+        csr_sha = base64.urlsafe_b64encode(hashlib.sha256(der).digest()).rstrip(b"=").decode()
 
         # ── 3. Build OTT using the sub-CA provisioner key ─────────────────────
         now = int(time.time())
@@ -404,10 +376,7 @@ class StepCAAdminClient:
                 timeout=30.0,
             )
             if not resp.is_success:
-                raise StepCAError(
-                    f"step-ca sub-CA sign returned {resp.status_code}: {resp.text}"
-                )
+                raise StepCAError(f"step-ca sub-CA sign returned {resp.status_code}: {resp.text}")
             result: dict[str, str] = resp.json()
 
         return result["crt"], result["ca"]
-

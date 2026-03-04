@@ -5,7 +5,7 @@ endpoints, and at what permission level.
 
 !!! tip "Keep this page up to date"
     The [Role-Based Access Matrix](#role-based-access-matrix) is derived from the realm
-    template and does not change unless you edit `realm-cdm.json.tpl`.  
+    template and does not change unless you edit `realm-cdm.json.tpl`.
     The [Current User Assignments](#current-user-assignments) section shows users as they
     exist in a running deployment and can be regenerated at any time:
 

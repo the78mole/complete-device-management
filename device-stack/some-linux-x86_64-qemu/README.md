@@ -4,7 +4,7 @@ A minimal **Linux on x86\_64** device implementation running inside **QEMU**, co
 
 The device image is built with [Buildroot](https://buildroot.org/) targeting a generic x86\_64 VM (QEMU `-M pc`). The result is a small `bzImage` + `rootfs.cpio.gz` initramfs that runs the CDM enrollment script on first boot and then connects to ThingsBoard via mTLS MQTT.
 
-> Full features (WireGuard, OTA, Telegraf) are intentionally out of scope.  
+> Full features (WireGuard, OTA, Telegraf) are intentionally out of scope.
 > See [`../docker-based/`](../docker-based/) for the complete feature set.
 
 ## Repository Structure

@@ -26,8 +26,8 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=_settings.portal_session_secret,
     session_cookie="cdm_portal_session",
-    max_age=3600,        # 1 h
-    https_only=False,    # set True in production behind TLS
+    max_age=3600,  # 1 h
+    https_only=False,  # set True in production behind TLS
     same_site="lax",
 )
 

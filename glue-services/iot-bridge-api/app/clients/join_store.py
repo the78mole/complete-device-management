@@ -6,7 +6,7 @@ approve/reject calls cannot corrupt the file.
 
 Structure::
 
-    {                                                                                               
+    {
         "<tenant_id>": {
             "tenant_id":       "...",
             "display_name":    "...",

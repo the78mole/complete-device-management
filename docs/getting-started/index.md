@@ -88,4 +88,3 @@ All other device containers start automatically once enrollment succeeds.
 - [Enroll Your First Device (detailed)](first-device.md) — understand every step of the enrollment flow.
 - [Trigger Your First OTA Update](first-ota-update.md) — deploy a firmware bundle via hawkBit.
 - [Remote Access](../workflows/remote-access.md) — open a browser terminal on your device.
-

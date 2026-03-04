@@ -99,7 +99,10 @@
     },
     "ghcr.io/the78mole/devcontainer-features/uv": {},
     "ghcr.io/devcontainers/features/python:1": {
-      "toolsToInstall": "flake8,autopep8,black,yapf,mypy,pydocstyle,pycodestyle,bandit,pipenv,virtualenv,pytest,pylint,ruff",
+      "toolsToInstall": "flake8,autopep8,black,yapf,mypy,pydocstyle,pycodestyle,bandit,pipenv,virtualenv,pytest,pylint,ruff,pre-commit",
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24"
     },
     "ghcr.io/devcontainers/features/github-cli:1": {
       "extensions": "the78mole/gh-moles"
@@ -116,7 +119,7 @@
   },
 
   // Fix Git "unsafe/dubious ownership" for the mounted workspace
-  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && pre-commit install",
 
   "remoteUser": "vscode",
   "customizations": {

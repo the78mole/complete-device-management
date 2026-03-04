@@ -38,7 +38,7 @@ via the JOIN workflow after the Provider-Stack is running.
 
 ### Path C — Device-Stack
 
-Simulates an IoT edge device (bootstrap, MQTT telemetry, OTA updater, WireGuard client).  
+Simulates an IoT edge device (bootstrap, MQTT telemetry, OTA updater, WireGuard client).
 Requires a running Tenant-Stack.
 
 → [Device-Stack Setup](device-stack.md)

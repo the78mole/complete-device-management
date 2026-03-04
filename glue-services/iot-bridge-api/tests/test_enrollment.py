@@ -14,9 +14,7 @@ from tests.conftest import FAKE_CA_CHAIN_PEM, FAKE_CERT_PEM, make_test_csr
 # ── Happy path ────────────────────────────────────────────────────────────────
 
 
-def test_enroll_returns_200_with_all_fields(
-    test_client: TestClient, csr_pem: str
-) -> None:
+def test_enroll_returns_200_with_all_fields(test_client: TestClient, csr_pem: str) -> None:
     resp = test_client.post(
         "/devices/dev-001/enroll",
         json={
@@ -35,9 +33,7 @@ def test_enroll_returns_200_with_all_fields(
     assert "[Peer]" in data["wireguard_config"]
 
 
-def test_enroll_without_wg_public_key(
-    test_client: TestClient, csr_pem: str
-) -> None:
+def test_enroll_without_wg_public_key(test_client: TestClient, csr_pem: str) -> None:
     """wg_public_key is optional; endpoint should succeed without it."""
     resp = test_client.post(
         "/devices/dev-002/enroll",
@@ -53,26 +49,16 @@ def test_enroll_allocates_sequential_ips(
     """Different device IDs must receive different IPs."""
     csr1 = make_test_csr("device-a")
     csr2 = make_test_csr("device-b")
-    r1 = test_client.post(
-        "/devices/dev-a/enroll", json={"csr": csr1, "device_name": "A"}
-    )
-    r2 = test_client.post(
-        "/devices/dev-b/enroll", json={"csr": csr2, "device_name": "B"}
-    )
+    r1 = test_client.post("/devices/dev-a/enroll", json={"csr": csr1, "device_name": "A"})
+    r2 = test_client.post("/devices/dev-b/enroll", json={"csr": csr2, "device_name": "B"})
     assert r1.status_code == r2.status_code == 200
     assert r1.json()["wireguard_ip"] != r2.json()["wireguard_ip"]
 
 
-def test_enroll_is_idempotent_for_same_device(
-    test_client: TestClient, csr_pem: str
-) -> None:
+def test_enroll_is_idempotent_for_same_device(test_client: TestClient, csr_pem: str) -> None:
     """Re-enrolling the same device_id must return the same WireGuard IP."""
-    r1 = test_client.post(
-        "/devices/dev-repeat/enroll", json={"csr": csr_pem, "device_name": "R"}
-    )
-    r2 = test_client.post(
-        "/devices/dev-repeat/enroll", json={"csr": csr_pem, "device_name": "R"}
-    )
+    r1 = test_client.post("/devices/dev-repeat/enroll", json={"csr": csr_pem, "device_name": "R"})
+    r2 = test_client.post("/devices/dev-repeat/enroll", json={"csr": csr_pem, "device_name": "R"})
     assert r1.status_code == r2.status_code == 200
     assert r1.json()["wireguard_ip"] == r2.json()["wireguard_ip"]
 

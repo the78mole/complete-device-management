@@ -47,8 +47,7 @@ _NUM_GROUPS = 4
 def generate_join_key() -> str:
     """Generate a cryptographically secure JOIN key in XXXX-YYYY-ZZZZ-WWWW format."""
     groups = [
-        "".join(secrets.choice(_ALPHABET) for _ in range(_GROUP_LEN))
-        for _ in range(_NUM_GROUPS)
+        "".join(secrets.choice(_ALPHABET) for _ in range(_GROUP_LEN)) for _ in range(_NUM_GROUPS)
     ]
     return "-".join(groups)
 
@@ -114,9 +113,7 @@ async def validate_and_consume(key: str, settings: Settings) -> dict[str, Any]:
         raise KeyError(f"JOIN key not found: {key!r}")
 
     if entry["status"] != "open":
-        raise ValueError(
-            f"JOIN key is {entry['status']!r} – each key may only be used once."
-        )
+        raise ValueError(f"JOIN key is {entry['status']!r} – each key may only be used once.")
 
     expires_at = datetime.fromisoformat(entry["expires_at"])
     if datetime.now(UTC) > expires_at:

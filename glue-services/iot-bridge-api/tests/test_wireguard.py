@@ -60,9 +60,7 @@ def test_allocations_persisted_across_instances(
     assert wg2.allocate_ip("device-persist") == ip
 
 
-def test_peers_json_written_correctly(
-    wg: WireGuardConfig, tmp_path: Path
-) -> None:
+def test_peers_json_written_correctly(wg: WireGuardConfig, tmp_path: Path) -> None:
     wg.allocate_ip("dev-a")
     wg.allocate_ip("dev-b")
     peers_file = tmp_path / "cdm_peers.json"

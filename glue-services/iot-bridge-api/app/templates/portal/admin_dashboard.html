@@ -560,7 +560,7 @@
         var rmqOk = data.results && data.results.rabbitmq;
         log(rmqOk
           ? 'RabbitMQ vHost "' + realmId + '" erstellt.'
-          : 'RabbitMQ: ' + JSON.stringify(data.errors && data.errors.rabbitmq), 
+          : 'RabbitMQ: ' + JSON.stringify(data.errors && data.errors.rabbitmq),
           rmqOk ? '#4ade80' : '#f85149');
         if (rmqOk) setTimeout(() => location.reload(), 1500);
       } catch(e) {

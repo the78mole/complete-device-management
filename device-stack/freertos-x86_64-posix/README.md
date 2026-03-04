@@ -7,7 +7,7 @@ This variant covers the **minimum viable CDM device implementation**:
 1. **Enrollment** — generate an EC P-256 key pair, create a PKCS#10 CSR, POST it to the Tenant IoT Bridge API, and persist the signed certificate + CA chain.
 2. **mTLS MQTT** — connect to the Tenant ThingsBoard MQTT broker using the issued device certificate.
 
-> Full features (WireGuard, OTA, Telegraf) are intentionally out of scope.  
+> Full features (WireGuard, OTA, Telegraf) are intentionally out of scope.
 > See [`../docker-based/`](../docker-based/) for the complete feature set.
 
 ## Repository Structure

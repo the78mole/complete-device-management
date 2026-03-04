@@ -43,9 +43,9 @@ templates = Jinja2Templates(directory="app/templates")
 
 # ── Role definitions ─────────────────────────────────────────────────────────
 
-ADMIN_ROLES    = {"cdm-admin", "platform-admin"}
+ADMIN_ROLES = {"cdm-admin", "platform-admin"}
 OPERATOR_ROLES = {"cdm-operator", "platform-operator"}
-VIEWER_ROLES   = {"cdm-viewer"}
+VIEWER_ROLES = {"cdm-viewer"}
 
 
 def _parse_tenants(settings: Settings) -> dict:
@@ -74,12 +74,11 @@ def _decode_jwt_payload(token: str) -> dict:
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+
 @router.get("/", response_class=HTMLResponse, name="portal_select")
 async def portal_select(request: Request):
     """Tenant selection page — no tenant list is exposed."""
-    return templates.TemplateResponse(
-        request, "portal/tenant_select.html", {}
-    )
+    return templates.TemplateResponse(request, "portal/tenant_select.html", {})
 
 
 @router.post("/login", name="portal_login")
@@ -133,8 +132,8 @@ async def portal_login(
     # cookie limit and gets silently truncated → state mismatch on callback.
     request.session.clear()
 
-    request.session["oauth_state"]  = state
-    request.session["oauth_nonce"]  = nonce
+    request.session["oauth_state"] = state
+    request.session["oauth_nonce"] = nonce
     request.session["oauth_tenant"] = tenant_id
 
     auth_url = (
@@ -179,7 +178,7 @@ async def portal_callback(
         )
 
     stored_state = request.session.get("oauth_state")
-    tenant_id    = request.session.get("oauth_tenant")
+    tenant_id = request.session.get("oauth_tenant")
 
     if not code or not state or state != stored_state or not tenant_id:
         return templates.TemplateResponse(
@@ -198,10 +197,10 @@ async def portal_callback(
         resp = await client.post(
             token_url,
             data={
-                "grant_type":    "authorization_code",
-                "code":          code,
-                "redirect_uri":  _callback_uri(settings),
-                "client_id":     "portal",
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": _callback_uri(settings),
+                "client_id": "portal",
                 "client_secret": settings.portal_oidc_secret,
             },
         )
@@ -215,27 +214,25 @@ async def portal_callback(
             status_code=502,
         )
 
-    token_data  = resp.json()
+    token_data = resp.json()
     access_token = token_data.get("access_token", "")
-    id_token     = token_data.get("id_token", "")
+    id_token = token_data.get("id_token", "")
 
     payload = _decode_jwt_payload(access_token)
-    roles   = payload.get("realm_access", {}).get("roles", [])
-    cdm_roles = [r for r in roles if r in (
-        ADMIN_ROLES | OPERATOR_ROLES | VIEWER_ROLES
-    )]
+    roles = payload.get("realm_access", {}).get("roles", [])
+    cdm_roles = [r for r in roles if r in (ADMIN_ROLES | OPERATOR_ROLES | VIEWER_ROLES)]
 
     tenants = _parse_tenants(settings)
 
     request.session["user"] = {
-        "sub":                payload.get("sub", ""),
-        "name":               payload.get("name") or payload.get("preferred_username", ""),
+        "sub": payload.get("sub", ""),
+        "name": payload.get("name") or payload.get("preferred_username", ""),
         "preferred_username": payload.get("preferred_username", ""),
-        "email":              payload.get("email", ""),
-        "realm":              tenant_id,
-        "tenant_name":        tenants.get(tenant_id, {}).get("name", tenant_id),
-        "roles":              cdm_roles,
-        "id_token":           id_token,   # kept for Keycloak RP-initiated logout
+        "email": payload.get("email", ""),
+        "realm": tenant_id,
+        "tenant_name": tenants.get(tenant_id, {}).get("name", tenant_id),
+        "roles": cdm_roles,
+        "id_token": id_token,  # kept for Keycloak RP-initiated logout
     }
 
     # Clean up auth session data
@@ -273,11 +270,11 @@ async def portal_dashboard(
         request,
         "portal/dashboard.html",
         {
-            "user":             user,
-            "effective_role":   effective_role,
-            "realm":            realm,
+            "user": user,
+            "effective_role": effective_role,
+            "realm": realm,
             # Pass external_url so JS buildPortUrl can be initialised server-side
-            "external_url":     settings.external_url,
+            "external_url": settings.external_url,
             "keycloak_admin_url": f"{settings.external_url}/auth/admin/{realm}/console/",
         },
     )
@@ -289,8 +286,8 @@ async def portal_logout(
     settings: Settings = Depends(get_settings),
 ):
     """Clear session and perform Keycloak RP-initiated logout."""
-    user     = request.session.get("user", {})
-    realm    = user.get("realm", "cdm")
+    user = request.session.get("user", {})
+    realm = user.get("realm", "cdm")
     id_token = user.get("id_token", "")
 
     request.session.clear()

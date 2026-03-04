@@ -442,7 +442,7 @@ services:
       EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
       PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
       PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-change-this-portal-session-secret}
-      PORTAL_TENANTS_JSON: '${PORTAL_TENANTS_JSON:-{"cdm":{"name":"CDM Platform"}}}' 
+      PORTAL_TENANTS_JSON: '${PORTAL_TENANTS_JSON:-{"cdm":{"name":"CDM Platform"}}}'
       RABBITMQ_MGMT_URL: http://rabbitmq:15672
       RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
       RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:-changeme}

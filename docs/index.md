@@ -52,19 +52,19 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 
 <div class="grid cards" markdown>
 
-- :material-download: **[Installation](installation/index.md)**  
+- :material-download: **[Installation](installation/index.md)**
   Set up the Provider-Stack, Tenant-Stack, or Device-Stack.
 
-- :material-rocket-launch: **[Getting Started](getting-started/index.md)**  
+- :material-rocket-launch: **[Getting Started](getting-started/index.md)**
   Start the Provider-Stack and enroll your first device in minutes.
 
-- :material-sitemap: **[Architecture](architecture/index.md)**  
+- :material-sitemap: **[Architecture](architecture/index.md)**
   Understand the two-stack topology, trust chains, and data flows.
 
-- :material-cog-transfer: **[Workflows](workflows/device-provisioning.md)**  
+- :material-cog-transfer: **[Workflows](workflows/device-provisioning.md)**
   Detailed runbooks for provisioning, OTA, remote access, and monitoring.
 
-- :material-lightbulb: **[Use Cases](use-cases/index.md)**  
+- :material-lightbulb: **[Use Cases](use-cases/index.md)**
   Real-world scenarios including tenant onboarding, fleet management, and incident response.
 
 </div>
@@ -118,19 +118,19 @@ The Provider-Stack is the trust anchor for the entire platform: it hosts the Roo
 
 <div class="grid cards" markdown>
 
-- :material-download: **[Installation](installation/index.md)**  
+- :material-download: **[Installation](installation/index.md)**
   Prerequisites and step-by-step setup for cloud infrastructure and edge devices.
 
-- :material-rocket-launch: **[Getting Started](getting-started/index.md)**  
+- :material-rocket-launch: **[Getting Started](getting-started/index.md)**
   Enroll your first device and trigger your first OTA update in minutes.
 
-- :material-sitemap: **[Architecture](architecture/index.md)**  
+- :material-sitemap: **[Architecture](architecture/index.md)**
   Understand how all components fit together, trust chains, and data flows.
 
-- :material-cog-transfer: **[Workflows](workflows/device-provisioning.md)**  
+- :material-cog-transfer: **[Workflows](workflows/device-provisioning.md)**
   Detailed runbooks for provisioning, OTA, remote access, and monitoring.
 
-- :material-lightbulb: **[Use Cases](use-cases/index.md)**  
+- :material-lightbulb: **[Use Cases](use-cases/index.md)**
   Real-world scenarios including fleet management and incident response.
 
 </div>

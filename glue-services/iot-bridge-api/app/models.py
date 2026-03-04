@@ -28,6 +28,7 @@ class EnrollmentResponse(BaseModel):
 
 # ── ThingsBoard webhook ───────────────────────────────────────────────────────
 
+
 class ThingsboardWebhookEvent(BaseModel):
     """
     Generic ThingsBoard Rule Engine HTTP webhook payload.
@@ -57,6 +58,7 @@ class TelemetryWebhookResponse(BaseModel):
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
+
 
 class HealthResponse(BaseModel):
     status: str = "ok"
@@ -90,7 +92,7 @@ class TenantPrepareResponse(BaseModel):
     join_key: str = Field(
         ...,
         description="Single-use JOIN key in XXXX-YYYY-ZZZZ-WWWW format. "
-                    "Set as JOIN_KEY env var in the Tenant-Stack .env.",
+        "Set as JOIN_KEY env var in the Tenant-Stack .env.",
     )
     expires_at: str = Field(..., description="ISO8601 expiry (7 days from now)")
     hint: str = (
@@ -148,7 +150,10 @@ class JoinRequestPayload(BaseModel):
     )
     sub_ca_csr: str = Field(..., description="PEM-encoded PKCS#10 CSR for the Tenant Sub-CA")
     wg_pubkey: str = Field(..., description="WireGuard server public key of the Tenant-Stack")
-    keycloak_url: str = Field("", description="External Keycloak URL of the Tenant-Stack (e.g. https://tenant.example.com/auth)")
+    keycloak_url: str = Field(
+        "",
+        description="External Keycloak URL of the Tenant-Stack (e.g. https://tenant.example.com/auth)",
+    )
     mqtt_bridge_csr: str = Field(
         "", description="PEM-encoded PKCS#10 CSR for the Tenant MQTT bridge cert (mTLS auth)"
     )
@@ -160,6 +165,7 @@ class JoinApproveRequest(BaseModel):
 
 class JoinRejectRequest(BaseModel):
     """Body for the reject endpoint."""
+
     reason: str = Field("", description="Human-readable rejection reason shown to the tenant")
 
 
