@@ -9,9 +9,11 @@
 #   bash scripts/kc-force-logout.sh REALM USERNAME [USERNAME …] [-- BASE_URL]
 #
 # Examples:
-#   bash scripts/kc-force-logout.sh tenant1 alice
-#   bash scripts/kc-force-logout.sh tenant1 alice bob carol
+#   bash scripts/kc-force-logout.sh cdm cdm-admin
+#   bash scripts/kc-force-logout.sh cdm cdm-admin cdm-operator
 #   bash scripts/kc-force-logout.sh cdm cdm-admin -- https://host-8888.app.github.dev
+#   # Tenant-Stack:
+#   bash scripts/kc-force-logout.sh <tenant-realm> <username> -- http://<tenant-host>:8888
 #
 # Arguments:
 #   $1          Realm name

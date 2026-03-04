@@ -4,8 +4,7 @@ from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.deps import get_settings
-from app.routers import enrollment, health, webhooks
-from app.routers import portal, admin_portal
+from app.routers import admin_portal, enrollment, health, join, portal, webhooks
 
 _settings = get_settings()
 
@@ -27,8 +26,8 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=_settings.portal_session_secret,
     session_cookie="cdm_portal_session",
-    max_age=3600,        # 1 h
-    https_only=False,    # set True in production behind TLS
+    max_age=3600,  # 1 h
+    https_only=False,  # set True in production behind TLS
     same_site="lax",
 )
 
@@ -37,3 +36,4 @@ app.include_router(enrollment.router)
 app.include_router(webhooks.router)
 app.include_router(portal.router)
 app.include_router(admin_portal.router)
+app.include_router(join.router)

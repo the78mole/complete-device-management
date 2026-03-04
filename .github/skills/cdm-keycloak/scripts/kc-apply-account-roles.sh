@@ -16,18 +16,22 @@
 #
 # Examples:
 #   bash scripts/kc-apply-account-roles.sh
-#   bash scripts/kc-apply-account-roles.sh http://localhost:8888 tenant1 cdm
+#   bash scripts/kc-apply-account-roles.sh http://localhost:8888 cdm provider
 #   bash scripts/kc-apply-account-roles.sh https://host-8888.app.github.dev
+#   # Tenant-Stack (provide its base URL and realm name explicitly):
+#   bash scripts/kc-apply-account-roles.sh http://<tenant-host>:8888 <tenant-realm>
 #
 # Arguments:
 #   $1         Base URL (default: http://localhost:8888)
-#   $2 … $N   Realm names (default: master cdm provider tenant1 tenant2)
+#   $2 … $N   Realm names (default: master cdm provider)
 
 set -euo pipefail
 
 BASE_URL="${1:-http://localhost:8888}"
 shift || true
-REALMS="${*:-master cdm provider tenant1 tenant2}"
+# Provider-stack manages only 'cdm' and 'provider'.
+# Tenant realms live in per-tenant tenant-stack instances (Phase 2).
+REALMS="${*:-master cdm provider}"
 
 TOKEN=$(bash "$(dirname "$0")/kc-token.sh" "$BASE_URL")
 

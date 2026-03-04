@@ -6,8 +6,8 @@ The device stack simulates a Linux IoT device using Docker Compose. It models th
 
 ## Prerequisites
 
-- The [cloud infrastructure](cloud-infrastructure.md) must be running and healthy.
-- The `root_ca.crt` exported from step-ca must be available (see the cloud setup guide).
+- Either a [Provider-Stack](provider-stack.md) or a [Tenant-Stack](tenant-stack.md) must be running and healthy.
+- The `root_ca.crt` exported from the Tenant step-ca must be available (see the Tenant-Stack setup guide).
 - Docker and Docker Compose installed on the device (or simulation host).
 
 ---
@@ -29,8 +29,8 @@ Key variables to set:
 | `STEP_CA_FINGERPRINT` | SHA-256 fingerprint of the Root CA — get it with `step certificate fingerprint root_ca.crt` |
 | `TB_MQTT_HOST` | ThingsBoard MQTT host |
 | `HAWKBIT_URL` | hawkBit server URL |
-| `INFLUXDB_URL` | InfluxDB URL for Telegraf |
-| `INFLUXDB_TOKEN` | InfluxDB write token |
+| `TSDB_URL` | TimescaleDB (PostgreSQL) URL for Telegraf |
+| `TSDB_TOKEN` | TimescaleDB write credential for Telegraf |
 
 ---
 
@@ -46,7 +46,7 @@ docker compose up
 2. All other services start only after `bootstrap` completes successfully.
 3. **wireguard-client** — applies the WireGuard config and establishes a tunnel to the cloud.
 4. **mqtt-client** — publishes simulated telemetry to ThingsBoard using mTLS.
-5. **telegraf** — streams CPU/memory/disk metrics to InfluxDB.
+5. **telegraf** — streams CPU/memory/disk metrics to TimescaleDB.
 6. **rauc-hawkbit-updater** — polls hawkBit DDI API and simulates RAUC A/B updates.
 7. **ttyd** — exposes a web terminal on the WireGuard VPN IP, accessible via the terminal-proxy.
 

@@ -1,0 +1,366 @@
+{
+  "title": "Provider: System Monitor",
+  "uid": "provider-system-monitor",
+  "description": "Host CPU load and RAM published by the system-monitor container via MQTT -> Telegraf -> TimescaleDB.",
+  "tags": [
+    "provider",
+    "system"
+  ],
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "fiscalYearStartMonth": 0,
+  "links": [],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "CPU",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "CPU Load Average",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb-provider"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb-provider"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT time AS \"time\", cpu_load_1m AS \"1m\", cpu_load_5m AS \"5m\", cpu_load_15m AS \"15m\" FROM provider_system WHERE $__timeFilter(time) ORDER BY time",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "CPU Load 1m - aktuell",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb-provider"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "min": 0,
+          "max": 10,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 4
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb-provider"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT time AS \"time\", cpu_load_1m AS \"CPU Load 1m\" FROM provider_system WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 1",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "Memory",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "RAM Auslastung",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb-provider"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb-provider"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT time AS \"time\", mem_used_percent AS \"RAM used %\" FROM provider_system WHERE $__timeFilter(time) ORDER BY time",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "gauge",
+      "title": "RAM used % - aktuell",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb-provider"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb-provider"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT time AS \"time\", mem_used_percent AS \"RAM used %\" FROM provider_system WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 1",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "RAM - Total / Used / Free",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 14
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "timescaledb-provider"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "vertical",
+        "textMode": "auto",
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "timescaledb-provider"
+          },
+          "rawQuery": true,
+          "rawSql": "SELECT time AS \"time\", mem_total_kb * 1024 AS \"Total\", mem_used_kb * 1024 AS \"Used\", mem_available_kb * 1024 AS \"Available\" FROM provider_system WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 1",
+          "format": "time_series"
+        }
+      ]
+    }
+  ]
+}

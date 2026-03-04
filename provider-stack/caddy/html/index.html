@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM Provider Stack – Service Overview</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+  <style>
+    body {
+      background-color: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+    .hero {
+      background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+      border-bottom: 1px solid #30363d;
+      padding: 2.5rem 0 2rem;
+    }
+    .hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .hero .badge-version {
+      font-size: 0.7rem;
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      vertical-align: middle;
+    }
+    .service-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+    .service-card:hover {
+      border-color: #58a6ff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(88, 166, 255, 0.12);
+    }
+    .service-card .icon {
+      font-size: 2rem;
+      line-height: 1;
+    }
+    .service-card h5 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 0;
+    }
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.25rem;
+    }
+    .realm-tag {
+      display: inline-block;
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      padding: 0.1rem 0.42rem;
+      border-radius: 4px;
+      line-height: 1.5;
+      vertical-align: middle;
+    }
+    .realm-cdm  { background: #1f4a8e; color: #79b8ff; border: 1px solid #388bfd44; }
+    .realm-prov { background: #4a2a00; color: #f0c060; border: 1px solid #d29922aa; }
+    .realm-pki  { background: #1a3a2a; color: #56d364; border: 1px solid #2ea04344; }
+    .service-card p {
+      font-size: 0.8rem;
+      color: #8b949e;
+      margin-bottom: 0;
+    }
+    .btn-service {
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      padding: 0.35rem 0.85rem;
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    .section-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #8b949e;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    footer {
+      border-top: 1px solid #21262d;
+      font-size: 0.78rem;
+      color: #484f58;
+    }
+    a.service-link { text-decoration: none; color: inherit; }
+    a.service-link:hover { color: inherit; }
+    /* ── Health-Dot ─────────────────────────────────────────── */
+    .health-dot {
+      font-size: 1.1rem;
+      color: #484f58;        /* grau = prüft noch */
+      transition: color 0.4s;
+    }
+    .health-dot.up   { color: #3fb950; }   /* grün  */
+    .health-dot.slow { color: #d29922; }   /* gelb  */
+    .health-dot.down { color: #f85149; }   /* rot   */
+    /* ── Realm-Table ────────────────────────────────────────── */
+    .realm-table { border-color: #30363d !important; }
+    .realm-table th,
+    .realm-table td { border-color: #30363d !important; background: transparent; }
+    .realm-table thead th {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #8b949e;
+    }
+    /* ── Realm Session Boxes ──────────────────────────────── */
+    .realm-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      white-space: nowrap;
+      min-width: 9rem;
+    }
+    .realm-box .btn-sess {
+      font-size: 0.73rem;
+      padding: 0.18rem 0.6rem;
+      border-radius: 5px;
+    }
+    .realm-box .user-roles-small {
+      font-size: 0.68rem;
+      color: #8b949e;
+      max-width: 10rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Hero ───────────────────────────────────────────────── -->
+  <div class="hero">
+    <div class="container">
+      <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+        <div class="d-flex align-items-center gap-3 mb-1">
+          <span style="font-size:2.6rem">🏗️</span>
+          <div>
+            <h1 class="mb-0">
+              CDM Provider Stack
+              <span class="badge badge-version ms-2">Platform Infrastructure</span>
+            </h1>
+            <p class="mt-1 mb-0" style="color:#8b949e; font-size:0.9rem">
+              Core platform services — PKI, identity, messaging, monitoring &amp; management API
+            </p>
+          </div>
+        </div>
+        <!-- ── Session / Login (per realm) ───────────────── -->
+        <div id="session-bar" class="d-flex gap-2 mt-1 flex-shrink-0 flex-wrap">
+          <div id="realm-box-cdm" class="realm-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Services ───────────────────────────────────────────── -->
+  <div class="container py-4">
+
+    <!-- Management UIs -->
+    <div class="section-label">Management UIs</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/grafana/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">📊</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>Grafana</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <p class="mb-2">Platform metrics, service health dashboards &amp; alerting</p>
+              <span class="btn btn-warning btn-service text-dark">Open UI →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/auth/admin/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🔑</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>Keycloak</h5><span class="realm-tag realm-cdm">CDM</span><span class="realm-tag realm-prov">PROV</span></div>
+              <p class="mb-2">Identity &amp; access management, SSO, OIDC clients</p>
+              <span class="btn btn-danger btn-service">Admin Console →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/access-roles.html">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">👥</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>User × Role Matrix</h5><span class="realm-tag realm-cdm">CDM</span><span class="realm-tag realm-prov">PROV</span></div>
+              <p class="mb-2">Live Keycloak user list with role assignments across both realms</p>
+              <span class="btn btn-outline-light btn-service">Open Matrix →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/rabbitmq/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🐇</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>RabbitMQ</h5><span class="realm-tag realm-prov">PROV</span></div>
+              <p class="mb-2">AMQP broker — vHost-per-tenant, queues &amp; consumer stats</p>
+              <span class="btn btn-outline-warning btn-service">Management UI →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    <!-- Developer APIs -->
+    <div class="section-label">Developer APIs &amp; Tools</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/api/portal/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🏠</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>Tenant Portal</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <p class="mb-2">Platform login &amp; role-based service dashboard</p>
+              <span class="btn btn-primary btn-service">Portal öffnen →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/api/docs">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🔌</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>IoT Bridge API</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <p class="mb-2">Device enrollment, provisioning &amp; platform management</p>
+              <span class="btn btn-info btn-service text-dark">Swagger UI →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/api/redoc">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">📄</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>IoT Bridge API – ReDoc</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <p class="mb-2">Rendered API reference with request/response schemas</p>
+              <span class="btn btn-secondary btn-service">ReDoc →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    <!-- Infrastructure & Ops -->
+    <div class="section-label">Infrastructure &amp; Ops</div>
+    <div class="row g-3 mb-4">
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/pgadmin/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🐘</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>pgAdmin</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <p class="mb-2">TimescaleDB (PostgreSQL 17) admin UI — provider &amp; platform metrics</p>
+              <span class="btn btn-outline-info btn-service">Open UI →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/pki/health">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🔐</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>step-ca</h5><span class="realm-tag realm-pki">PKI</span></div>
+              <p class="mb-2">X.509 Root CA — health, certificate signing &amp; ACME endpoint</p>
+              <span class="btn btn-outline-secondary btn-service">API Health →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+    </div>
+
+    <!-- Keycloak Realms -->
+    <div class="section-label mt-4">Keycloak Realms</div>
+    <div class="service-card overflow-hidden">
+      <table class="table table-dark table-hover realm-table mb-0">
+        <thead>
+          <tr>
+            <th class="ps-3" style="width:35%">Realm</th>
+            <th>Links</th>
+            <th class="text-center pe-3" style="width:6rem">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ps-3 align-middle">
+              <span class="fw-semibold">🌐 CDM</span>
+              <div style="font-size:0.75rem;color:#8b949e">Platform-wide OIDC clients</div>
+            </td>
+            <td class="align-middle">
+              <div class="d-flex flex-wrap gap-2">
+                <a href="/auth/admin/cdm/console/" class="btn btn-danger btn-service" target="_blank" rel="noopener">Admin Console →</a>
+                <a href="/auth/realms/cdm/account/" class="btn btn-outline-secondary btn-service" target="_blank" rel="noopener">Account Portal →</a>
+                <a href="/access-roles.html" class="btn btn-outline-light btn-service" target="_blank" rel="noopener">User × Role Matrix →</a>
+              </div>
+            </td>
+            <td class="text-center align-middle pe-3">
+              <span class="health-dot" id="health-realm-cdm" title="Prüfe…">⬤</span>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+    <!-- Add Tenant Button – nur für cdm-admin / platform-admin sichtbar -->
+    <div class="d-flex justify-content-end mt-2 px-1 pb-1 d-none" id="add-tenant-row">
+      <a href="/add-tenant.html" class="btn btn-primary btn-service">
+        🏢 Neuen Tenant anlegen →
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Footer ─────────────────────────────────────────────── -->
+  <footer class="mt-5 py-3">
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <span>
+        CDM Provider Stack &mdash;
+        <a href="https://github.com/the78mole/complete-device-management" class="text-secondary" target="_blank" rel="noopener">
+          github.com/the78mole/complete-device-management
+        </a>
+      </span>
+      <span id="health-indicator" class="text-secondary">
+        <span id="api-health">Checking API health…</span>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    // ── Port-URL helper ──────────────────────────────────────────────────────
+    // Codespaces exposes every port as its own subdomain:
+    //   https://<name>-<PORT>.app.github.dev/
+    // For local dev we fall back to http://localhost:<PORT>/
+    function buildPortUrl(port) {
+      var h = window.location.hostname;
+      if (h.endsWith('.app.github.dev')) {
+        var base = h.replace(/-\d+\.app\.github\.dev$/, '');
+        return 'https://' + base + '-' + port + '.app.github.dev/';
+      }
+      return 'http://localhost:' + port + '/';
+    }
+
+    // Resolve all anchors tagged with data-direct-port
+    document.querySelectorAll('a[data-direct-port]').forEach(function(a) {
+      a.href   = buildPortUrl(a.dataset.directPort);
+      a.target = '_blank';
+      a.rel    = 'noopener';
+    });
+
+    // ── Alle Service-Card-Links im neuen Tab öffnen ──────────────────────────
+    document.querySelectorAll('a.service-link').forEach(function(a) {
+      a.target = '_blank';
+      a.rel    = 'noopener';
+    });
+
+    // ── Realm Health-Dots ────────────────────────────────────────────────────
+    function checkRealmHealth(realm) {
+      var dot = document.getElementById('health-realm-' + realm);
+      if (!dot) return;
+      var t0 = Date.now();
+      fetch('/auth/realms/' + realm, { cache: 'no-store' })
+        .then(function(r) {
+          var ms = Date.now() - t0;
+          dot.title = r.ok ? 'OK (' + ms + ' ms)' : 'HTTP ' + r.status;
+          dot.classList.remove('up', 'slow', 'down');
+          if (r.ok) {
+            dot.classList.add(ms > 2000 ? 'slow' : 'up');
+          } else {
+            dot.classList.add('down');
+          }
+        })
+        .catch(function() {
+          dot.classList.add('down');
+          dot.title = 'Nicht erreichbar';
+        });
+    }
+    checkRealmHealth('cdm');
+
+    // ── IoT Bridge API health indicator ─────────────────────────────────────
+    fetch('/api/health')
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => {
+        document.getElementById('api-health').innerHTML =
+          '<span class="text-success">&#10003; IoT Bridge API: ' + (d.status || 'ok') + '</span>';
+      })
+      .catch(() => {
+        document.getElementById('api-health').innerHTML =
+          '<span class="text-danger">&#10007; IoT Bridge API unreachable</span>';
+      });
+  </script>
+
+  <!-- ── Keycloak.js – Silent SSO / User Info ─────────────────────────── -->
+  <script type="module">
+    import Keycloak from '/js/keycloak.js';
+
+    // ── Keycloak helpers ────────────────────────────────────────────────────
+    function makeKC(realm) {
+      return new Keycloak({ url: '/auth', realm, clientId: 'dashboard' });
+    }
+
+    async function trySilentSSO(realm) {
+      try {
+        const kc   = makeKC(realm);
+        const auth = await kc.init({
+          onLoad: 'check-sso',
+          silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+          pkceMethod: 'S256',
+          checkLoginIframe: false
+        });
+        return auth ? kc : null;
+      } catch {
+        return null;
+      }
+    }
+
+    // ── Render one realm box ────────────────────────────────────────────────
+    function renderRealmBox(realm, kc) {
+      const box      = document.getElementById(`realm-box-${realm}`);
+      const realmCls = realm === 'provider' ? 'realm-prov' : 'realm-cdm';
+      const tag      = `<span class="realm-tag ${realmCls}">${realm.toUpperCase()}</span>`;
+
+      if (kc?.tokenParsed) {
+        const t        = kc.tokenParsed;
+        const username = t.preferred_username || t.email || t.sub || '?';
+        const ignored  = new Set(['uma_authorization','offline_access',`default-roles-${realm}`,'matrix-viewer']);
+        const roles    = (t.realm_access?.roles || [])
+                           .filter(r => !ignored.has(r));
+
+        box.innerHTML = `
+          ${tag}
+          <span style="color:#56d364;font-size:0.9rem">&#x25CF;</span>
+          <div style="display:flex;flex-direction:column;gap:0.05rem;line-height:1.25">
+            <span style="font-weight:600;color:#e6edf3">${username}</span>
+            <span class="user-roles-small" title="${roles.join(', ')}">${roles.join(', ') || '&mdash;'}</span>
+          </div>
+          <button class="btn btn-outline-danger btn-sess ms-1">Logout</button>`;
+        box.querySelector('button').addEventListener('click', () =>
+          kc.logout({ redirectUri: window.location.href })
+        );
+      } else {
+        box.innerHTML = `
+          ${tag}
+          <span style="color:#484f58;font-size:0.9rem">&#x25CF;</span>
+          <span style="color:#484f58">not logged in</span>
+          <button class="btn btn-sm btn-outline-light btn-sess ms-auto">Login &rarr;</button>`;
+        box.querySelector('button').addEventListener('click', () => {
+          const k = makeKC(realm);
+          k.init({ pkceMethod: 'S256', checkLoginIframe: false })
+           .then(() => k.login({ redirectUri: window.location.href }));
+        });
+      }
+    }
+
+    // ── Bootstrap ───────────────────────────────────────────────────────────
+    // Silent SSO must run sequentially (shared iframe)
+    const sessions = {};
+    sessions['cdm'] = await trySilentSSO('cdm');
+    renderRealmBox('cdm', sessions['cdm']);
+
+    // Show "Add Tenant" button for admins
+    const ADMIN_ROLES = new Set(['cdm-admin', 'platform-admin']);
+    const cdmRoles = sessions['cdm']?.tokenParsed?.realm_access?.roles || [];
+    if (cdmRoles.some(r => ADMIN_ROLES.has(r))) {
+      document.getElementById('add-tenant-row').classList.remove('d-none');
+    }
+  </script>
+
+</body>
+</html>

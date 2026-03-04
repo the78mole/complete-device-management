@@ -9,8 +9,8 @@ from functools import lru_cache
 from fastapi import Depends
 
 from app.clients.hawkbit import HawkBitClient
-from app.clients.influxdb import InfluxDBClient
 from app.clients.step_ca import StepCAClient
+from app.clients.timescaledb import TimescaleDBClient
 from app.clients.wireguard import WireGuardConfig
 from app.config import Settings
 
@@ -48,10 +48,13 @@ def get_wg_config(settings: Settings = Depends(get_settings)) -> WireGuardConfig
     )
 
 
-def get_influxdb_client(settings: Settings = Depends(get_settings)) -> InfluxDBClient:
-    return InfluxDBClient(
-        url=settings.influx_url,
-        token=settings.influx_token,
-        org=settings.influx_org,
-        bucket=settings.influx_bucket,
+def get_timescaledb_client(
+    settings: Settings = Depends(get_settings),
+) -> TimescaleDBClient:
+    return TimescaleDBClient(
+        host=settings.tsdb_host,
+        port=settings.tsdb_port,
+        database=settings.tsdb_database,
+        user="telegraf",
+        password=settings.tsdb_telegraf_password,
     )

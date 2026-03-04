@@ -1,0 +1,17 @@
+# InfluxDB Token Injector – Caddyfile (Tenant Stack)
+#
+# Sits between the oauth2-proxy and InfluxDB.
+# The oauth2-proxy handles Keycloak OIDC authentication; once a request
+# passes through it, this Caddy instance injects the InfluxDB admin token
+# as "Authorization: Token <INFLUX_TOKEN>" so InfluxDB accepts the request
+# without showing its own login screen.
+#
+# Chain:
+#   Browser → oauth2-proxy:4180 (Keycloak OIDC) → this:8087 → influxdb:8086
+
+:8087 {
+  reverse_proxy influxdb:8086 {
+    # Override (strip any existing + set new) Authorization header
+    header_up >Authorization "Token {$INFLUX_TOKEN}"
+  }
+}

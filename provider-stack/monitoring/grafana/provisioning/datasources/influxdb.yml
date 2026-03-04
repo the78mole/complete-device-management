@@ -1,0 +1,4 @@
+# This file has been replaced by timescaledb.yml
+# TimescaleDB (PostgreSQL 17) is now the time-series backend.
+apiVersion: 1
+datasources: []

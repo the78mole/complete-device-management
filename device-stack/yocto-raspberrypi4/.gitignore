@@ -1,0 +1,9 @@
+# Yocto build artefacts
+deploy/
+
+# Yocto build directory (created inside the container, not on the host)
+build/
+
+# Local sstate-cache / downloads if placed inside the project tree
+downloads/
+sstate-cache/

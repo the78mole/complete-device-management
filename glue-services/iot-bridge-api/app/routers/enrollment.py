@@ -64,13 +64,9 @@ async def enroll_device(
             sans=[device_id],
         )
     except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503, detail=f"step-ca unreachable: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"step-ca unreachable: {exc}") from exc
     except StepCAError as exc:
-        raise HTTPException(
-            status_code=502, detail=f"PKI signing failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"PKI signing failed: {exc}") from exc
 
     # ── 3. Create / ensure hawkBit target ────────────────────────────────────
     try:
@@ -82,13 +78,9 @@ async def enroll_device(
                 attributes={"device_type": body.device_type},
             )
     except httpx.RequestError as exc:
-        raise HTTPException(
-            status_code=503, detail=f"hawkBit unreachable: {exc}"
-        ) from exc
+        raise HTTPException(status_code=503, detail=f"hawkBit unreachable: {exc}") from exc
     except HawkBitError as exc:
-        raise HTTPException(
-            status_code=502, detail=f"hawkBit provisioning failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"hawkBit provisioning failed: {exc}") from exc
 
     # ── 4. WireGuard IP + config ─────────────────────────────────────────────
     wg_ip = wg.allocate_ip(device_id)

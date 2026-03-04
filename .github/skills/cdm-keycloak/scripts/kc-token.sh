@@ -17,9 +17,14 @@ BASE_URL="${1:-http://localhost:8888}"
 KC_URL="${BASE_URL}/auth"
 
 # Load credentials from .env if available
-if [ -f "$(dirname "$0")/../../../cloud-infrastructure/.env" ]; then
+# Provider-stack is checked first; fall back to legacy cloud-infrastructure layout.
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${_SCRIPT_DIR}/../../../provider-stack/.env" ]; then
   # shellcheck disable=SC1091
-  source "$(dirname "$0")/../../../cloud-infrastructure/.env"
+  source "${_SCRIPT_DIR}/../../../provider-stack/.env"
+elif [ -f "${_SCRIPT_DIR}/../../../cloud-infrastructure/.env" ]; then
+  # shellcheck disable=SC1091
+  source "${_SCRIPT_DIR}/../../../cloud-infrastructure/.env"
 fi
 
 KC_ADMIN_USER="${KC_ADMIN_USER:-admin}"

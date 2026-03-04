@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDM – Neuen Tenant anlegen</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
+    crossorigin="anonymous"
+  />
+  <style>
+    body { background:#0d1117; color:#e6edf3; min-height:100vh; }
+    .hero {
+      background: linear-gradient(135deg,#1f2937 0%,#111827 100%);
+      border-bottom: 1px solid #30363d;
+      padding: 2rem 0 1.6rem;
+    }
+    .hero h1  { font-size:1.7rem; font-weight:700; letter-spacing:-0.5px; }
+    .hero .breadcrumb { font-size:0.8rem; }
+    .hero .breadcrumb-item a { color:#58a6ff; text-decoration:none; }
+    .hero .breadcrumb-item.active { color:#8b949e; }
+    .card-dark {
+      background:#161b22;
+      border:1px solid #30363d;
+      border-radius:10px;
+    }
+    .card-dark .card-header {
+      background:#1c2129;
+      border-bottom:1px solid #30363d;
+      font-weight:600;
+      font-size:0.95rem;
+      border-radius:10px 10px 0 0;
+    }
+    .form-control, .form-select {
+      background:#0d1117;
+      border-color:#30363d;
+      color:#e6edf3;
+    }
+    .form-control:focus, .form-select:focus {
+      background:#0d1117;
+      border-color:#388bfd;
+      color:#e6edf3;
+      box-shadow:0 0 0 3px rgba(56,139,253,.25);
+    }
+    .form-control::placeholder { color:#484f58; }
+    .form-label { font-size:0.87rem; font-weight:500; color:#c9d1d9; }
+    .form-text  { font-size:0.77rem; color:#8b949e; }
+    .join-key-display {
+      font-family: 'Courier New', monospace;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: #56d364;
+      background: #0d1117;
+      border: 1px solid #3fb950;
+      border-radius: 8px;
+      padding: 0.75rem 1.25rem;
+      display: inline-block;
+    }
+    .env-block {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.85rem 1rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      color: #8b949e;
+      white-space: pre;
+    }
+    .env-block .env-val { color: #79b8ff; }
+    .btn-copy {
+      font-size:0.75rem;
+      padding:0.2rem 0.65rem;
+      border-radius:5px;
+    }
+    /* realm-box (session bar) */
+    .realm-box {
+      background:rgba(255,255,255,0.04);
+      border:1px solid #30363d;
+      border-radius:8px;
+      padding:0.4rem 0.8rem;
+      font-size:0.82rem;
+      display:flex;
+      align-items:center;
+      gap:0.55rem;
+      white-space:nowrap;
+    }
+    .realm-box .btn-sess { font-size:0.73rem; padding:0.18rem 0.6rem; border-radius:5px; }
+    .realm-box .user-small { font-size:0.68rem; color:#8b949e; }
+    .realm-tag {
+      display:inline-block; font-size:0.62rem; font-weight:700;
+      letter-spacing:0.6px; text-transform:uppercase;
+      padding:0.1rem 0.42rem; border-radius:4px; line-height:1.5; vertical-align:middle;
+    }
+    .realm-cdm { background:#1f4a8e; color:#79b8ff; border:1px solid #388bfd44; }
+    #guard-loading, #guard-error, #form-section, #result-section { display:none; }
+    .expiry-badge {
+      font-size:0.75rem;
+      background:#21262d;
+      color:#d29922;
+      border:1px solid #d2992244;
+      border-radius:5px;
+      padding:0.2rem 0.55rem;
+    }
+    footer { border-top:1px solid #21262d; font-size:0.78rem; color:#484f58; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Hero ───────────────────────────────────────────── -->
+  <div class="hero">
+    <div class="container">
+      <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-1">
+          <li class="breadcrumb-item"><a href="/">CDM Provider Stack</a></li>
+          <li class="breadcrumb-item active">Neuen Tenant anlegen</li>
+        </ol>
+      </nav>
+      <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+        <div class="d-flex align-items-center gap-3">
+          <span style="font-size:2rem">🏢</span>
+          <div>
+            <h1 class="mb-0">Neuen Tenant anlegen</h1>
+            <p class="mt-1 mb-0" style="color:#8b949e;font-size:0.87rem">
+              Erstellt einen Tenant-Slot und generiert einen einmaligen JOIN-Key
+            </p>
+          </div>
+        </div>
+        <div id="session-bar" class="d-flex gap-2 mt-1 flex-shrink-0">
+          <div id="realm-box-cdm" class="realm-box">
+            <span style="color:#484f58;font-size:0.8rem">●</span>
+            <span style="color:#484f58;font-size:0.8rem">Lade…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container py-4" style="max-width:680px">
+
+    <!-- Auth loading -->
+    <div id="guard-loading" class="text-center py-5">
+      <div class="spinner-border text-secondary" role="status"></div>
+      <p class="mt-3 text-secondary">Authentifizierung wird geprüft…</p>
+    </div>
+
+    <!-- Auth / role error -->
+    <div id="guard-error" class="card-dark p-4 text-center">
+      <div style="font-size:2.5rem">🔒</div>
+      <h5 class="mt-3" id="guard-error-title">Zugriff verweigert</h5>
+      <p class="text-secondary" id="guard-error-msg">
+        Diese Seite ist nur für <code>cdm-admin</code> oder <code>platform-admin</code> zugänglich.
+      </p>
+      <div class="d-flex gap-2 justify-content-center mt-3">
+        <button id="btn-login" class="btn btn-primary" style="display:none">
+          Anmelden →
+        </button>
+        <a href="/" class="btn btn-outline-secondary">← Zurück</a>
+      </div>
+    </div>
+
+    <!-- ── Formular ─────────────────────────────────────── -->
+    <div id="form-section">
+      <div class="card-dark">
+        <div class="card-header px-4 py-3">
+          📋 Tenant-Informationen
+        </div>
+        <div class="p-4">
+          <form id="tenant-form" novalidate>
+
+            <div class="mb-3">
+              <label class="form-label" for="input-tenant-id">
+                Tenant-ID <span class="text-danger">*</span>
+              </label>
+              <input
+                type="text" id="input-tenant-id" class="form-control"
+                placeholder="z. B. acme-devices"
+                pattern="^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$"
+                required
+                autocomplete="off"
+              />
+              <div class="form-text">
+                Kleinbuchstaben, Ziffern und Bindestriche. Wird als Keycloak-Realm-ID,
+                RabbitMQ-vHost und Verzeichnis-Prefix verwendet. <strong>Nicht änderbar nach Erstellung.</strong>
+              </div>
+              <div class="invalid-feedback">
+                Nur Kleinbuchstaben, Ziffern und Bindestriche; muss mit Buchstabe/Ziffer beginnen und enden.
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="input-display-name">
+                Anzeigename <span class="text-danger">*</span>
+              </label>
+              <input
+                type="text" id="input-display-name" class="form-control"
+                placeholder="z. B. ACME Devices GmbH"
+                required
+              />
+              <div class="form-text">Lesbarer Name des Tenants (erscheint in Keycloak & Portal).</div>
+              <div class="invalid-feedback">Bitte einen Anzeigenamen eingeben.</div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label" for="input-email">
+                Kontakt-E-Mail <span class="text-secondary">(optional)</span>
+              </label>
+              <input
+                type="email" id="input-email" class="form-control"
+                placeholder="z. B. admin@acme-devices.com"
+              />
+              <div class="form-text">
+                Nur zur Dokumentation – wird im Ergebnis angezeigt, aber nicht automatisch versendet.
+              </div>
+            </div>
+
+            <div class="d-flex gap-2 mt-4">
+              <button type="submit" id="btn-submit" class="btn btn-primary px-4">
+                <span id="btn-submit-text">JOIN-Key generieren →</span>
+                <span id="btn-submit-spinner" class="spinner-border spinner-border-sm ms-2" style="display:none" role="status"></span>
+              </button>
+              <a href="/" class="btn btn-outline-secondary">Abbrechen</a>
+            </div>
+
+            <div id="form-error" class="alert alert-danger mt-3" style="display:none"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Ergebnis ─────────────────────────────────────── -->
+    <div id="result-section">
+
+      <div class="alert alert-success d-flex gap-2 align-items-center mb-4" role="alert">
+        <span style="font-size:1.3rem">✅</span>
+        <div>
+          <strong>Tenant-Slot erstellt!</strong>
+          Der JOIN-Key ist <strong>7 Tage gültig</strong> und kann nur einmal verwendet werden.
+        </div>
+      </div>
+
+      <div class="card-dark mb-3">
+        <div class="card-header px-4 py-3 d-flex justify-content-between align-items-center">
+          <span>🔑 JOIN-Key</span>
+          <span class="expiry-badge" id="res-expiry"></span>
+        </div>
+        <div class="p-4 text-center">
+          <div class="join-key-display" id="res-join-key">—</div>
+          <button class="btn btn-outline-success btn-copy mt-3" onclick="copyText('join-key')">
+            📋 Key kopieren
+          </button>
+        </div>
+      </div>
+
+      <div class="card-dark mb-3">
+        <div class="card-header px-4 py-3">
+          ⚙️ tenant-stack/.env Konfiguration
+        </div>
+        <div class="p-4">
+          <p class="text-secondary mb-2" style="font-size:0.82rem">
+            Folgende Zeilen in <code>tenant-stack/.env</code> eintragen, dann
+            <code>docker compose up -d</code> starten:
+          </p>
+          <div class="env-block" id="res-env-block">
+<span class="text-secondary"># Tenant-Stack .env — Provider-Anbindung</span>
+TENANT_ID=<span class="env-val" id="env-tenant-id">…</span>
+TENANT_DISPLAY_NAME=<span class="env-val" id="env-display-name">…</span>
+PROVIDER_URL=<span class="env-val" id="env-provider-url">…</span>
+JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
+          <button class="btn btn-outline-info btn-copy mt-2" onclick="copyEnvBlock()">
+            📋 Konfiguration kopieren
+          </button>
+        </div>
+      </div>
+
+      <div class="card-dark mb-4" id="res-email-card">
+        <div class="card-header px-4 py-3">
+          ✉️ Nachricht an Tenant
+        </div>
+        <div class="p-4">
+          <textarea id="res-email-text" class="form-control" rows="9" style="font-size:0.8rem;background:#0d1117;color:#c9d1d9;border-color:#30363d" readonly></textarea>
+          <button class="btn btn-outline-secondary btn-copy mt-2" onclick="copyText('email-text')">
+            📋 Text kopieren
+          </button>
+        </div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary" onclick="resetForm()">+ Weiteren Tenant anlegen</button>
+        <a href="/" class="btn btn-outline-secondary">← Dashboard</a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="mt-5 py-3">
+    <div class="container">
+      CDM Provider Stack &mdash;
+      <a href="/" class="text-secondary">Dashboard</a> &mdash;
+      <a href="/api/docs" class="text-secondary">API Docs</a>
+    </div>
+  </footer>
+
+  <script type="module">
+    import Keycloak from '/js/keycloak.js';
+
+    const ADMIN_ROLES = new Set(['cdm-admin', 'platform-admin']);
+
+    let _kc = null;           // Keycloak instance
+    let _resultData = null;   // last TenantPrepareResponse
+
+    // ── UI helpers ────────────────────────────────────────────
+    function show(id) { document.getElementById(id).style.display = ''; }
+    function hide(id) { document.getElementById(id).style.display = 'none'; }
+    function el(id)   { return document.getElementById(id); }
+
+    function renderSessionBar(kc) {
+      const box = el('realm-box-cdm');
+      if (kc?.tokenParsed) {
+        const t = kc.tokenParsed;
+        const username = t.preferred_username || t.email || '?';
+        const ignored  = new Set(['uma_authorization','offline_access','default-roles-cdm','matrix-viewer']);
+        const roles    = (t.realm_access?.roles || []).filter(r => !ignored.has(r));
+        box.innerHTML = `
+          <span class="realm-tag realm-cdm">CDM</span>
+          <span style="color:#56d364;font-size:0.9rem">●</span>
+          <div style="display:flex;flex-direction:column;gap:0;line-height:1.25">
+            <span style="font-weight:600;color:#e6edf3">${username}</span>
+            <span class="user-small">${roles.join(', ') || '—'}</span>
+          </div>
+          <button class="btn btn-outline-danger btn-sess ms-1" id="btn-logout">Logout</button>`;
+        el('btn-logout').addEventListener('click', () =>
+          kc.logout({ redirectUri: window.location.href })
+        );
+      } else {
+        box.innerHTML = `
+          <span class="realm-tag realm-cdm">CDM</span>
+          <span style="color:#484f58;font-size:0.9rem">●</span>
+          <span style="color:#484f58">not logged in</span>`;
+      }
+    }
+
+    // ── Auth guard ────────────────────────────────────────────
+    async function bootstrap() {
+      hide('guard-loading');
+      hide('guard-error');
+      hide('form-section');
+      hide('result-section');
+      show('guard-loading');
+
+      try {
+        _kc = new Keycloak({ url: '/auth', realm: 'cdm', clientId: 'dashboard' });
+        const authed = await _kc.init({
+          onLoad: 'check-sso',
+          silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+          pkceMethod: 'S256',
+          checkLoginIframe: false,
+        });
+
+        renderSessionBar(authed ? _kc : null);
+        hide('guard-loading');
+
+        if (!authed || !_kc.tokenParsed) {
+          // Not logged in → show login button
+          el('guard-error-title').textContent = 'Anmeldung erforderlich';
+          el('guard-error-msg').textContent =
+            'Diese Seite ist nur für angemeldete Administratoren (cdm-admin / platform-admin) zugänglich.';
+          el('btn-login').style.display = '';
+          el('btn-login').addEventListener('click', () => {
+            _kc.login({ redirectUri: window.location.href });
+          });
+          show('guard-error');
+          return;
+        }
+
+        // Logged in → check roles
+        const roles = _kc.tokenParsed?.realm_access?.roles || [];
+        const hasRole = roles.some(r => ADMIN_ROLES.has(r));
+        if (!hasRole) {
+          el('guard-error-title').textContent = 'Unzureichende Berechtigungen';
+          el('guard-error-msg').innerHTML =
+            `Angemeldet als <strong>${_kc.tokenParsed.preferred_username}</strong>, aber die Rolle ` +
+            `<code>cdm-admin</code> oder <code>platform-admin</code> fehlt.`;
+          show('guard-error');
+          return;
+        }
+
+        // All good → show form
+        show('form-section');
+        el('input-tenant-id').focus();
+
+      } catch (err) {
+        hide('guard-loading');
+        el('guard-error-title').textContent = 'Authentifizierungsfehler';
+        el('guard-error-msg').textContent = String(err);
+        show('guard-error');
+      }
+    }
+
+    // ── Ensure fresh token before API call ────────────────────
+    async function freshToken() {
+      await _kc.updateToken(30);   // refresh if <30 s remaining
+      return _kc.token;
+    }
+
+    // ── Form submit ───────────────────────────────────────────
+    el('tenant-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+
+      // HTML5 validation
+      form.classList.add('was-validated');
+      if (!form.checkValidity()) return;
+
+      const tenantId   = el('input-tenant-id').value.trim();
+      const displayName = el('input-display-name').value.trim();
+      const email      = el('input-email').value.trim();
+
+      // Show spinner
+      el('btn-submit-text').textContent = 'Wird generiert…';
+      el('btn-submit-spinner').style.display = '';
+      el('btn-submit').disabled = true;
+      hide('form-error');
+
+      try {
+        const token = await freshToken();
+        const resp = await fetch('/api/portal/admin/tenants/prepare', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ tenant_id: tenantId, display_name: displayName }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+          throw new Error(`HTTP ${resp.status}: ${err.detail || JSON.stringify(err)}`);
+        }
+
+        _resultData = await resp.json();
+        _resultData._email = email;          // store contact email for display
+        _resultData._apiBase = window.location.origin + '/api';
+        showResult(_resultData);
+
+      } catch (err) {
+        el('form-error').textContent = 'Fehler: ' + err.message;
+        show('form-error');
+      } finally {
+        el('btn-submit-text').textContent = 'JOIN-Key generieren →';
+        el('btn-submit-spinner').style.display = 'none';
+        el('btn-submit').disabled = false;
+      }
+    });
+
+    // ── Display result ────────────────────────────────────────
+    function showResult(d) {
+      const apiBase = d._apiBase;
+      const expiry  = new Date(d.expires_at);
+      const expiryStr = expiry.toLocaleString('de-DE', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+
+      el('res-join-key').textContent = d.join_key;
+      el('res-expiry').textContent   = `Gültig bis: ${expiryStr}`;
+      el('env-tenant-id').textContent   = d.tenant_id;
+      el('env-display-name').textContent = d.display_name;
+      el('env-provider-url').textContent = apiBase;
+      el('env-join-key').textContent     = d.join_key;
+
+      // E-Mail-Text
+      const emailBody = [
+        `Hallo,`,
+        ``,
+        `Ihr CDM Tenant-Slot wurde eingerichtet. Bitte fügen Sie folgende Zeilen in die`,
+        `Datei \`tenant-stack/.env\` ein und starten Sie anschließend den Tenant-Stack:`,
+        ``,
+        `  TENANT_ID=${d.tenant_id}`,
+        `  TENANT_DISPLAY_NAME=${d.display_name}`,
+        `  PROVIDER_URL=${apiBase}`,
+        `  JOIN_KEY=${d.join_key}`,
+        ``,
+        `Danach: cd tenant-stack && docker compose up -d`,
+        ``,
+        `Der JOIN-Key ist gültig bis: ${expiryStr}`,
+        `Er kann nur EINMAL verwendet werden.`,
+        ``,
+        `Bei Problemen wenden Sie sich an den CDM-Administrator.`,
+      ].join('\n');
+
+      el('res-email-text').value = emailBody;
+      if (d._email) {
+        el('res-email-card').querySelector('.card-header').textContent =
+          `✉️ Nachricht an Tenant (${d._email})`;
+      }
+
+      hide('form-section');
+      show('result-section');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ── Reset form ────────────────────────────────────────────
+    window.resetForm = function() {
+      document.getElementById('tenant-form').reset();
+      document.getElementById('tenant-form').classList.remove('was-validated');
+      hide('result-section');
+      hide('form-error');
+      show('form-section');
+      el('input-tenant-id').focus();
+    };
+
+    // ── Copy helpers ──────────────────────────────────────────
+    window.copyText = function(id) {
+      const elem = el('res-' + id);           // e.g. res-join-key, res-email-text
+      const text = elem.tagName === 'TEXTAREA' ? elem.value : elem.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        const orig = btn.textContent;
+        btn.textContent = '✅ Kopiert!';
+        setTimeout(() => btn.textContent = orig, 2000);
+      });
+    };
+
+    window.copyEnvBlock = function() {
+      const d = _resultData;
+      if (!d) return;
+      const text = [
+        `TENANT_ID=${d.tenant_id}`,
+        `TENANT_DISPLAY_NAME=${d.display_name}`,
+        `PROVIDER_URL=${d._apiBase}`,
+        `JOIN_KEY=${d.join_key}`,
+      ].join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        const orig = btn.textContent;
+        btn.textContent = '✅ Kopiert!';
+        setTimeout(() => btn.textContent = orig, 2000);
+      });
+    };
+
+    // ── Start ─────────────────────────────────────────────────
+    await bootstrap();
+  </script>
+
+</body>
+</html>

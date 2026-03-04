@@ -1,0 +1,44 @@
+repos:
+  # ---------------------------------------------------------------------------
+  # General file hygiene
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-yaml
+        args: ["--unsafe"]   # allow custom YAML tags (e.g. Docker Compose anchors)
+      - id: check-json
+        # devcontainer.json and tsconfig.json use JSONC (comments / trailing commas)
+        exclude: '(devcontainer\.json|tsconfig.*\.json)$'
+      - id: check-toml
+
+  # ---------------------------------------------------------------------------
+  # Python – iot-bridge-api (ruff)
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff
+        name: ruff lint (iot-bridge-api)
+        args: ["--fix"]
+        files: ^glue-services/iot-bridge-api/
+      - id: ruff-format
+        name: ruff format (iot-bridge-api)
+        files: ^glue-services/iot-bridge-api/
+
+  # ---------------------------------------------------------------------------
+  # TypeScript – terminal-proxy (ESLint via local npm)
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: eslint-terminal-proxy
+        name: ESLint (terminal-proxy)
+        language: system
+        entry: bash -c 'cd glue-services/terminal-proxy && npm run lint'
+        files: ^glue-services/terminal-proxy/.*\.[jt]s$
+        pass_filenames: false

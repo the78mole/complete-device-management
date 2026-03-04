@@ -1,0 +1,518 @@
+---
+# Provider Stack – CDM Platform Infrastructure
+#
+# Manages platform-wide services shared across all tenants:
+#   step-ca      → Root PKI (X.509 certificates)
+#   keycloak     → Identity provider (realm: cdm)
+#   rabbitmq     → Central AMQP broker with per-tenant vHosts
+#   timescaledb  → Time-series database (PostgreSQL 17 + TimescaleDB)
+#   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
+#   grafana      → Platform operations dashboards
+#   telegraf     → Metrics aggregation (HTTP health + RabbitMQ mgmt + MQTT mTLS)
+#   system-monitor → Host CPU/RAM metrics publisher (MQTT+mTLS → cdm/provider/system)
+#   iot-bridge-api → Platform management API
+#   caddy        → Reverse proxy / entry point
+#
+# NOT included here (→ tenant-stack):
+#   ThingsBoard, hawkBit, WireGuard, Terminal Proxy
+#
+# Bring up:
+#   cp .env.example .env   # fill in secrets
+#   docker compose up -d
+#
+# Port mapping:
+#   8888  → Caddy (entry point, path-based routing)
+#   9000  → step-ca (HTTPS, direct)
+
+networks:
+  provider-net:
+    driver: bridge
+
+volumes:
+  keycloak-db-data:
+  timescaledb-data:
+  pgadmin-data:
+  grafana-data:
+  rabbitmq-data:
+  rabbitmq-tls:
+  mqtt-client-tls:
+  step-ca-data:
+  caddy-data:
+  iot-bridge-data:
+
+secrets:
+  step-ca-password:
+    file: ./step-ca/password.txt
+
+# ─────────────────────────────────────────────────────────────────
+services:
+
+  # ── step-ca (Root PKI) ──────────────────────────────────────────
+  # Auto-creates Root CA + Intermediate CA on first boot.
+  # Build context is repo root so the Dockerfile can copy
+  # provider-stack/step-ca/templates/ (leaf cert + sub-CA signer templates).
+  step-ca:
+    build:
+      context: ..
+      dockerfile: provider-stack/step-ca/Dockerfile
+    container_name: provider-step-ca
+    restart: unless-stopped
+    environment:
+      DOCKER_STEPCA_INIT_NAME: "${STEP_CA_PKI_NAME:-CDM Root CA}"
+      DOCKER_STEPCA_INIT_DNS_NAMES: "${STEP_CA_DNS_NAMES:-step-ca,localhost}"
+      DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/step-ca-password
+      DOCKER_STEPCA_INIT_ADDRESS: "${STEP_CA_ADDRESS:-:9000}"
+      DOCKER_STEPCA_INIT_PROVISIONER_NAME: "${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}"
+      DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
+      DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
+      DOCKER_STEPCA_INIT_SSH: "${STEP_CA_ENABLE_SSH:-false}"
+      STEP_CA_PROVISIONER_NAME: "${STEP_CA_PROVISIONER_NAME:-iot-bridge}"
+      STEP_CA_PROVISIONER_PASSWORD: "${STEP_CA_PROVISIONER_PASSWORD:-changeme}"
+      STEP_CA_SUB_CA_PROVISIONER: "${STEP_CA_SUB_CA_PROVISIONER:-tenant-sub-ca-signer}"
+      STEP_CA_SUB_CA_PASSWORD: "${STEP_CA_SUB_CA_PASSWORD:-changeme}"
+    secrets:
+      - step-ca-password
+    volumes:
+      - step-ca-data:/home/step
+    ports:
+      - "9000:9000"
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Keycloak ────────────────────────────────────────────────────
+  keycloak-db:
+    image: postgres:18-alpine
+    container_name: provider-keycloak-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: provider-keycloak
+    restart: unless-stopped
+    command: >
+      start-dev
+      --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      KC_HTTP_PORT: 8080
+      KC_HOSTNAME: "${EXTERNAL_URL:-http://localhost:8888}/auth"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      # OIDC client secrets – injected into realm templates by docker-entrypoint.sh
+      GRAFANA_OIDC_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GRAFANA_BROKER_SECRET: ${GRAFANA_BROKER_SECRET:-changeme}
+      BRIDGE_OIDC_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      RABBITMQ_MANAGEMENT_OIDC_SECRET: ${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}
+      # Bootstrap user passwords
+      PROVIDER_OPERATOR_PASSWORD: ${PROVIDER_OPERATOR_PASSWORD:-changeme}
+      KC_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KC_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      # External URL for browser-facing redirect URIs in realm templates
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+    ports:
+      - "8080:8080"
+    networks:
+      - provider-net
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /auth/realms/master HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 5 grep -q 200 <&3"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+  # ── RabbitMQ cert-init (one-shot) ─────────────────────────────────
+  # Uses smallstep/step-cli to fetch a TLS server certificate from the
+  # Provider step-ca and writes it to the rabbitmq-tls volume.
+  # Runs once on each stack start; skips re-issue if cert is still valid.
+  rabbitmq-cert-init:
+    image: smallstep/step-cli:latest
+    container_name: provider-rabbitmq-cert-init
+    restart: "no"
+    user: root
+    entrypoint: ["/bin/sh", "/scripts/cert-init.sh"]
+    environment:
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+    volumes:
+      - rabbitmq-tls:/etc/rabbitmq/tls
+      - ./rabbitmq/cert-init.sh:/scripts/cert-init.sh:ro
+    networks:
+      - provider-net
+    depends_on:
+      step-ca:
+        condition: service_healthy
+
+  # ── MQTT client cert-init (one-shot) ──────────────────────────────
+  # Issues client certificates for system-monitor (CN=system-monitor) and
+  # Telegraf (CN=telegraf) from the Provider step-ca into the shared
+  # mqtt-client-tls volume.  Both services use these certs for mTLS
+  # authentication against RabbitMQ (EXTERNAL auth, no passwords).
+  mqtt-certs-init:
+    image: smallstep/step-cli:latest
+    container_name: provider-mqtt-certs-init
+    restart: "no"
+    user: root
+    entrypoint: ["/bin/sh", "/scripts/cert-init.sh"]
+    environment:
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      CERTS_DIR: /etc/mqtt-certs
+    volumes:
+      - mqtt-client-tls:/etc/mqtt-certs
+      - ./system-monitor/cert-init.sh:/scripts/cert-init.sh:ro
+    networks:
+      - provider-net
+    depends_on:
+      step-ca:
+        condition: service_healthy
+
+  # ── RabbitMQ (central broker, vHost per tenant) ─────────────────
+  # Pre-creates the `cdm-metrics` vHost and admin user via definitions.json.tpl
+  # (templated at container start by rabbitmq/docker-entrypoint.sh).
+  # Additional tenant vHosts are created by the IoT Bridge API
+  # when tenants are onboarded.
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: provider-rabbitmq
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/docker-entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+      RABBITMQ_MANAGEMENT_OIDC_SECRET: ${RABBITMQ_MANAGEMENT_OIDC_SECRET:-changeme}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - rabbitmq-tls:/etc/rabbitmq/tls:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json.tpl:/etc/rabbitmq/definitions.json.tpl:ro
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./rabbitmq/advanced.config.tpl:/etc/rabbitmq/advanced.config.tpl:ro
+      - ./rabbitmq/docker-entrypoint.sh:/scripts/docker-entrypoint.sh:ro
+    ports:
+      - "1883:1883"   # MQTT plain (kept for local dev without certs)
+      - "5672:5672"   # AMQP
+      - "8883:8883"   # MQTT+TLS (mTLS, EXTERNAL auth)
+    depends_on:
+      rabbitmq-cert-init:
+        condition: service_completed_successfully
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── TimescaleDB (provider metrics) ─────────────────────────────
+  # PostgreSQL 17 with TimescaleDB extension.
+  # Init script creates the `telegraf` write user and `grafana` read-only user.
+  timescaledb:
+    image: timescale/timescaledb:latest-pg17
+    container_name: provider-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cdm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${TSDB_PASSWORD:-changeme}
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
+      TSDB_GRAFANA_PASSWORD: ${TSDB_GRAFANA_PASSWORD:-changeme}
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+      - ./monitoring/timescaledb/init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - provider-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cdm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── pgAdmin OIDC proxy ───────────────────────────────────────────
+  # Tiny HTTP server that rewrites the Keycloak discovery document so that
+  # jwks_uri points to the internal keycloak:8080 URL. Required because the
+  # real discovery doc returns an external Codespaces URL which is behind a
+  # GitHub auth wall and unreachable from Docker containers.
+  pgadmin-oidc-proxy:
+    image: python:3.14-alpine
+    container_name: provider-pgadmin-oidc-proxy
+    restart: unless-stopped
+    command: python3 /app/oidc-proxy.py
+    volumes:
+      - ./pgadmin/oidc-proxy.py:/app/oidc-proxy.py:ro
+    environment:
+      KEYCLOAK_INTERNAL_URL: "http://keycloak:8080"
+      KEYCLOAK_REALM: "cdm"
+      PROXY_PORT: "9099"
+    networks:
+      - provider-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+  # ── pgAdmin (TimescaleDB admin UI) ───────────────────────────────
+  # Served via Caddy at /pgadmin/ – no direct port exposed.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: provider-pgadmin
+    restart: unless-stopped
+    entrypoint: ["/pgadmin-init/docker-entrypoint.sh"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@cdm.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+      TSDB_PASSWORD: ${TSDB_PASSWORD:-changeme}
+      PGPASSFILE: /var/lib/pgadmin/pgpassfile
+      PGSERVICEFILE: /var/lib/pgadmin/pg_service.conf
+      SCRIPT_NAME: /pgadmin
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT: "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT: "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT: "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT: "0"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      PGADMIN_CONFIG_AUTHENTICATION_SOURCES: "['oauth2']"
+      PGADMIN_CONFIG_OAUTH2_AUTO_CREATE_USER: "True"
+      PGADMIN_CONFIG_OAUTH2_CONFIG: "[{'OAUTH2_NAME':'keycloak','OAUTH2_DISPLAY_NAME':'Keycloak','OAUTH2_CLIENT_ID':'pgadmin','OAUTH2_CLIENT_SECRET':'${PGADMIN_OIDC_SECRET:-changeme}','OAUTH2_AUTHORIZATION_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth','OAUTH2_TOKEN_URL':'http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token','OAUTH2_SERVER_METADATA_URL':'http://pgadmin-oidc-proxy:9099/openid-configuration','OAUTH2_API_BASE_URL':'http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/','OAUTH2_USERINFO_ENDPOINT':'userinfo','OAUTH2_SCOPE':'openid email profile','OAUTH2_USERNAME_CLAIM':'preferred_username','OAUTH2_REDIRECT_URI':'${EXTERNAL_URL:-http://localhost:8888}/pgadmin/oauth2/authorize','OAUTH2_ADDITIONAL_CLAIMS':{'roles':['pgadmin-users']},'OAUTH2_ICON':'fa-key','OAUTH2_BUTTON_COLOR':'#0d6efd','OAUTH2_LOGOUT_URL':'${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/logout?post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/pgadmin/'}]"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./pgadmin/docker-entrypoint.sh:/pgadmin-init/docker-entrypoint.sh:ro
+    networks:
+      - provider-net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      pgadmin-oidc-proxy:
+        condition: service_started
+
+  # ── Grafana ──────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:12.4.0
+    container_name: provider-grafana
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: "${EXTERNAL_URL:-http://localhost:8888}/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_SECRET:-changeme}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email roles
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/auth/realms/cdm/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'cdm-admin') && 'Admin' || contains(roles[*], 'cdm-operator') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
+      GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: name
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_NAME: email
+      GF_USERS_AUTO_ASSIGN_ORG: "true"
+      GF_USERS_AUTO_ASSIGN_ORG_ID: "1"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_SIGNOUT_REDIRECT_URL: "${EXTERNAL_URL:-http://localhost:8888}/auth/realms/cdm/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=${EXTERNAL_URL:-http://localhost:8888}/grafana/login"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      TSDB_GRAFANA_PASSWORD: ${TSDB_GRAFANA_PASSWORD:-changeme}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - provider-net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+  # ── Telegraf (provider metrics aggregator) ───────────────────────
+  telegraf:
+    image: telegraf:1.37-alpine
+    container_name: provider-telegraf
+    restart: unless-stopped
+    # Suppress "strict env handling" deprecation warning – all env vars are
+    # explicitly set in the environment block so strict mode is safe to use.
+    command: ["telegraf", "--non-strict-env-handling"]
+    environment:
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DATABASE: cdm
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_ADMIN_PASS: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./monitoring/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - mqtt-client-tls:/etc/telegraf/tls:ro
+    networks:
+      - provider-net
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mqtt-certs-init:
+        condition: service_completed_successfully
+
+  # ── System Monitor ──────────────────────────────────────────────
+  # Publishes host CPU load and RAM metrics every 5s to
+  # topic cdm/provider/system on the cdm-metrics vHost via MQTT+mTLS.
+  # Runs as non-root (uid 10001); reads /proc/loadavg and /proc/meminfo.
+  # Identity: client cert CN=system-monitor → RabbitMQ EXTERNAL auth.
+  system-monitor:
+    build:
+      context: ./system-monitor
+    container_name: provider-system-monitor
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: rabbitmq
+      MQTT_PORT: "8883"
+      MQTT_TOPIC: cdm/provider/system
+      TLS_CA:   /tls/ca.crt
+      TLS_CERT: /tls/system-monitor.crt
+      TLS_KEY:  /tls/system-monitor.key
+      INTERVAL: "5"
+    volumes:
+      - mqtt-client-tls:/tls:ro
+    networks:
+      - provider-net
+    depends_on:
+      mqtt-certs-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+
+  # ── IoT Bridge API ───────────────────────────────────────────────
+  # Platform management API: device enrollment, provisioning, OIDC portal.
+  # In the provider-stack this service does NOT connect to ThingsBoard or
+  # hawkBit (those live in the tenant-stack); it manages provider-level
+  # resources only (step-ca, Keycloak, RabbitMQ, InfluxDB).
+  iot-bridge-api:
+    build:
+      context: ../glue-services/iot-bridge-api
+      dockerfile: Dockerfile
+    container_name: provider-iot-bridge-api
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_REALM: cdm
+      KEYCLOAK_CLIENT_ID: iot-bridge
+      KEYCLOAK_CLIENT_SECRET: ${BRIDGE_OIDC_SECRET:-changeme}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+      PORTAL_OIDC_SECRET: ${PORTAL_OIDC_SECRET:-changeme}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET:-change-this-portal-session-secret}
+      PORTAL_TENANTS_JSON: '${PORTAL_TENANTS_JSON:-{"cdm":{"name":"CDM Platform"}}}'
+      RABBITMQ_MGMT_URL: http://rabbitmq:15672
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_ADMIN_USER:-admin}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:-changeme}
+      KEYCLOAK_ADMIN_USER: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_PROVISIONER_NAME: ${STEP_CA_PROVISIONER_NAME:-iot-bridge}
+      STEP_CA_PROVISIONER_PASSWORD: ${STEP_CA_PROVISIONER_PASSWORD:-changeme}
+      STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}
+      STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
+      STEP_CA_SUB_CA_PROVISIONER: ${STEP_CA_SUB_CA_PROVISIONER:-tenant-sub-ca-signer}
+      STEP_CA_SUB_CA_PASSWORD: ${STEP_CA_SUB_CA_PASSWORD:-changeme}
+      STEP_CA_VERIFY_TLS: ${STEP_CA_VERIFY_TLS:-false}
+      JOIN_REQUESTS_DB_PATH: /data/join_requests.json
+      TSDB_HOST: timescaledb
+      TSDB_PORT: "5432"
+      TSDB_DATABASE: cdm
+      TSDB_TELEGRAF_PASSWORD: ${TSDB_TELEGRAF_PASSWORD:-changeme}
+      ROOT_PATH: /api
+    ports:
+      - "8000:8000"
+    volumes:
+      - iot-bridge-data:/data
+    networks:
+      - provider-net
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      step-ca:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+
+  # ── Caddy (reverse proxy / entry point) ─────────────────────────
+  # Single entry point on port 8888. Path-based routing to all services.
+  # Static landing page served from /srv/html.
+  #
+  # Codespaces: https://<name>-8888.app.github.dev/
+  # Local:      http://localhost:8888/
+  caddy:
+    image: caddy:2-alpine
+    container_name: provider-caddy
+    restart: unless-stopped
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/html:/srv/html:ro
+      - caddy-data:/data
+    ports:
+      - "${CADDY_PORT:-8888}:${CADDY_PORT:-8888}"
+    networks:
+      - provider-net
+    environment:
+      CADDY_PORT: ${CADDY_PORT:-8888}
+      CADDY_AUTO_HTTPS: ${CADDY_AUTO_HTTPS:-off}
+      EXTERNAL_URL: ${EXTERNAL_URL:-http://localhost:8888}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      grafana:
+        condition: service_started
+      iot-bridge-api:
+        condition: service_started
+      step-ca:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+      pgadmin:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy

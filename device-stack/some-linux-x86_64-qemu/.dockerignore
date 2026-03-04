@@ -1,0 +1,12 @@
+# Buildroot source tree and build output can be several GB — never send to daemon
+buildroot-*/
+output/
+deploy/
+
+# Local env files
+.env
+*.env
+
+# Editor artifacts
+.DS_Store
+*.swp

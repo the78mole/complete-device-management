@@ -1,0 +1,18 @@
+[Unit]
+Description=CDM Device Enrollment (TPM-backed)
+Documentation=https://github.com/the78mole/complete-device-management
+After=network-online.target tpm2-abrmd.service
+Wants=network-online.target tpm2-abrmd.service
+ConditionPathExists=!/var/lib/cdm/.enrolled
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/cdm/enroll.env
+ExecStart=/usr/bin/cdm-enroll.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cdm-enroll
+
+[Install]
+WantedBy=multi-user.target
