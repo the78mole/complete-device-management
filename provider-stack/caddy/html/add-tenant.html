@@ -107,6 +107,133 @@
     }
     footer { border-top:1px solid #21262d; font-size:0.78rem; color:#484f58; }
   </style>
+
+  <style media="print">
+    /* ── Print / A4 layout ───────────────────────────────── */
+    @page {
+      size: A4 portrait;
+      margin: 18mm 20mm 18mm 20mm;
+    }
+
+    /* Reset dark theme for print */
+    *, *::before, *::after {
+      background: white !important;
+      color: #111 !important;
+      border-color: #bbb !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+
+    /* Hide everything except the result section */
+    .hero,
+    #guard-loading,
+    #guard-error,
+    #form-section,
+    footer,
+    .btn,
+    button {
+      display: none !important;
+    }
+
+    /* Ensure result section is visible */
+    body, .container, #result-section {
+      display: block !important;
+    }
+
+    .container {
+      max-width: 100% !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    /* Print header replacing the hero */
+    #result-section::before {
+      content: "CDM Provider Stack – Tenant-Slot erstellt";
+      display: block;
+      font-size: 16pt;
+      font-weight: 700;
+      margin-bottom: 6mm;
+      padding-bottom: 3mm;
+      border-bottom: 1.5pt solid #333 !important;
+    }
+
+    /* Success alert → compact info line */
+    .alert-success {
+      border: 1pt solid #aaa !important;
+      border-radius: 4pt !important;
+      padding: 3mm 4mm !important;
+      font-size: 9pt !important;
+      margin-bottom: 5mm !important;
+    }
+
+    /* Cards */
+    .card-dark {
+      border: 1pt solid #aaa !important;
+      border-radius: 4pt !important;
+      margin-bottom: 5mm !important;
+      page-break-inside: avoid;
+    }
+    .card-dark .card-header {
+      background: #f0f0f0 !important;
+      border-bottom: 1pt solid #aaa !important;
+      padding: 2mm 4mm !important;
+      font-size: 10pt !important;
+      font-weight: 700;
+    }
+    .card-dark > .p-4 {
+      padding: 3mm 4mm !important;
+    }
+
+    /* JOIN key */
+    .join-key-display {
+      font-size: 22pt !important;
+      letter-spacing: 6px !important;
+      color: #115e1a !important;
+      border: 1.5pt solid #115e1a !important;
+      background: #f6fff7 !important;
+      display: inline-block;
+      padding: 2mm 6mm !important;
+      border-radius: 4pt !important;
+    }
+
+    /* Expiry badge */
+    .expiry-badge {
+      color: #7a5800 !important;
+      border: 1pt solid #c8a000 !important;
+      background: #fffbe6 !important;
+      font-size: 8pt !important;
+      padding: 0.5mm 2mm !important;
+    }
+
+    /* Env block */
+    .env-block {
+      background: #f8f8f8 !important;
+      border: 1pt solid #aaa !important;
+      border-radius: 3pt !important;
+      padding: 2mm 3mm !important;
+      font-family: 'Courier New', monospace !important;
+      font-size: 9pt !important;
+      white-space: pre-wrap !important;
+      word-break: break-all !important;
+      color: #333 !important;
+    }
+    .env-val { color: #003080 !important; }
+    .text-secondary { color: #666 !important; }
+
+    /* Email textarea */
+    textarea.form-control {
+      border: 1pt solid #aaa !important;
+      background: #f8f8f8 !important;
+      font-size: 8.5pt !important;
+      padding: 2mm 3mm !important;
+      resize: none;
+      height: auto !important;
+      overflow: visible !important;
+    }
+
+    /* Date/URL helper text */
+    p.text-secondary { font-size: 8pt !important; }
+  </style>
 </head>
 <body>
 
@@ -297,6 +424,7 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
 
       <div class="d-flex gap-2">
         <button class="btn btn-primary" onclick="resetForm()">+ Weiteren Tenant anlegen</button>
+        <button class="btn btn-outline-secondary" onclick="window.print()">🖨 Drucken / PDF</button>
         <a href="/" class="btn btn-outline-secondary">← Dashboard</a>
       </div>
     </div>
