@@ -55,53 +55,42 @@ Wait until the container is `healthy`:
 docker compose ps step-ca
 ```
 
-## 4) Initialize provisioners (important)
+## 4) Initialize provisioners and update `.env` (run once)
 
 ```bash
-docker exec provider-step-ca /usr/local/bin/init-provisioners.sh
+./scripts/init-pki.sh
 ```
 
-This creates (among others) the `iot-bridge` and `tenant-sub-ca-signer` provisioners.
+This runs `init-provisioners.sh` inside the step-ca container (creates `iot-bridge` and
+`tenant-sub-ca-signer` provisioners if they don't exist yet) and automatically writes
+the resulting values — `STEP_CA_FINGERPRINT`, `STEP_CA_PROVISIONER_NAME`, etc. — into `.env`.
 
-## 5) Set the Root CA fingerprint
+!!! tip "Manual re-run"
+    Run `./scripts/init-pki.sh` again at any time to re-apply provisioner settings or
+    refresh the fingerprint in `.env` (the operation is idempotent).
 
-Read the fingerprint:
+## 5) Copy OpenBao AppRole credentials to `.env`
 
 ```bash
-docker exec provider-step-ca sh -lc 'step certificate fingerprint /home/step/certs/root_ca.crt'
+./scripts/init-openbao.sh
 ```
 
-Set the output value in `.env` as `STEP_CA_FINGERPRINT=<value>`.
+This reads `role_id` and `secret_id` from `/openbao/data/step-ca-approle.json` inside the
+running `provider-openbao` container and writes `OPENBAO_STEP_CA_ROLE_ID` and
+`OPENBAO_STEP_CA_SECRET_ID` into `.env` automatically.
 
-## 6) Copy OpenBao AppRole credentials to `.env`
-
-On the **first** `docker compose up`, OpenBao auto-initializes and prints the generated
-AppRole credentials to the log. Copy them into `.env` so downstream services
-(`step-ca` via step-kms-plugin) can authenticate:
+Pass `--with-root-token` to also write `OPENBAO_ROOT_TOKEN` (useful for manual vault
+operations):
 
 ```bash
-docker compose logs openbao | grep 'OPENBAO_STEP_CA'
-```
-
-The output looks like:
-
-```
-[openbao-entrypoint]   OPENBAO_STEP_CA_ROLE_ID=<uuid>
-[openbao-entrypoint]   OPENBAO_STEP_CA_SECRET_ID=<uuid>
-```
-
-Add both values to `.env`. Alternatively, read them directly from the init file inside
-the volume:
-
-```bash
-docker exec provider-openbao cat /openbao/data/.init.json
+./scripts/init-openbao.sh --with-root-token
 ```
 
 > **Note:** On subsequent starts, OpenBao auto-unseals from `/openbao/data/.init.json` —
 > no manual action required. `OPENBAO_MODE=embedded` (default) is sufficient for all
 > development and single-node testing scenarios.
 
-## 7) Start the full stack
+## 6) Start the full stack
 
 ```bash
 docker compose up -d
@@ -115,21 +104,54 @@ docker compose ps -a
 
 The start-up order is controlled by `depends_on` conditions:
 
-```
-openbao (healthy)   step-ca (healthy)   timescaledb (healthy)   keycloak (healthy)
-  │                   ├─► rabbitmq-cert-init → rabbitmq (healthy)
-  │                   └─► mqtt-certs-init   → system-monitor
-  │                                          → telegraf
-  └──────────────────────────────────────────────────────► caddy
-                                                          iot-bridge-api
-                                                          grafana  pgadmin
+```mermaid
+graph TD
+    OB["openbao ✅ healthy"]
+    SCA["step-ca ✅ healthy"]
+    TSDB["timescaledb ✅ healthy"]
+    KC["keycloak ✅ healthy"]
+
+    RCI["rabbitmq-cert-init ⬛"]
+    MCI["mqtt-certs-init ⬛"]
+    RMQ["rabbitmq ✅ healthy"]
+    SM["system-monitor"]
+    TEL["telegraf"]
+    IBA["iot-bridge-api"]
+    GRF["grafana"]
+    PGA["pgadmin"]
+    CAD["caddy"]
+
+    OB --> SCA
+    SCA --> RCI --> RMQ
+    SCA --> MCI --> SM
+    MCI --> TEL
+    TSDB --> TEL
+    RMQ --> TEL
+
+    KC --> IBA
+    SCA --> IBA
+    RMQ --> IBA
+
+    KC --> GRF
+    TSDB --> GRF
+
+    TSDB --> PGA
+    KC --> PGA
+
+    OB --> CAD
+    KC --> CAD
+    IBA --> CAD
+    GRF --> CAD
+
+    style RCI fill:#555,color:#fff
+    style MCI fill:#555,color:#fff
 ```
 
 `mqtt-certs-init` issues client certificates (CN=`system-monitor` and CN=`telegraf`) from
 the Provider step-ca into the shared `mqtt-client-tls` volume.  Both services use these
 certs for **mTLS authentication** against RabbitMQ (EXTERNAL auth — no username/password).
 
-## 8) Quick smoke test of endpoints
+## 7) Quick smoke test of endpoints
 
 ```bash
 python3 - <<'PY'
