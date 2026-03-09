@@ -77,7 +77,7 @@ runs behind Caddy on the same port 8888.
 !!! info "OIDC secrets on first boot"
     `GRAFANA_OIDC_SECRET`, `BRIDGE_OIDC_SECRET`, `PGADMIN_OIDC_SECRET`, and
     `RABBITMQ_MANAGEMENT_OIDC_SECRET` can remain as `changeme` for the initial start.
-    You will copy the real Keycloak-generated values in step [A5](#a5----retrieve-oidc-secrets).
+    You will copy the real Keycloak-generated values in step [A6](#a6----retrieve-oidc-secrets).
 
 !!! danger "Never commit `.env`"
     The file is listed in `.gitignore`.  Keep it out of version control.
@@ -87,6 +87,11 @@ runs behind Caddy on the same port 8888.
 ```bash
 docker compose up -d
 ```
+
+!!! info "How secrets and certificates are bootstrapped"
+    On the first start, one-shot init containers automatically issue all TLS and mTLS
+    certificates, and OpenBao initialises its Transit key and AppRole credentials.
+    See [Secret & Certificate Bootstrap](bootstrap-secrets.md) for the full sequence diagram.
 
 Wait ~60 s (Keycloak needs up to 90 s on first boot), then check:
 
@@ -103,6 +108,7 @@ provider-keycloak-db                running (healthy)
 provider-keycloak                   running (healthy)
 provider-rabbitmq                   running (healthy)
 provider-timescaledb                running (healthy)
+provider-openbao                    running (healthy)
 provider-pgadmin                    running
 provider-grafana                    running (healthy)
 provider-telegraf                   running
@@ -110,19 +116,59 @@ provider-iot-bridge-api             running (healthy)
 provider-caddy                      running (healthy)
 ```
 
-### A4 — Initialise PKI provisioners (run once)
+### A4 — PKI provisioners (automatic)
+
+On every start the `step-ca` container runs `init-provisioners.sh` automatically in the
+background before marking itself healthy.  The script creates the `iot-bridge` (leaf-cert)
+and `tenant-sub-ca-signer` provisioners if they do not already exist — the operation is
+fully idempotent.
+
+The Root CA fingerprint is printed to the step-ca log on every start:
 
 ```bash
-docker compose exec step-ca /usr/local/bin/init-provisioners.sh
+docker compose logs step-ca | grep 'Root CA fingerprint'
 ```
 
-The script prints the Root CA fingerprint at the end.  Save it in `.env`:
+Save the value in `.env`:
 
 ```dotenv
 STEP_CA_FINGERPRINT=<printed value>
 ```
 
-### A5 — Retrieve OIDC secrets
+This value is needed later when connecting a Tenant-Stack — it is not required for the
+Provider-Stack itself.
+
+!!! tip "Manual re-run"
+    If you need to re-apply provisioner settings (e.g. after changing `STEP_CA_PROVISIONER_NAME`):
+    ```bash
+    docker compose exec step-ca /usr/local/bin/init-provisioners.sh
+    ```
+
+### A5 — Copy OpenBao AppRole credentials (run once)
+
+On the first start OpenBao auto-initialises and prints generated AppRole credentials.
+Copy them into `.env`:
+
+```bash
+docker compose logs openbao | grep 'OPENBAO_STEP_CA'
+```
+
+The output looks like:
+
+```
+[openbao-entrypoint]   OPENBAO_STEP_CA_ROLE_ID=<uuid>
+[openbao-entrypoint]   OPENBAO_STEP_CA_SECRET_ID=<uuid>
+```
+
+Add both values to `.env`.  On subsequent starts OpenBao unseals automatically — no
+further action required.
+
+!!! tip "Alternative: read from the init file"
+    ```bash
+    docker compose exec openbao cat /openbao/data/.init.json
+    ```
+
+### A6 — Retrieve OIDC secrets
 
 1. Open `${EXTERNAL_URL}/auth/admin/cdm/console/` and log in with `KC_ADMIN_USER` / `KC_ADMIN_PASSWORD`.
 2. Copy the client secret for each entry below (**Clients → `<id>` → Credentials → copy Secret**):
@@ -141,7 +187,7 @@ STEP_CA_FINGERPRINT=<printed value>
 docker compose restart keycloak grafana iot-bridge-api pgadmin rabbitmq
 ```
 
-### A6 — Grant superadmin cross-realm access
+### A7 — Grant superadmin cross-realm access
 
 ```bash
 source .env
@@ -180,7 +226,7 @@ ufw allow 9000/tcp   # step-ca (optional; needed by Tenant-Stacks connecting fro
 
 ### B3 — Start, PKI, OIDC, init-tenants
 
-Follow steps [A3](#a3----start-the-stack) → [A4](#a4----initialise-pki-provisioners-run-once) → [A5](#a5----retrieve-oidc-secrets) → [A6](#a6----grant-superadmin-cross-realm-access),
+Follow steps [A3](#a3----start-the-stack) → [A4](#a4----pki-provisioners-automatic) → [A5](#a5----copy-openbao-approle-credentials-run-once) → [A6](#a6----retrieve-oidc-secrets) → [A7](#a7----grant-superadmin-cross-realm-access),
 substituting `localhost` with your server IP or hostname.
 
 ---
@@ -265,7 +311,7 @@ curl -sv https://cdm.example.com/auth/realms/master/.well-known/openid-configura
 
 ### C5 — PKI, OIDC, init-tenants
 
-Follow steps [A4](#a4----initialise-pki-provisioners-run-once) → [A5](#a5----retrieve-oidc-secrets) → [A6](#a6----grant-superadmin-cross-realm-access),
+Follow steps [A4](#a4----pki-provisioners-automatic) → [A5](#a5----copy-openbao-approle-credentials-run-once) → [A6](#a6----retrieve-oidc-secrets) → [A7](#a7----grant-superadmin-cross-realm-access),
 replacing `localhost:8888` with `https://cdm.example.com`.
 
 ---
@@ -295,6 +341,7 @@ Distribute `root_ca.crt` and `STEP_CA_FINGERPRINT` to every Tenant-Stack and Dev
 | **IoT Bridge API (Swagger)** | `/api/docs` | requires OIDC JWT |
 | **pgAdmin (TimescaleDB)** | `/pgadmin/` | `PGADMIN_EMAIL` / `PGADMIN_PASSWORD` |
 | **step-ca health** | `https://localhost:9000/health` | returns `{"status":"ok"}` |
+| **OpenBao UI** | `/vault/ui` | Root token from `OPENBAO_ROOT_TOKEN` or `/openbao/data/.init.json` |
 
 ---
 

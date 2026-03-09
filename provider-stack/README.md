@@ -11,6 +11,7 @@ At the end, all Provider services should be running stably with:
 - `provider-keycloak` (`healthy`)
 - `provider-rabbitmq` (`healthy`)
 - `provider-timescaledb` (`healthy`)
+- `provider-openbao` (`healthy`) — auto-initialized on first start (Transit key + AppRole)
 - `provider-caddy`, `provider-grafana`, `provider-iot-bridge-api`, `provider-pgadmin`, `provider-telegraf` (`Up`)
 - `provider-rabbitmq-cert-init`, `provider-mqtt-certs-init` as one-shots with `Exited (0)`
 - `provider-system-monitor` (`Up`)  — publishes CPU load + RAM metrics every 5 s via MQTT+mTLS
@@ -72,7 +73,35 @@ docker exec provider-step-ca sh -lc 'step certificate fingerprint /home/step/cer
 
 Set the output value in `.env` as `STEP_CA_FINGERPRINT=<value>`.
 
-## 6) Start the full stack
+## 6) Copy OpenBao AppRole credentials to `.env`
+
+On the **first** `docker compose up`, OpenBao auto-initializes and prints the generated
+AppRole credentials to the log. Copy them into `.env` so downstream services
+(`step-ca` via step-kms-plugin) can authenticate:
+
+```bash
+docker compose logs openbao | grep 'OPENBAO_STEP_CA'
+```
+
+The output looks like:
+
+```
+[openbao-entrypoint]   OPENBAO_STEP_CA_ROLE_ID=<uuid>
+[openbao-entrypoint]   OPENBAO_STEP_CA_SECRET_ID=<uuid>
+```
+
+Add both values to `.env`. Alternatively, read them directly from the init file inside
+the volume:
+
+```bash
+docker exec provider-openbao cat /openbao/data/.init.json
+```
+
+> **Note:** On subsequent starts, OpenBao auto-unseals from `/openbao/data/.init.json` —
+> no manual action required. `OPENBAO_MODE=embedded` (default) is sufficient for all
+> development and single-node testing scenarios.
+
+## 7) Start the full stack
 
 ```bash
 docker compose up -d
@@ -87,17 +116,20 @@ docker compose ps -a
 The start-up order is controlled by `depends_on` conditions:
 
 ```
-step-ca (healthy)
-  ├─► rabbitmq-cert-init → rabbitmq (healthy)
-  └─► mqtt-certs-init   → system-monitor
-                         → telegraf (needs timescaledb + rabbitmq + mqtt-certs-init)
+openbao (healthy)   step-ca (healthy)   timescaledb (healthy)   keycloak (healthy)
+  │                   ├─► rabbitmq-cert-init → rabbitmq (healthy)
+  │                   └─► mqtt-certs-init   → system-monitor
+  │                                          → telegraf
+  └──────────────────────────────────────────────────────► caddy
+                                                          iot-bridge-api
+                                                          grafana  pgadmin
 ```
 
 `mqtt-certs-init` issues client certificates (CN=`system-monitor` and CN=`telegraf`) from
 the Provider step-ca into the shared `mqtt-client-tls` volume.  Both services use these
 certs for **mTLS authentication** against RabbitMQ (EXTERNAL auth — no username/password).
 
-## 7) Quick smoke test of endpoints
+## 8) Quick smoke test of endpoints
 
 ```bash
 python3 - <<'PY'
@@ -209,6 +241,47 @@ block) are not available.
 
 Fix: remove these fields from `monitoring/telegraf/telegraf.conf` (already applied in the
 current state).
+
+### `provider-openbao`: `permission denied` on `/openbao/data/vault.db`
+
+Symptom in logs:
+
+```
+error initializing storage of type raft: failed to create fsm:
+  failed to open bolt file: open /openbao/data/vault.db: permission denied
+```
+
+Cause: Docker created the named volume with `root` ownership before the container could
+set it up (e.g. after an aborted first start or when using an old image without the
+`mkdir/chown` fix in the Dockerfile).
+
+Fix: Remove the container and volume so Docker re-initialises with correct ownership:
+
+```bash
+docker compose stop openbao
+docker compose rm -f openbao
+docker volume rm provider-stack_openbao-data
+docker compose up -d openbao
+```
+
+### `provider-openbao`: `unable to find user vault`
+
+Symptom:
+
+```
+Error response from daemon: unable to find user vault: no matching entries in passwd file
+```
+
+Cause: The `openbao/openbao` base image uses the username **`openbao`**, not `vault`
+(which was the username in the original HashiCorp Vault).  The `Dockerfile` had
+`USER vault` instead of `USER openbao`.
+
+Fix (already applied in the current codebase): rebuild the image:
+
+```bash
+docker compose build --no-cache openbao
+docker compose up -d openbao
+```
 
 ## Useful Quick Commands
 

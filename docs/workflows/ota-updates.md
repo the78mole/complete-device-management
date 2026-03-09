@@ -32,11 +32,87 @@ rollout success across the fleet.
 
 ---
 
+## Bundle Signing
+
+RAUC requires every OTA bundle to be signed with a trusted certificate whose CA chain
+is compiled into the device image (RAUC keyring).
+
+The CDM platform offers two signing approaches depending on security requirements:
+
+### Option A — Manual signing (development / small teams)
+
+Generate a signing key pair, get it signed by the Tenant Sub-CA (`step-ca`), and
+keep the private key on a secured local machine:
+
+```bash
+# Generate key pair
+step crypto keypair rauc-signing.pub rauc-signing.key \
+  --kty EC --curve P-384 --no-password --insecure
+
+# Request a code-signing certificate from the Tenant Sub-CA
+step ca certificate "My Tenant Code Signing" rauc-signing.crt rauc-signing.key \
+  --ca-url https://localhost:19000 \
+  --provisioner code-signer \
+  --not-after 8760h
+
+# Sign the RAUC bundle
+rauc bundle \
+  --cert rauc-signing.crt \
+  --key rauc-signing.key \
+  rootfs-1.1.0.tar.gz \
+  cdm-os-1.1.0.raucb
+```
+
+### Option B — OpenBao-backed signing (recommended for production)
+
+When the `code-signing` Docker Compose profile is active, the Tenant-Stack runs
+[OpenBao](../architecture/key-management.md) as a secrets store.  The code-signing
+certificate is issued by the Tenant Sub-CA on first boot and stored in OpenBao KV-v2.
+CI/CD pipelines authenticate via AppRole and retrieve the certificate for bundle assembly.
+
+```bash
+# Set environment variables (from .env)
+OPENBAO_ADDR=http://localhost:18200
+OPENBAO_CODESIGN_ROLE_ID=<from .env>
+OPENBAO_CODESIGN_SECRET_ID=<from .env>
+
+# Authenticate and get a token
+VAULT_TOKEN=$(curl -s --request POST \
+  --data "{\"role_id\":\"${OPENBAO_CODESIGN_ROLE_ID}\",\"secret_id\":\"${OPENBAO_CODESIGN_SECRET_ID}\"}" \
+  "${OPENBAO_ADDR}/v1/auth/approle/login" | jq -r .auth.client_token)
+
+# Retrieve the code-signing certificate
+curl -sH "X-Vault-Token: $VAULT_TOKEN" \
+  "${OPENBAO_ADDR}/v1/code-signing/data/cert" \
+  | jq -r '.data.data.cert'  > rauc-signing.crt
+curl -sH "X-Vault-Token: $VAULT_TOKEN" \
+  "${OPENBAO_ADDR}/v1/code-signing/data/cert" \
+  | jq -r '.data.data.key'   > rauc-signing.key
+curl -sH "X-Vault-Token: $VAULT_TOKEN" \
+  "${OPENBAO_ADDR}/v1/code-signing/data/cert" \
+  | jq -r '.data.data.ca_chain' > ca-chain.crt
+
+# Sign the RAUC bundle
+rauc bundle \
+  --cert rauc-signing.crt \
+  --key  rauc-signing.key \
+  --keyring ca-chain.crt \
+  rootfs-1.1.0.tar.gz \
+  cdm-os-1.1.0.raucb
+
+# Remove local private key copy
+shred -u rauc-signing.key
+```
+
+See [Key Management](../architecture/key-management.md) for full setup instructions.
+
+---
+
 ## Full Rollout Procedure
 
 ### 1. Build and Sign the Bundle
 
-On your build system (CI/CD):
+See [Bundle Signing](#bundle-signing) above for key retrieval.
 
 ```bash
 # Sign the RAUC bundle with the signing certificate

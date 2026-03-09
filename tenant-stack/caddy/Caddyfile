@@ -106,6 +106,25 @@
     }
   }
 
+  # ── OpenBao code-signing vault (optional, profile: code-signing) ──
+  # Proxied when the code-signing profile is active.
+  # OpenBao UI lives at /ui/ internally; strip /vault so assets resolve.
+  handle /vault/ui* {
+    uri strip_prefix /vault
+    reverse_proxy openbao:8200
+  }
+  handle /vault/v1/* {
+    uri strip_prefix /vault
+    reverse_proxy openbao:8200
+  }
+  handle /vault {
+    redir /vault/ui 301
+  }
+  handle /vault/* {
+    uri strip_prefix /vault
+    reverse_proxy openbao:8200
+  }
+
   # ── Static landing page ─────────────────────────────────────────
   handle / {
     root * /srv/html

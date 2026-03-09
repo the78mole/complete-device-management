@@ -17,6 +17,7 @@ graph TB
         TLG["Telegraf<br>(service health)"]
         GRF_P["Grafana<br>(platform dashboards)"]
         SCA_P["step-ca<br>(Root CA + Intermediate CA)"]
+        OB_P["OpenBao<br>(key mgmt + KV secrets)"]
         IBA["IoT Bridge API<br>(management API)"]
     end
 
@@ -26,6 +27,7 @@ graph TB
         TB["ThingsBoard<br>(device mgmt + MQTT)"]
         HB["hawkBit<br>(OTA campaigns)"]
         SCA_T["step-ca<br>(Issuing Sub-CA)"]
+        OB_T["OpenBao<br>(code-signing, optional)"]
         WGS["WireGuard Server"]
         TXP["Terminal Proxy"]
         TSDB_T["TimescaleDB<br>(device telemetry)"]
@@ -79,6 +81,17 @@ graph TB
 | Tenant Keycloak → Provider Keycloak | HTTPS | OIDC Identity Provider federation |
 | Device → WireGuard | WireGuard UDP (51820) | Pre-shared key provisioned at enrollment |
 | Browser → Terminal Proxy | WSS | Keycloak JWT (`cdm-operator` / `cdm-admin`) |
+| CI/CD → Tenant OpenBao | HTTP (internal) or HTTPS (Caddy) | AppRole token |
+| Services → Provider OpenBao | HTTP (internal) | AppRole token |
+
+---
+
+## OpenBao Routing
+
+| Stack | Path / Port | Notes |
+|---|---|---|
+| Provider | `/vault/` (Caddy) or `:8200` | Key management, KV-v2, Transit engine |
+| Tenant | `/vault/` (Caddy) or `:8200` (offset) | Code-signing vault, optional (`code-signing` profile) |
 
 ---
 
