@@ -128,7 +128,7 @@
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
-      "configureZshAsDefaultShell": false,
+      "configureZshAsDefaultShell": true,
       "installOhMyZsh": false,
       "upgradePackages": false,
       "username": "vscode",
