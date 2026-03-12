@@ -48,6 +48,7 @@ from app.clients.step_ca import StepCAAdminClient, StepCAClient, StepCAError
 from app.config import Settings
 from app.deps import get_settings
 from app.models import (
+    CaMode,
     JoinApproveRequest,
     JoinHandshakePayload,
     JoinHandshakeResponse,
@@ -242,14 +243,23 @@ async def prepare_tenant(body: TenantPrepareRequest, request: Request) -> Tenant
             detail="tenant_id must be lowercase alphanumeric with optional hyphens",
         )
 
-    key = await create_key(tenant_id, body.display_name, settings)
+    key = await create_key(
+        tenant_id,
+        body.display_name,
+        settings,
+        ca_mode=body.ca_mode.value,
+        enable_kc_federation=body.enable_kc_federation,
+        enable_operator_login=body.enable_operator_login,
+    )
 
     expires_at = (datetime.now(UTC) + timedelta(hours=JOIN_KEY_TTL_HOURS)).isoformat()
 
     logger.info(
-        "JOIN key generated for tenant '%s' (%s), expires %s.",
+        "JOIN key generated for tenant '%s' (%s), ca_mode=%s, federation=%s, expires %s.",
         tenant_id,
         body.display_name,
+        body.ca_mode.value,
+        body.enable_kc_federation,
         expires_at,
     )
     return TenantPrepareResponse(
@@ -257,6 +267,9 @@ async def prepare_tenant(body: TenantPrepareRequest, request: Request) -> Tenant
         display_name=body.display_name,
         join_key=key,
         expires_at=expires_at,
+        ca_mode=body.ca_mode,
+        enable_kc_federation=body.enable_kc_federation,
+        enable_operator_login=body.enable_operator_login,
     )
 
 
@@ -265,30 +278,42 @@ async def _run_provisioning(
     display_name: str,
     payload: JoinHandshakePayload,
     settings: Settings,
+    *,
+    ca_mode: str = "sub_ca",
+    enable_kc_federation: bool = True,
 ) -> JoinHandshakeResponse:
     """Execute the full provisioning pipeline and return the bundle.
 
     Shared by the key-based handshake and (internally) the legacy approve flow.
+
+    Args:
+        ca_mode:               PKI operating mode. ``sub_ca`` signs the Tenant
+                               Sub-CA CSR; other values skip the signing step.
+        enable_kc_federation:  When True, a Keycloak federation client is created
+                               in the Provider ``cdm`` realm.
     """
     errors: dict[str, str] = {}
 
-    # ── 1. Sign Sub-CA CSR ────────────────────────────────────────────────────
+    # ── 1. Sign Sub-CA CSR  (only for ca_mode == "sub_ca") ──────────────────
     signed_cert = ""
     root_ca_cert = ""
-    try:
-        sca_admin: StepCAAdminClient = _step_ca_admin(settings)
-        signed_cert, root_ca_cert = await sca_admin.sign_sub_ca_csr(
-            csr_pem=payload.sub_ca_csr,
-            tenant_id=tenant_id,
-            sub_ca_provisioner_name=settings.step_ca_sub_ca_provisioner,
-            sub_ca_provisioner_password=settings.step_ca_sub_ca_password,
-        )
-        if not root_ca_cert:
-            root_ca_cert = await _fetch_root_ca_cert(settings)
-        logger.info("Sub-CA CSR for tenant '%s' signed.", tenant_id)
-    except StepCAError as exc:
-        errors["step_ca"] = str(exc)
-        logger.error("Sub-CA signing failed for '%s': %s", tenant_id, exc)
+    if ca_mode == CaMode.sub_ca:
+        try:
+            sca_admin: StepCAAdminClient = _step_ca_admin(settings)
+            signed_cert, root_ca_cert = await sca_admin.sign_sub_ca_csr(
+                csr_pem=payload.sub_ca_csr,
+                tenant_id=tenant_id,
+                sub_ca_provisioner_name=settings.step_ca_sub_ca_provisioner,
+                sub_ca_provisioner_password=settings.step_ca_sub_ca_password,
+            )
+            if not root_ca_cert:
+                root_ca_cert = await _fetch_root_ca_cert(settings)
+            logger.info("Sub-CA CSR for tenant '%s' signed.", tenant_id)
+        except StepCAError as exc:
+            errors["step_ca"] = str(exc)
+            logger.error("Sub-CA signing failed for '%s': %s", tenant_id, exc)
+    else:
+        logger.info("Skipping Sub-CA signing for tenant '%s' (ca_mode=%s).", tenant_id, ca_mode)
 
     # ── 2. Provision RabbitMQ vHost ───────────────────────────────────────────
     rmq_vhost = tenant_id
@@ -319,24 +344,28 @@ async def _run_provisioning(
             errors["mqtt_bridge_cert"] = str(exc)
             logger.error("MQTT bridge cert signing failed for '%s': %s", tenant_id, exc)
 
-    # ── 3. Keycloak federation client ─────────────────────────────────────────
+    # ── 3. Keycloak federation client  (only when enable_kc_federation) ────────
     cdm_idp_client_id = ""
     cdm_idp_client_secret = ""
-    cdm_discovery_url = (
-        f"{settings.external_url.rstrip('/')}/auth/realms/cdm/.well-known/openid-configuration"
-    )
-    try:
-        token = await _kc_admin_token(settings)
-        cdm_idp_client_id, cdm_idp_client_secret = await _kc_create_federation_client(
-            tenant_id=tenant_id,
-            tenant_keycloak_url=payload.keycloak_url,
-            token=token,
-            settings=settings,
+    cdm_discovery_url = ""
+    if enable_kc_federation:
+        cdm_discovery_url = (
+            f"{settings.external_url.rstrip('/')}/auth/realms/cdm/.well-known/openid-configuration"
         )
-        logger.info("Keycloak federation client created for tenant '%s'.", tenant_id)
-    except Exception as exc:  # noqa: BLE001
-        errors["keycloak_federation"] = str(exc)
-        logger.error("Keycloak federation failed for '%s': %s", tenant_id, exc)
+        try:
+            token = await _kc_admin_token(settings)
+            cdm_idp_client_id, cdm_idp_client_secret = await _kc_create_federation_client(
+                tenant_id=tenant_id,
+                tenant_keycloak_url=payload.keycloak_url,
+                token=token,
+                settings=settings,
+            )
+            logger.info("Keycloak federation client created for tenant '%s'.", tenant_id)
+        except Exception as exc:  # noqa: BLE001
+            errors["keycloak_federation"] = str(exc)
+            logger.error("Keycloak federation failed for '%s': %s", tenant_id, exc)
+    else:
+        logger.info("Skipping Keycloak federation for tenant '%s'.", tenant_id)
 
     if errors:
         logger.warning("Provisioning for tenant '%s' completed with errors: %s", tenant_id, errors)
@@ -388,16 +417,27 @@ async def join_handshake(
 
     tenant_id: str = key_entry["tenant_id"]
     display_name: str = key_entry["display_name"]
+    ca_mode: str = key_entry.get("ca_mode", CaMode.sub_ca)
+    enable_kc_federation: bool = key_entry.get("enable_kc_federation", True)
 
     logger.info(
-        "JOIN handshake started for tenant '%s' (%s) using key %s…%s.",
+        "JOIN handshake started for tenant '%s' (%s) ca_mode=%s federation=%s using key %s…%s.",
         tenant_id,
         display_name,
+        ca_mode,
+        enable_kc_federation,
         join_key[:4],
         join_key[-4:],
     )
 
-    bundle = await _run_provisioning(tenant_id, display_name, payload, settings)
+    bundle = await _run_provisioning(
+        tenant_id,
+        display_name,
+        payload,
+        settings,
+        ca_mode=ca_mode,
+        enable_kc_federation=enable_kc_federation,
+    )
 
     logger.info("JOIN handshake complete for tenant '%s'.", tenant_id)
     return bundle

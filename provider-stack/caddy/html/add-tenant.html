@@ -105,7 +105,13 @@
       border-radius:5px;
       padding:0.2rem 0.55rem;
     }
-    footer { border-top:1px solid #21262d; font-size:0.78rem; color:#484f58; }
+    .form-check-input:checked { background-color:#388bfd; border-color:#388bfd; }
+    .form-check-label { font-size:0.87rem; color:#c9d1d9; }
+    .option-desc { font-size:0.77rem; color:#8b949e; margin-top:0.1rem; }
+    .section-divider {
+      border-top: 1px solid #30363d;
+      margin: 1.25rem 0 1rem;
+    }
   </style>
 
   <style media="print">
@@ -236,8 +242,7 @@
 
     /* Date/URL helper text */
     p.text-secondary { font-size: 8pt !important; }
-  </style>
-</head>
+    footer { border-top:1px solid #21262d; font-size:0.78rem; color:#484f58; }
 <body>
 
   <!-- ── Hero ───────────────────────────────────────────── -->
@@ -356,6 +361,93 @@
               </div>
             </div>
 
+            <div class="section-divider"></div>
+
+            <!-- CA-Typ ─────────────────────────────────────── -->
+            <div class="mb-3">
+              <label class="form-label d-block mb-2">
+                PKI-Modus <span class="text-danger">*</span>
+              </label>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="ca-mode" id="ca-sub-ca" value="sub_ca" checked />
+                <label class="form-check-label fw-semibold" for="ca-sub-ca">
+                  Sub-CA des Providers
+                </label>
+                <div class="option-desc">
+                  Der Provider signiert das Sub-CA-Zertifikat des Tenants.
+                  Empfohlen für vollständig verwaltete Tenants.
+                </div>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="radio" name="ca-mode" id="ca-own-root" value="own_root_ca" />
+                <label class="form-check-label fw-semibold" for="ca-own-root">
+                  Eigene Root-CA
+                </label>
+                <div class="option-desc">
+                  Der Tenant betreibt eine eigene Root-CA. Der Provider signiert kein Sub-CA-Zertifikat.
+                </div>
+              </div>
+
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="ca-mode" id="ca-external" value="external_root_ca" />
+                <label class="form-check-label fw-semibold" for="ca-external">
+                  Externe Root-CA
+                </label>
+                <div class="option-desc">
+                  Eine externe CA (z. B. öffentliche PKI oder eigene Unternehmens-CA) wird verwendet.
+                  Kein Sub-CA-Signing durch den Provider.
+                </div>
+              </div>
+            </div>
+
+            <div class="section-divider"></div>
+
+            <!-- Keycloak-Federation ─────────────────────────── -->
+            <div class="mb-3">
+              <label class="form-label d-block mb-2">Keycloak-Federation</label>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="chk-kc-federation" checked />
+                <label class="form-check-label fw-semibold" for="chk-kc-federation">
+                  Federation aktivieren
+                </label>
+                <div class="option-desc">
+                  Registriert einen OIDC-Client im Provider-Keycloak (<code>cdm</code>-Realm), sodass
+                  der Tenant-Keycloak den Provider als Identity Provider (IdP) nutzen kann.
+                </div>
+              </div>
+
+              <div id="federation-options" class="ms-4 mt-2">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" id="chk-operator-login" checked />
+                  <label class="form-check-label" for="chk-operator-login">
+                    Provider-Operator-Login erlauben
+                  </label>
+                  <div class="option-desc">
+                    Nutzer mit der Rolle <code>cdm-admin</code> können sich via SSO in
+                    Tenant-Dienste (ThingsBoard, Grafana usw.) einloggen.
+                  </div>
+                </div>
+
+                <div class="mb-2 mt-1">
+                  <label class="form-label mb-1" for="input-kc-url">
+                    Tenant-Keycloak-URL <span class="text-secondary">(optional)</span>
+                  </label>
+                  <input
+                    type="url" id="input-kc-url" class="form-control form-control-sm"
+                    placeholder="z. B. https://tenant.example.com/auth"
+                  />
+                  <div class="form-text">
+                    Extern erreichbare Keycloak-URL des Tenant-Stacks. Wenn gesetzt, wird der
+                    Redirect-URI des Federation-Clients präzise konfiguriert statt <code>*</code>.
+                    Kann auch später über das Keycloak-Admin-UI angepasst werden.
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="d-flex gap-2 mt-4">
               <button type="submit" id="btn-submit" class="btn btn-primary px-4">
                 <span id="btn-submit-text">JOIN-Key generieren →</span>
@@ -407,7 +499,8 @@
 TENANT_ID=<span class="env-val" id="env-tenant-id">…</span>
 TENANT_DISPLAY_NAME=<span class="env-val" id="env-display-name">…</span>
 PROVIDER_URL=<span class="env-val" id="env-provider-url">…</span>
-JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
+JOIN_KEY=<span class="env-val" id="env-join-key">…</span><span id="env-kc-url-line" style="display:none">
+TENANT_KEYCLOAK_URL=<span class="env-val" id="env-kc-url">…</span></span></div>
           <button class="btn btn-outline-info btn-copy mt-2" onclick="copyEnvBlock()">
             📋 Konfiguration kopieren
           </button>
@@ -554,6 +647,11 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
       return _kc.token;
     }
 
+    // ── Federation toggle ─────────────────────────────────────
+    el('chk-kc-federation').addEventListener('change', function() {
+      el('federation-options').style.display = this.checked ? '' : 'none';
+    });
+
     // ── Form submit ───────────────────────────────────────────
     el('tenant-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -563,9 +661,13 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
       form.classList.add('was-validated');
       if (!form.checkValidity()) return;
 
-      const tenantId   = el('input-tenant-id').value.trim();
-      const displayName = el('input-display-name').value.trim();
-      const email      = el('input-email').value.trim();
+      const tenantId       = el('input-tenant-id').value.trim();
+      const displayName    = el('input-display-name').value.trim();
+      const email          = el('input-email').value.trim();
+      const caMode         = document.querySelector('input[name="ca-mode"]:checked').value;
+      const kcFederation   = el('chk-kc-federation').checked;
+      const operatorLogin  = el('chk-operator-login').checked;
+      const kcUrl          = el('input-kc-url').value.trim();
 
       // Show spinner
       el('btn-submit-text').textContent = 'Wird generiert…';
@@ -581,7 +683,13 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           },
-          body: JSON.stringify({ tenant_id: tenantId, display_name: displayName }),
+          body: JSON.stringify({
+            tenant_id: tenantId,
+            display_name: displayName,
+            ca_mode: caMode,
+            enable_kc_federation: kcFederation,
+            enable_operator_login: operatorLogin,
+          }),
         });
 
         if (!resp.ok) {
@@ -590,7 +698,8 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
         }
 
         _resultData = await resp.json();
-        _resultData._email = email;          // store contact email for display
+        _resultData._email  = email;
+        _resultData._kcUrl  = kcUrl;           // tenant KC URL entered in form
         _resultData._apiBase = window.location.origin + '/api';
         showResult(_resultData);
 
@@ -620,17 +729,44 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
       el('env-provider-url').textContent = apiBase;
       el('env-join-key').textContent     = d.join_key;
 
+      // Optional TENANT_KEYCLOAK_URL line
+      if (d.enable_kc_federation && d._kcUrl) {
+        el('env-kc-url').textContent = d._kcUrl;
+        el('env-kc-url-line').style.display = '';
+      } else {
+        el('env-kc-url-line').style.display = 'none';
+      }
+
+      // CA mode human label for email
+      const caModeLabels = {
+        sub_ca:           'Sub-CA des Providers (empfohlen)',
+        own_root_ca:      'Eigene Root-CA',
+        external_root_ca: 'Externe Root-CA',
+      };
+      const caModeLabel = caModeLabels[d.ca_mode] || d.ca_mode;
+
       // E-Mail-Text
+      const envLines = [
+        `  TENANT_ID=${d.tenant_id}`,
+        `  TENANT_DISPLAY_NAME=${d.display_name}`,
+        `  PROVIDER_URL=${apiBase}`,
+        `  JOIN_KEY=${d.join_key}`,
+      ];
+      if (d.enable_kc_federation && d._kcUrl) {
+        envLines.push(`  TENANT_KEYCLOAK_URL=${d._kcUrl}`);
+      }
+
       const emailBody = [
         `Hallo,`,
         ``,
         `Ihr CDM Tenant-Slot wurde eingerichtet. Bitte fügen Sie folgende Zeilen in die`,
         `Datei \`tenant-stack/.env\` ein und starten Sie anschließend den Tenant-Stack:`,
         ``,
-        `  TENANT_ID=${d.tenant_id}`,
-        `  TENANT_DISPLAY_NAME=${d.display_name}`,
-        `  PROVIDER_URL=${apiBase}`,
-        `  JOIN_KEY=${d.join_key}`,
+        ...envLines,
+        ``,
+        `PKI-Modus:        ${caModeLabel}`,
+        `Keycloak-Federation: ${d.enable_kc_federation ? 'Ja' : 'Nein'}`,
+        ...(d.enable_kc_federation ? [`Operator-Login:   ${d.enable_operator_login ? 'Ja' : 'Nein'}`] : []),
         ``,
         `Danach: cd tenant-stack && docker compose up -d`,
         ``,
@@ -677,12 +813,16 @@ JOIN_KEY=<span class="env-val" id="env-join-key">…</span></div>
     window.copyEnvBlock = function() {
       const d = _resultData;
       if (!d) return;
-      const text = [
+      const lines = [
         `TENANT_ID=${d.tenant_id}`,
         `TENANT_DISPLAY_NAME=${d.display_name}`,
         `PROVIDER_URL=${d._apiBase}`,
         `JOIN_KEY=${d.join_key}`,
-      ].join('\n');
+      ];
+      if (d.enable_kc_federation && d._kcUrl) {
+        lines.push(`TENANT_KEYCLOAK_URL=${d._kcUrl}`);
+      }
+      const text = lines.join('\n');
       navigator.clipboard.writeText(text).then(() => {
         const btn = event.target;
         const orig = btn.textContent;
