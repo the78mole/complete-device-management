@@ -371,7 +371,7 @@ services:
 
   # ── Grafana (tenant device dashboards) ──────────────────────────
   grafana:
-    image: grafana/grafana-oss:12.4.0
+    image: grafana/grafana-oss:12.4.1
     container_name: ${TENANT_ID:-tenant}-grafana
     restart: unless-stopped
     environment:
@@ -410,7 +410,7 @@ services:
 
   # ── Telegraf (tenant metrics aggregator) ────────────────────────
   telegraf:
-    image: telegraf:1.37-alpine
+    image: telegraf:1.38-alpine
     container_name: ${TENANT_ID:-tenant}-telegraf
     restart: unless-stopped
     environment:

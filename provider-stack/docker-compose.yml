@@ -325,7 +325,7 @@ services:
 
   # ── Grafana ──────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana-oss:12.4.0
+    image: grafana/grafana-oss:12.4.1
     container_name: provider-grafana
     restart: unless-stopped
     environment:
@@ -369,7 +369,7 @@ services:
 
   # ── Telegraf (provider metrics aggregator) ───────────────────────
   telegraf:
-    image: telegraf:1.37-alpine
+    image: telegraf:1.38-alpine
     container_name: provider-telegraf
     restart: unless-stopped
     # Suppress "strict env handling" deprecation warning – all env vars are
