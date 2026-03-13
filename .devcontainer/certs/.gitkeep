@@ -1,0 +1,3 @@
+# Place your custom CA certificates (.crt) here.
+# They will be copied into /usr/local/share/ca-certificates/ during devcontainer build
+# and registered via update-ca-certificates.

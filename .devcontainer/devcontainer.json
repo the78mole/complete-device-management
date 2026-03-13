@@ -1,8 +1,9 @@
 {
   "name": "CDM Platform Dev",
-  // Re-use whichever image the Codespace / devcontainer spins up;
-  // adjust if you add a custom Dockerfile later.
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  // Custom Dockerfile: installs ca-certificates and imports certs from ./certs/.
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
 
   // ── Port forwarding ────────────────────────────────────────────────────────
   // VS Code / Codespaces will automatically forward these ports and show them
@@ -126,6 +127,11 @@
   //   the Docker CLI + Compose plugin. Containers run as siblings on the
   //   host so all port bindings in docker-compose.yml work unchanged.
   "features": {
+    "ghcr.io/the78mole/devcontainer-features/cacerts:1": {
+      "urls": "/usr/local/share/ca-certificates/",
+      "searchCerts": true,
+      "ignoreMissing": true
+    },
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
       "configureZshAsDefaultShell": true,
@@ -135,7 +141,12 @@
       "userUid": "automatic",
       "userGid": "automatic"
     },
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+    // "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+    //   "moby": false,
+    //   "installDockerBuildx": true,
+    //   "dockerDashComposeVersion": "v2"
+    // },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "moby": false,
       "installDockerBuildx": true,
       "dockerDashComposeVersion": "v2"
@@ -156,7 +167,7 @@
   // daemon (e.g. Engine 23.x, API 1.43) with "client version too new".
   // Adjust the value if the host daemon is upgraded.
   "remoteEnv": {
-    "DOCKER_API_VERSION": "1.43"
+  //  "DOCKER_API_VERSION": "1.43"
   },
 
   // Fix Git "unsafe/dubious ownership" for the mounted workspace, install
