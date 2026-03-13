@@ -37,7 +37,57 @@ docker compose ps
 
 ---
 
-### step-ca fails with "certificate already exists"
+### `rabbitmq-cert-init` exits with code 1 — "invalid value for flag '--provisioner'"
+
+**Cause:** The `iot-bridge` JWK provisioner does not exist in step-ca yet.  This happens
+when step-ca was initialised without running the provisioner setup script (e.g. after
+wiping `step-ca-data` and restarting without rebuilding the image).
+
+**Symptoms in logs:**
+
+```
+>>> Requesting RabbitMQ server certificate from step-ca...
+invalid value 'iot-bridge' for flag '--provisioner'
+```
+
+**Fix:** Trigger the provisioner init script manually:
+
+```bash
+cd provider-stack
+docker compose exec step-ca /usr/local/bin/init-provisioners.sh
+# Then restart the cert-init services:
+docker compose up -d rabbitmq-cert-init
+```
+
+!!! note "Automatic on every start (since March 2026)"
+    The `step-ca` entrypoint now calls `init-provisioners.sh` automatically in the
+    background before marking the container healthy.  This error should no longer occur
+    on fresh deployments.
+
+---
+
+### `rabbitmq-cert-init` exits with code 1 — "requested duration … more than the authorized maximum"
+
+**Cause:** The `iot-bridge` provisioner exists but was created without raising the
+maximum certificate duration (default: 24 h).  `rabbitmq-cert-init` requests 8760 h (1 year).
+
+**Fix:** Update the provisioner duration limit:
+
+```bash
+cd provider-stack
+docker compose exec step-ca sh -c "
+  step ca provisioner update iot-bridge \
+    --x509-max-dur 8760h \
+    --admin-subject step \
+    --admin-provisioner cdm-admin@cdm.local \
+    --admin-password-file /run/secrets/step-ca-password"
+# Then retry:
+docker compose up -d rabbitmq-cert-init
+```
+
+---
+
+
 
 **Likely cause:** The `step-ca-data` volume already contains a CA from a previous run with a different password.
 
@@ -378,6 +428,108 @@ the JOIN request to issue a new MQTT bridge certificate.
 
 **Fix:** Re-run the JOIN workflow step from [Tenant Onboarding](../use-cases/tenant-onboarding.md),
 or update the client secret in Provider Keycloak → Realm `cdm` → Clients → `<tenant-id>-idp`.
+
+---
+
+## Full Reset: "Green-Field" Test
+
+Use this procedure to wipe all persistent state and restart the Provider-Stack completely
+from scratch — as if it were deployed for the first time.
+
+!!! danger "Destructive — all data will be lost"
+    This procedure deletes **all Docker volumes** for the stack:
+    - Root CA and all issued certificates
+    - OpenBao keys and secrets (new Transit keys will be generated)
+    - Keycloak database (all realms, clients, and users)
+    - TimescaleDB data (all metrics)
+    - RabbitMQ configuration (all vhosts, users, queues)
+
+    Any connected Tenant-Stacks and enrolled devices will need to be re-enrolled.
+
+### Reset Provider-Stack
+
+```bash
+cd provider-stack
+
+# 1. Stop and remove all containers + volumes
+docker compose down -v
+
+# 2. (Optional) Remove built images to force a full rebuild
+docker compose rm -sf
+docker images | grep provider-stack | awk '{print $3}' | xargs -r docker rmi -f
+
+# 3. Reset the .env back to minimal defaults
+#    (preserve your passwords, but clear auto-generated values)
+sed -i \
+  -e 's/^STEP_CA_FINGERPRINT=.*/STEP_CA_FINGERPRINT=/' \
+  -e 's/^OPENBAO_STEP_CA_ROLE_ID=.*/OPENBAO_STEP_CA_ROLE_ID=/' \
+  -e 's/^OPENBAO_STEP_CA_SECRET_ID=.*/OPENBAO_STEP_CA_SECRET_ID=/' \
+  -e 's/^GRAFANA_OIDC_SECRET=.*/GRAFANA_OIDC_SECRET=changeme/' \
+  -e 's/^BRIDGE_OIDC_SECRET=.*/BRIDGE_OIDC_SECRET=changeme/' \
+  -e 's/^PGADMIN_OIDC_SECRET=.*/PGADMIN_OIDC_SECRET=changeme/' \
+  -e 's/^RABBITMQ_MANAGEMENT_OIDC_SECRET=.*/RABBITMQ_MANAGEMENT_OIDC_SECRET=changeme/' \
+  .env
+
+# 4. Start fresh
+docker compose up -d
+
+# 5. Wait for all services to be healthy (~60–90 s)
+docker compose ps
+
+# 6. Copy the new STEP_CA_FINGERPRINT from step-ca logs
+docker compose logs step-ca | grep 'Root CA fingerprint'
+# → Update STEP_CA_FINGERPRINT in .env
+
+# 7. Copy the new OpenBao AppRole credentials
+docker compose logs openbao | grep 'OPENBAO_STEP_CA'
+# → Update OPENBAO_STEP_CA_ROLE_ID and OPENBAO_STEP_CA_SECRET_ID in .env
+
+# 8. Retrieve fresh Keycloak OIDC secrets and update .env
+#    (see Installation → Provider-Stack → A6)
+```
+
+### Reset a Tenant-Stack (without touching the Provider)
+
+```bash
+cd tenant-stack
+
+# Stop and remove all containers + volumes for this tenant
+docker compose down -v
+
+# Clear auto-generated values in .env
+sed -i \
+  -e 's/^OPENBAO_TENANT_ROLE_ID=.*/OPENBAO_TENANT_ROLE_ID=/' \
+  -e 's/^OPENBAO_TENANT_SECRET_ID=.*/OPENBAO_TENANT_SECRET_ID=/' \
+  .env
+
+# Restart — the JOIN workflow will be required again
+docker compose up -d
+docker compose exec ${TENANT_ID}-step-ca /usr/local/bin/init-sub-ca.sh
+```
+
+### Verify the fresh stack
+
+```bash
+cd provider-stack
+
+# All long-running services must be healthy or running
+docker compose ps
+
+# One-shot init containers must have exited 0
+docker compose logs rabbitmq-cert-init | tail -5
+# Expected last line: >>> cert-init complete.
+
+docker compose logs mqtt-certs-init | tail -5
+# Expected last line: >>> mqtt-certs-init complete.
+
+# step-ca health
+curl -sk https://localhost:9000/health
+# Expected: {"status":"ok"}
+
+# Provisioners present
+docker compose exec step-ca step ca provisioner list | grep '"name"'
+# Expected: cdm-admin@cdm.local, acme, iot-bridge, tenant-sub-ca-signer
+```
 
 ---
 

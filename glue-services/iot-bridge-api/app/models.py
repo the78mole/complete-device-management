@@ -1,5 +1,6 @@
 """Pydantic request / response models for the IoT Bridge API."""
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -68,6 +69,19 @@ class HealthResponse(BaseModel):
 # ── JOIN workflow ─────────────────────────────────────────────────────────────
 
 
+class CaMode(StrEnum):
+    """PKI operating mode for a new tenant."""
+
+    sub_ca = "sub_ca"
+    """Provider signs the Tenant Sub-CA CSR (default, recommended)."""
+
+    own_root_ca = "own_root_ca"
+    """Tenant operates its own Root CA – no Sub-CA CSR signing by Provider."""
+
+    external_root_ca = "external_root_ca"
+    """An external CA signs for the tenant – no Sub-CA CSR signing by Provider."""
+
+
 class TenantPrepareRequest(BaseModel):
     """Body for POST /portal/admin/tenants/prepare.
 
@@ -82,6 +96,28 @@ class TenantPrepareRequest(BaseModel):
     display_name: str = Field(
         ..., description="Human-readable tenant name, e.g. 'Acme Devices GmbH'"
     )
+    ca_mode: CaMode = Field(
+        CaMode.sub_ca,
+        description=(
+            "PKI role: sub_ca = Provider signs Sub-CA CSR (default); "
+            "own_root_ca = tenant operates own Root CA; "
+            "external_root_ca = tenant uses an external CA."
+        ),
+    )
+    enable_kc_federation: bool = Field(
+        True,
+        description=(
+            "Create a Keycloak federation client in the Provider cdm realm so the "
+            "Tenant Keycloak can federate against it."
+        ),
+    )
+    enable_operator_login: bool = Field(
+        True,
+        description=(
+            "Allow Provider-Operators (cdm-admin role) to log into Tenant services "
+            "via the Keycloak federation. Only relevant when enable_kc_federation=True."
+        ),
+    )
 
 
 class TenantPrepareResponse(BaseModel):
@@ -95,6 +131,9 @@ class TenantPrepareResponse(BaseModel):
         "Set as JOIN_KEY env var in the Tenant-Stack .env.",
     )
     expires_at: str = Field(..., description="ISO8601 expiry (7 days from now)")
+    ca_mode: CaMode = CaMode.sub_ca
+    enable_kc_federation: bool = True
+    enable_operator_login: bool = True
     hint: str = (
         "Set PROVIDER_URL=<this-api-base> and JOIN_KEY=<join_key> in the "
         "Tenant-Stack .env, then run `docker compose up`."

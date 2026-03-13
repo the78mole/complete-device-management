@@ -3,6 +3,7 @@
 #
 # Manages platform-wide services shared across all tenants:
 #   step-ca      → Root PKI (X.509 certificates)
+#   openbao      → Key management store (Transit engine, KV-v2, AppRole; /vault/ via Caddy)
 #   keycloak     → Identity provider (realm: cdm)
 #   rabbitmq     → Central AMQP broker with per-tenant vHosts
 #   timescaledb  → Time-series database (PostgreSQL 17 + TimescaleDB)
@@ -22,6 +23,7 @@
 #
 # Port mapping:
 #   8888  → Caddy (entry point, path-based routing)
+#   8200  → OpenBao (direct, also at /vault/ via Caddy)
 #   9000  → step-ca (HTTPS, direct)
 
 networks:
@@ -39,6 +41,7 @@ volumes:
   step-ca-data:
   caddy-data:
   iot-bridge-data:
+  openbao-data:
 
 secrets:
   step-ca-password:
@@ -48,9 +51,16 @@ secrets:
 services:
 
   # ── step-ca (Root PKI) ──────────────────────────────────────────
-  # Auto-creates Root CA + Intermediate CA on first boot.
+  # Auto-creates Root CA + Intermediate CA on first boot using OpenBao Transit KMS.
+  # Private keys NEVER leave OpenBao – all signing operations go through Transit.
   # Build context is repo root so the Dockerfile can copy
   # provider-stack/step-ca/templates/ (leaf cert + sub-CA signer templates).
+  #
+  # BOOTSTRAP ORDER: step-ca depends on OpenBao being healthy.
+  # AppRole credentials are written automatically by OpenBao on first init to
+  # /openbao/data/step-ca-approle.json and are read by step-ca at startup.
+  # No manual operator step required ("secret zero" solved via shared volume).
+  # Override via .env: OPENBAO_STEP_CA_ROLE_ID / OPENBAO_STEP_CA_SECRET_ID
   step-ca:
     build:
       context: ..
@@ -58,6 +68,13 @@ services:
     container_name: provider-step-ca
     restart: unless-stopped
     environment:
+      # ── OpenBao KMS integration (keys never touch disk) ──────────
+      VAULT_ADDR: "http://openbao:8200"
+      OPENBAO_TRANSIT_KEY_NAME: "${OPENBAO_TRANSIT_KEY_NAME:-step-ca}"
+      OPENBAO_TRANSIT_KEY_INT: "${OPENBAO_TRANSIT_KEY_INT:-step-ca-int}"
+      OPENBAO_STEP_CA_ROLE_ID: "${OPENBAO_STEP_CA_ROLE_ID:-}"
+      OPENBAO_STEP_CA_SECRET_ID: "${OPENBAO_STEP_CA_SECRET_ID:-}"
+      # ── CA bootstrap (used on first boot only) ───────────────────
       DOCKER_STEPCA_INIT_NAME: "${STEP_CA_PKI_NAME:-CDM Root CA}"
       DOCKER_STEPCA_INIT_DNS_NAMES: "${STEP_CA_DNS_NAMES:-step-ca,localhost}"
       DOCKER_STEPCA_INIT_PASSWORD_FILE: /run/secrets/step-ca-password
@@ -66,6 +83,7 @@ services:
       DOCKER_STEPCA_INIT_ACME: "${STEP_CA_ENABLE_ACME:-true}"
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "${STEP_CA_ENABLE_REMOTE_MGMT:-true}"
       DOCKER_STEPCA_INIT_SSH: "${STEP_CA_ENABLE_SSH:-false}"
+      # ── Post-init provisioner setup (run once via init-provisioners.sh) ──
       STEP_CA_PROVISIONER_NAME: "${STEP_CA_PROVISIONER_NAME:-iot-bridge}"
       STEP_CA_PROVISIONER_PASSWORD: "${STEP_CA_PROVISIONER_PASSWORD:-changeme}"
       STEP_CA_SUB_CA_PROVISIONER: "${STEP_CA_SUB_CA_PROVISIONER:-tenant-sub-ca-signer}"
@@ -74,10 +92,16 @@ services:
       - step-ca-password
     volumes:
       - step-ca-data:/home/step
+      # openbao-data mounted read-only: step-ca reads step-ca-approle.json from here
+      # on first boot when no env var credentials are provided (secret-zero bootstrap)
+      - openbao-data:/openbao-bootstrap:ro
     ports:
       - "9000:9000"
     networks:
       - provider-net
+    depends_on:
+      openbao:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
       interval: 15s
@@ -478,7 +502,44 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
-
+  # ── OpenBao (key management) ────────────────────────────────────────────
+  # Provides the Transit secrets engine as a key-management backend for the
+  # Provider-Stack, including a dedicated transit key that step-ca can use to
+  # wrap / unwrap its Root CA private key (step-kms-plugin integration).
+  # The KV-v2 engine stores all platform-level secrets.
+  # AppRole credentials for step-ca are printed to the container log on
+  # first-time boot (see OPENBAO_STEP_CA_ROLE_ID / OPENBAO_STEP_CA_SECRET_ID).
+  #
+  # UI accessible at /vault/ (Caddy) or directly on port 8200.
+  openbao:
+    build:
+      context: ./openbao
+      dockerfile: Dockerfile
+    container_name: provider-openbao
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK    # prevents secrets from being swapped to disk
+    environment:
+      # Name of the Transit key created for step-ca key operations
+      OPENBAO_TRANSIT_KEY_NAME: ${OPENBAO_TRANSIT_KEY_NAME:-step-ca}
+      # KV-v2 mount path for platform secrets
+      OPENBAO_KV_PATH: ${OPENBAO_KV_PATH:-cdm}
+    volumes:
+      - openbao-data:/openbao/data
+      - ./openbao/config.hcl:/openbao/config/config.hcl:ro
+    ports:
+      - "${OPENBAO_PORT:-8200}:8200"
+    networks:
+      - provider-net
+    healthcheck:
+      # exit 0 = initialized + unsealed  (healthy)
+      # exit 1 = sealed                  (unhealthy)
+      # exit 2 = not initialized          (unhealthy)
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
   # ── Caddy (reverse proxy / entry point) ─────────────────────────
   # Single entry point on port 8888. Path-based routing to all services.
   # Static landing page served from /srv/html.
@@ -509,6 +570,8 @@ services:
       iot-bridge-api:
         condition: service_started
       step-ca:
+        condition: service_healthy
+      openbao:
         condition: service_healthy
       timescaledb:
         condition: service_healthy

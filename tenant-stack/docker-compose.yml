@@ -11,29 +11,38 @@
 #   3. docker compose up -d
 #
 # Services included:
-#   step-ca      → Tenant Issuing Sub-CA (CSR signed by Provider Root CA)
-#   keycloak     → Tenant Keycloak realm (federated into Provider cdm realm)
-#   thingsboard  → Device registry, MQTT broker, Rule Engine, dashboards
-#   hawkbit      → OTA software-lifecycle management (DDI + DMF)
-#   wireguard    → VPN server for device remote-access tunnel
-#   terminal-proxy → WebSocket → ttyd proxy (browser terminal)
-#   timescaledb  → unified DB: ThingsBoard app data + tenant telemetry analytics
-#                   (timescale/timescaledb image replaces thingsboard-db + separate timescaledb)
-#   pgadmin      → Database admin UI (served via Caddy /pgadmin/)
-#   grafana      → Tenant device dashboards
-#   telegraf     → Tenant metrics aggregator
-#   iot-bridge-api → Tenant management API (device enrollment, WG alloc)
-#   caddy        → Reverse proxy / single entry point (:8888)
+#   step-ca          → Tenant Issuing Sub-CA (CSR signed by Provider Root CA)
+#   keycloak         → Tenant Keycloak realm (federated into Provider cdm realm)
+#   thingsboard      → Device registry, MQTT broker, Rule Engine, dashboards
+#   hawkbit          → OTA software-lifecycle management (DDI + DMF)
+#   wireguard        → VPN server for device remote-access tunnel
+#   terminal-proxy   → WebSocket → ttyd proxy (browser terminal)
+#   timescaledb      → unified DB: ThingsBoard app data + tenant telemetry analytics
+#                      (timescale/timescaledb image replaces thingsboard-db + separate timescaledb)
+#   pgadmin          → Database admin UI (served via Caddy /pgadmin/)
+#   grafana          → Tenant device dashboards
+#   telegraf         → Tenant metrics aggregator
+#   iot-bridge-api   → Tenant management API (device enrollment, WG alloc)
+#   openbao          → Code-signing key vault (OPENBAO_MODE=agent → Hub proxy;
+#                      OPENBAO_MODE=embedded → standalone for development)
+#   openbao-cert-init → One-shot: requests code-signing cert from step-ca, stores in OpenBao KV
+#   caddy            → Reverse proxy / single entry point (:8888)
 #
 # NOT included here (→ provider-stack):
 #   Root CA, central RabbitMQ, platform-wide TimescaleDB/Grafana
 #
-# Port mapping:
-#   8888       → Caddy  (main entry point, path-based routing)
-#   9090       → ThingsBoard UI (direct, SPA can't use sub-path)
-#   8883       → ThingsBoard MQTT over TLS (direct, device connections)
-#   51820/udp  → WireGuard (direct, device VPN)
-#   9000       → step-ca (HTTPS, direct)
+# Port mapping (host:container) – env-var-controlled for easy offset:
+#   ${CADDY_PORT:-8888}:8888                → Caddy  (main entry point, path-based routing)
+#   ${TB_HOST_PORT:-9090}:9090              → ThingsBoard UI (direct, SPA can't use sub-path)
+#   ${TB_MQTT_TLS_HOST_PORT:-8883}:8883     → ThingsBoard MQTT over TLS (direct, device connections)
+#   ${WG_PORT:-51820}:51820/udp             → WireGuard (direct, device VPN)
+#   ${STEP_CA_HOST_PORT:-9000}:9000         → step-ca (HTTPS, direct)
+#   ${KC_HOST_PORT:-8080}:8080              → Keycloak (direct)
+#   ${BRIDGE_HOST_PORT:-8000}:8000          → IoT Bridge API (direct)
+#   ${TERMINAL_HOST_PORT:-8090}:8090        → Terminal Proxy (direct)
+#
+# To run tenant-stack alongside provider-stack in one environment set a
+# +10000 port offset in .env (see .env.example "Host port overrides" block).
 
 networks:
   tenant-net:
@@ -55,6 +64,8 @@ volumes:
   wg-data:
   step-ca-data:
   caddy-data:
+  openbao-data:
+  openbao-creds:
 
 secrets:
   step-ca-password:
@@ -578,6 +589,82 @@ services:
   # ── Caddy (reverse proxy / single entry point) ───────────────────
   # Entry point on port 8888 (same as provider-stack).
   # ThingsBoard uses port 9090 directly (SPA webpack limitation).
+
+  # ── OpenBao (code-signing) ────────────────────────────────────────
+  # Manages the ECDSA P-384 code-signing key via the Transit secrets engine.
+  # A code-signing certificate issued by the Tenant Sub-CA is stored in
+  # the KV-v2 engine (openbao-cert-init writes it on first boot).
+  #
+  # Deployment modes (OPENBAO_MODE in .env):
+  #   embedded (default) – self-contained single-node Raft, suitable for development.
+  #   agent              – OpenBao Agent proxying to an external Hub cluster.
+  #                        Set OPENBAO_HUB_ADDR + OPENBAO_APPROLE_* for production.
+  #
+  # The UI is reachable at /vault/ (Caddy) or directly on port ${OPENBAO_PORT:-18200}.
+  openbao:
+    build:
+      context: ./openbao
+      dockerfile: Dockerfile
+    container_name: ${TENANT_ID:-tenant}-openbao
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      OPENBAO_MODE: ${OPENBAO_MODE:-embedded}
+      OPENBAO_CODESIGN_KEY_NAME: ${OPENBAO_CODESIGN_KEY_NAME:-code-signing}
+      OPENBAO_KV_PATH: ${OPENBAO_KV_PATH:-code-signing}
+      OPENBAO_CREDS_DIR: /openbao/creds
+      # Agent mode – leave empty when OPENBAO_MODE=embedded
+      OPENBAO_HUB_ADDR: ${OPENBAO_HUB_ADDR:-}
+      OPENBAO_APPROLE_ROLE_ID: ${OPENBAO_APPROLE_ROLE_ID:-}
+      OPENBAO_APPROLE_SECRET_ID: ${OPENBAO_APPROLE_SECRET_ID:-}
+    volumes:
+      - openbao-data:/openbao/data
+      - openbao-creds:/openbao/creds
+      - ./openbao/config.hcl:/openbao/config/config.hcl:ro
+    ports:
+      - "${OPENBAO_PORT:-18200}:8200"
+    networks:
+      - tenant-net
+    healthcheck:
+      test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # One-shot: requests a code-signing cert from the Tenant step-ca, stores
+  # it in OpenBao KV-v2.  Runs once per deployment; idempotent on restart.
+  # In agent mode (OPENBAO_MODE=agent) the cert is stored in the Hub's KV-v2
+  # via the Agent proxy on http://openbao:8200 — no special handling needed.
+  openbao-cert-init:
+    image: smallstep/step-cli:latest
+    container_name: ${TENANT_ID:-tenant}-openbao-cert-init
+    restart: "no"
+    user: root
+    entrypoint: ["/bin/sh", "/scripts/cert-init.sh"]
+    environment:
+      STEP_CA_URL: https://step-ca:9000
+      STEP_CA_FINGERPRINT: ${STEP_CA_FINGERPRINT:-}
+      STEP_CA_CODE_SIGNER_PROVISIONER: ${STEP_CA_CODE_SIGNER_PROVISIONER:-code-signer}
+      STEP_CA_CODE_SIGNER_PASSWORD: ${STEP_CA_CODE_SIGNER_PASSWORD:-changeme}
+      STEP_CA_ADMIN_PROVISIONER: ${STEP_CA_ADMIN_PROVISIONER:-tenant-admin@cdm.local}
+      STEP_CA_ADMIN_PASSWORD: ${STEP_CA_ADMIN_PASSWORD:-changeme}
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_KV_PATH: ${OPENBAO_KV_PATH:-code-signing}
+      OPENBAO_CREDS_DIR: /openbao/creds
+      TENANT_ID: ${TENANT_ID:-tenant}
+    volumes:
+      - step-ca-data:/home/step:ro
+      - openbao-creds:/openbao/creds
+      - ./openbao/cert-init.sh:/scripts/cert-init.sh:ro
+    networks:
+      - tenant-net
+    depends_on:
+      step-ca:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
 
   caddy:
     image: caddy:2-alpine

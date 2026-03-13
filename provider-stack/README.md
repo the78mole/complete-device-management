@@ -11,6 +11,7 @@ At the end, all Provider services should be running stably with:
 - `provider-keycloak` (`healthy`)
 - `provider-rabbitmq` (`healthy`)
 - `provider-timescaledb` (`healthy`)
+- `provider-openbao` (`healthy`) — auto-initialized on first start (Transit key + AppRole)
 - `provider-caddy`, `provider-grafana`, `provider-iot-bridge-api`, `provider-pgadmin`, `provider-telegraf` (`Up`)
 - `provider-rabbitmq-cert-init`, `provider-mqtt-certs-init` as one-shots with `Exited (0)`
 - `provider-system-monitor` (`Up`)  — publishes CPU load + RAM metrics every 5 s via MQTT+mTLS
@@ -54,23 +55,40 @@ Wait until the container is `healthy`:
 docker compose ps step-ca
 ```
 
-## 4) Initialize provisioners (important)
+## 4) Initialize provisioners and update `.env` (run once)
 
 ```bash
-docker exec provider-step-ca /usr/local/bin/init-provisioners.sh
+./scripts/init-pki.sh
 ```
 
-This creates (among others) the `iot-bridge` and `tenant-sub-ca-signer` provisioners.
+This runs `init-provisioners.sh` inside the step-ca container (creates `iot-bridge` and
+`tenant-sub-ca-signer` provisioners if they don't exist yet) and automatically writes
+the resulting values — `STEP_CA_FINGERPRINT`, `STEP_CA_PROVISIONER_NAME`, etc. — into `.env`.
 
-## 5) Set the Root CA fingerprint
+!!! tip "Manual re-run"
+    Run `./scripts/init-pki.sh` again at any time to re-apply provisioner settings or
+    refresh the fingerprint in `.env` (the operation is idempotent).
 
-Read the fingerprint:
+## 5) Copy OpenBao AppRole credentials to `.env`
 
 ```bash
-docker exec provider-step-ca sh -lc 'step certificate fingerprint /home/step/certs/root_ca.crt'
+./scripts/init-openbao.sh
 ```
 
-Set the output value in `.env` as `STEP_CA_FINGERPRINT=<value>`.
+This reads `role_id` and `secret_id` from `/openbao/data/step-ca-approle.json` inside the
+running `provider-openbao` container and writes `OPENBAO_STEP_CA_ROLE_ID` and
+`OPENBAO_STEP_CA_SECRET_ID` into `.env` automatically.
+
+Pass `--with-root-token` to also write `OPENBAO_ROOT_TOKEN` (useful for manual vault
+operations):
+
+```bash
+./scripts/init-openbao.sh --with-root-token
+```
+
+> **Note:** On subsequent starts, OpenBao auto-unseals from `/openbao/data/.init.json` —
+> no manual action required. `OPENBAO_MODE=embedded` (default) is sufficient for all
+> development and single-node testing scenarios.
 
 ## 6) Start the full stack
 
@@ -86,11 +104,47 @@ docker compose ps -a
 
 The start-up order is controlled by `depends_on` conditions:
 
-```
-step-ca (healthy)
-  ├─► rabbitmq-cert-init → rabbitmq (healthy)
-  └─► mqtt-certs-init   → system-monitor
-                         → telegraf (needs timescaledb + rabbitmq + mqtt-certs-init)
+```mermaid
+graph TD
+    OB["openbao ✅ healthy"]
+    SCA["step-ca ✅ healthy"]
+    TSDB["timescaledb ✅ healthy"]
+    KC["keycloak ✅ healthy"]
+
+    RCI["rabbitmq-cert-init ⬛"]
+    MCI["mqtt-certs-init ⬛"]
+    RMQ["rabbitmq ✅ healthy"]
+    SM["system-monitor"]
+    TEL["telegraf"]
+    IBA["iot-bridge-api"]
+    GRF["grafana"]
+    PGA["pgadmin"]
+    CAD["caddy"]
+
+    OB --> SCA
+    SCA --> RCI --> RMQ
+    SCA --> MCI --> SM
+    MCI --> TEL
+    TSDB --> TEL
+    RMQ --> TEL
+
+    KC --> IBA
+    SCA --> IBA
+    RMQ --> IBA
+
+    KC --> GRF
+    TSDB --> GRF
+
+    TSDB --> PGA
+    KC --> PGA
+
+    OB --> CAD
+    KC --> CAD
+    IBA --> CAD
+    GRF --> CAD
+
+    style RCI fill:#555,color:#fff
+    style MCI fill:#555,color:#fff
 ```
 
 `mqtt-certs-init` issues client certificates (CN=`system-monitor` and CN=`telegraf`) from
@@ -209,6 +263,47 @@ block) are not available.
 
 Fix: remove these fields from `monitoring/telegraf/telegraf.conf` (already applied in the
 current state).
+
+### `provider-openbao`: `permission denied` on `/openbao/data/vault.db`
+
+Symptom in logs:
+
+```
+error initializing storage of type raft: failed to create fsm:
+  failed to open bolt file: open /openbao/data/vault.db: permission denied
+```
+
+Cause: Docker created the named volume with `root` ownership before the container could
+set it up (e.g. after an aborted first start or when using an old image without the
+`mkdir/chown` fix in the Dockerfile).
+
+Fix: Remove the container and volume so Docker re-initialises with correct ownership:
+
+```bash
+docker compose stop openbao
+docker compose rm -f openbao
+docker volume rm provider-stack_openbao-data
+docker compose up -d openbao
+```
+
+### `provider-openbao`: `unable to find user vault`
+
+Symptom:
+
+```
+Error response from daemon: unable to find user vault: no matching entries in passwd file
+```
+
+Cause: The `openbao/openbao` base image uses the username **`openbao`**, not `vault`
+(which was the username in the original HashiCorp Vault).  The `Dockerfile` had
+`USER vault` instead of `USER openbao`.
+
+Fix (already applied in the current codebase): rebuild the image:
+
+```bash
+docker compose build --no-cache openbao
+docker compose up -d openbao
+```
 
 ## Useful Quick Commands
 

@@ -60,8 +60,9 @@
       background: #0d2416; border: 1px solid #186231; border-radius: 8px;
       padding: 1rem; margin-top: 0.75rem; font-family: monospace; font-size: 0.82rem;
     }
-    .badge-pending { background: #2c1a00; color: #e3b341; border: 1px solid #7c4c00; }
+    .badge-pending  { background: #2c1a00; color: #e3b341; border: 1px solid #7c4c00; }
     .badge-rejected { background: #300; color: #f85149; border: 1px solid #7c0000; }
+    .badge-prepared { background: #0d2416; color: #3fb950; border: 1px solid #186231; }
     .protected-badge {
       font-size: 0.65rem; font-weight: 600; padding: 0.2rem 0.45rem;
       border-radius: 4px; background: #1f3a5f; color: #8b949e;
@@ -92,6 +93,68 @@
   </div>
 
   <div class="container py-4">
+
+    <!-- ── Prepared Tenant Slots (key issued, not yet joined) ─────────── -->
+    {% set prep_count = prepared_tenants | length %}
+    <div class="section-label">
+      Vorbereitete Tenant-Slots
+      {% if prep_count > 0 %}
+        <span class="badge-pill badge-prepared ms-2">{{ prep_count }} offen</span>
+      {% endif %}
+    </div>
+    {% if prepared_tenants %}
+    <div class="card-dark p-0 mb-4">
+      <table class="table table-dark table-borderless mb-0" style="background:transparent">
+        <thead style="border-bottom:1px solid #30363d">
+          <tr>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500;padding:0.75rem 1rem">Tenant-ID</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Anzeigename</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">JOIN-Key (maskiert)</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Erstellt am</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Läuft ab</th>
+            <th style="font-size:0.78rem;color:#8b949e;font-weight:500">Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for slot in prepared_tenants %}
+          <tr class="tenant-row">
+            <td style="padding:0.7rem 1rem;vertical-align:middle">
+              <code style="color:#79c0ff">{{ slot.tenant_id }}</code>
+            </td>
+            <td style="vertical-align:middle;font-size:0.88rem">{{ slot.display_name }}</td>
+            <td style="vertical-align:middle">
+              <code style="color:#8b949e;font-size:0.8rem">{{ slot.key[:4] }}-••••-••••-••••</code>
+            </td>
+            <td style="vertical-align:middle;font-size:0.8rem;color:#8b949e">
+              {{ slot.created_at[:16] if slot.created_at else '—' }}
+            </td>
+            <td style="vertical-align:middle;font-size:0.8rem;color:#8b949e">
+              {{ slot.expires_at[:16] if slot.expires_at else '—' }}
+            </td>
+            <td style="vertical-align:middle">
+              <div class="d-flex gap-1 flex-wrap">
+                <button class="btn btn-sm btn-outline-info btn-sm-action"
+                        onclick="showJoinKeyModal({{ slot | tojson }})">
+                  🔑 Key anzeigen
+                </button>
+                <button class="btn btn-sm btn-outline-danger btn-sm-action"
+                        onclick="confirmRevoke('{{ slot.tenant_id }}', {{ slot.display_name | tojson }})">
+                  🗑 Widerrufen
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-dark p-3 mb-4" style="text-align:center;color:#6e7681">
+      Keine vorbereiteten Tenant-Slots vorhanden.
+      Nutze <a href="/api/portal/add-tenant" style="color:#58a6ff">Tenant vorbereiten</a>
+      um einen neuen Slot anzulegen.
+    </div>
+    {% endif %}
 
     <!-- ── Pending JOIN Requests ───────────────────────────────────────── -->
     {% set pending_count = join_requests | selectattr('status', 'equalto', 'pending') | list | length %}
@@ -350,6 +413,63 @@
           <input type="hidden" id="delete-realm-id" />
           <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
           <button type="button" class="btn btn-danger btn-sm" onclick="doDelete()">Endgültig löschen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOIN Key Info Modal -->
+  <div class="modal fade" id="joinKeyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6" id="joinKeyModalTitle">🔑 JOIN-Key</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:0.82rem;color:#8b949e">
+            Setze <code>JOIN_KEY</code> in der Tenant-Stack <code>.env</code>-Datei.
+            Der Key ist <strong>einmalig</strong> verwendbar und wird nach der Verwendung invalidiert.
+          </p>
+          <div class="mb-3">
+            <label style="font-size:0.8rem;color:#8b949e">JOIN-Key</label>
+            <div class="input-group mt-1">
+              <input type="text" id="modal-join-key"
+                class="form-control"
+                style="background:#0d1117;border-color:#30363d;color:#ffa657;font-family:monospace;font-size:1rem;letter-spacing:2px"
+                readonly />
+              <button class="btn btn-outline-secondary btn-sm" onclick="copyJoinKey()" title="Kopieren">📋</button>
+            </div>
+          </div>
+          <div class="mb-2" style="font-size:0.8rem;color:#8b949e">Minimalblock für <code>.env</code>:</div>
+          <div class="cred-box" id="modal-env-block" style="white-space:pre-wrap;word-break:break-all;cursor:text"></div>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revoke Prepared Slot Confirmation Modal -->
+  <div class="modal fade" id="revokeModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content" style="background:#1c2128;border:1px solid #30363d;color:#e6edf3">
+        <div class="modal-header" style="border-color:#30363d">
+          <h5 class="modal-title h6" style="color:#f85149">⚠️ Tenant-Slot widerrufen</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Soll der vorbereitete Slot für <strong id="revoke-tenant-label"></strong> wirklich widerrufen werden?</p>
+          <p style="font-size:0.82rem;color:#f85149">
+            Der JOIN-Key wird ungültig. Der Tenant-Stack kann sich damit nicht mehr verbinden.
+            Keycloak und RabbitMQ werden <em>nicht</em> verändert.
+          </p>
+        </div>
+        <div class="modal-footer" style="border-color:#30363d">
+          <input type="hidden" id="revoke-tenant-id" />
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Abbrechen</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="doRevoke()">Widerrufen</button>
         </div>
       </div>
     </div>
@@ -670,6 +790,52 @@
           return;
         }
         log('JOIN-Anfrage für "' + tenantId + '" abgelehnt.', '#f85149');
+        setTimeout(() => location.reload(), 1500);
+      } catch(e) {
+        log('Netzwerkfehler: ' + e, '#f85149');
+      }
+    }
+    // ── JOIN Key Viewer & Revoke ─────────────────────────────────────────
+    var joinKeyModal = new bootstrap.Modal(document.getElementById('joinKeyModal'));
+    var revokeModal  = new bootstrap.Modal(document.getElementById('revokeModal'));
+
+    function showJoinKeyModal(slot) {
+      document.getElementById('joinKeyModalTitle').textContent = '🔑 JOIN-Key für ' + slot.tenant_id;
+      document.getElementById('modal-join-key').value = slot.key;
+      var envBlock =
+        'TENANT_ID='    + slot.tenant_id    + '\n' +
+        'DISPLAY_NAME=' + slot.display_name + '\n' +
+        'JOIN_KEY='     + slot.key          + '\n' +
+        '# Läuft ab: '  + (slot.expires_at ? slot.expires_at.slice(0, 19) + ' UTC' : '—');
+      document.getElementById('modal-env-block').textContent = envBlock;
+      joinKeyModal.show();
+    }
+
+    function copyJoinKey() {
+      var v = document.getElementById('modal-join-key').value;
+      navigator.clipboard.writeText(v).then(function() {
+        log('JOIN-Key in Zwischenablage kopiert.', '#4ade80');
+      });
+    }
+
+    function confirmRevoke(tenantId, displayName) {
+      document.getElementById('revoke-tenant-id').value = tenantId;
+      document.getElementById('revoke-tenant-label').textContent = displayName + ' (' + tenantId + ')';
+      revokeModal.show();
+    }
+
+    async function doRevoke() {
+      var tenantId = document.getElementById('revoke-tenant-id').value;
+      revokeModal.hide();
+      log('Widerrufe JOIN-Key für "' + tenantId + '" …', '#e3b341');
+      try {
+        var resp = await fetch('/api/portal/admin/tenants/prepared/' + encodeURIComponent(tenantId), {method: 'DELETE'});
+        var data = await resp.json();
+        if (!resp.ok) {
+          log('Fehler: ' + (data.error || resp.status), '#f85149');
+          return;
+        }
+        log(data.revoked + ' JOIN-Key(s) für "' + tenantId + '" widerrufen.', '#4ade80');
         setTimeout(() => location.reload(), 1500);
       } catch(e) {
         log('Netzwerkfehler: ' + e, '#f85149');

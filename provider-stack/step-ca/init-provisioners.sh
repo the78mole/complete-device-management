@@ -39,18 +39,29 @@ step ca bootstrap \
   --fingerprint "$(step certificate fingerprint /home/step/certs/root_ca.crt)" \
   --force
 
+# Helper: add a JWK provisioner if it does not already exist.
+# Treats "already exists" as success (idempotent).
+add_jwk_provisioner() {
+  local name="$1" password="$2"
+  printf '%s' "$password" > /tmp/jwk-prov-pw.txt
+  ADD_OUTPUT=$(step ca provisioner add "$name" \
+    --type JWK \
+    --create \
+    --password-file /tmp/jwk-prov-pw.txt \
+    --admin-subject step \
+    --admin-provisioner "$ADMIN_PROVISIONER" \
+    --admin-password-file /run/secrets/step-ca-password 2>&1) && \
+    echo "  '$name' added." || \
+    { echo "$ADD_OUTPUT" | grep -q "already exists" && echo "  '$name' already exists – skipping add." || \
+      { echo "$ADD_OUTPUT"; rm -f /tmp/jwk-prov-pw.txt; return 1; }; }
+  rm -f /tmp/jwk-prov-pw.txt
+}
+
 # ── 1. Leaf-certificate provisioner ─────────────────────────────────────────
 
 echo ""
-echo ">>> Adding JWK provisioner (leaf certs): $PROVISIONER_NAME ..."
-printf '%s' "$PROVISIONER_PASSWORD" > /tmp/provisioner-password.txt
-step ca provisioner add "$PROVISIONER_NAME" \
-  --type JWK \
-  --create \
-  --password-file /tmp/provisioner-password.txt \
-  --admin-subject step \
-  --admin-provisioner "$ADMIN_PROVISIONER" \
-  --admin-password-file /run/secrets/step-ca-password
+echo ">>> Provisioner (leaf certs): $PROVISIONER_NAME ..."
+add_jwk_provisioner "$PROVISIONER_NAME" "$PROVISIONER_PASSWORD"
 
 echo ">>> Attaching service-leaf template and setting max cert duration for $PROVISIONER_NAME ..."
 step ca provisioner update "$PROVISIONER_NAME" \
@@ -63,15 +74,8 @@ step ca provisioner update "$PROVISIONER_NAME" \
 # ── 2. Tenant Sub-CA signer provisioner ─────────────────────────────────────
 
 echo ""
-echo ">>> Adding JWK provisioner (Sub-CA signer): $SUB_CA_PROVISIONER ..."
-printf '%s' "$SUB_CA_PASSWORD" > /tmp/sub-ca-password.txt
-step ca provisioner add "$SUB_CA_PROVISIONER" \
-  --type JWK \
-  --create \
-  --password-file /tmp/sub-ca-password.txt \
-  --admin-subject step \
-  --admin-provisioner "$ADMIN_PROVISIONER" \
-  --admin-password-file /run/secrets/step-ca-password
+echo ">>> Provisioner (Sub-CA signer): $SUB_CA_PROVISIONER ..."
+add_jwk_provisioner "$SUB_CA_PROVISIONER" "$SUB_CA_PASSWORD"
 
 echo ">>> Attaching tenant-sub-ca template to $SUB_CA_PROVISIONER ..."
 step ca provisioner update "$SUB_CA_PROVISIONER" \
@@ -79,8 +83,6 @@ step ca provisioner update "$SUB_CA_PROVISIONER" \
   --admin-subject step \
   --admin-provisioner "$ADMIN_PROVISIONER" \
   --admin-password-file /run/secrets/step-ca-password
-
-rm -f /tmp/provisioner-password.txt /tmp/sub-ca-password.txt
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 
