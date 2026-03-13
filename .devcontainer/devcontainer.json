@@ -128,7 +128,7 @@
   //   host so all port bindings in docker-compose.yml work unchanged.
   "features": {
     "ghcr.io/the78mole/devcontainer-features/cacerts:1": {
-      "urls": "/usr/local/share/ca-certificates/",
+      "urls": "/usr/local/share/ca-certificates/extra",
       "searchCerts": true,
       "ignoreMissing": true
     },
