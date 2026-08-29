@@ -75,7 +75,15 @@ async def save_keys(data: dict[str, Any], settings: Settings) -> None:
         tmp.replace(path)
 
 
-async def create_key(tenant_id: str, display_name: str, settings: Settings) -> str:
+async def create_key(
+    tenant_id: str,
+    display_name: str,
+    settings: Settings,
+    *,
+    ca_mode: str = "sub_ca",
+    enable_kc_federation: bool = True,
+    enable_operator_login: bool = True,
+) -> str:
     """Create a new open JOIN key for *tenant_id* and persist it.
 
     Returns the generated key string.
@@ -93,6 +101,9 @@ async def create_key(tenant_id: str, display_name: str, settings: Settings) -> s
         "created_at": now.isoformat(),
         "expires_at": expires_at.isoformat(),
         "used_at": None,
+        "ca_mode": ca_mode,
+        "enable_kc_federation": enable_kc_federation,
+        "enable_operator_login": enable_operator_login,
     }
     await save_keys(keys, settings)
     return key

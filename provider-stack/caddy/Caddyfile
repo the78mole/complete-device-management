@@ -92,6 +92,27 @@
         }
     }
 
+    # ── OpenBao (/vault/) ─────────────────────────────────────────────────
+    # OpenBao KMS and secrets management.
+    # The OpenBao UI is served at /ui/ internally; Caddy strips /vault to
+    # let the UI assets resolve correctly.
+    # The API is at /v1/ internally; strip_prefix makes requests transparent.
+    handle /vault/ui* {
+        uri strip_prefix /vault
+        reverse_proxy openbao:8200
+    }
+    handle /vault/v1/* {
+        uri strip_prefix /vault
+        reverse_proxy openbao:8200
+    }
+    handle /vault {
+        redir /vault/ui 301
+    }
+    handle /vault/* {
+        uri strip_prefix /vault
+        reverse_proxy openbao:8200
+    }
+
     # ── pgAdmin (/pgadmin, /pgadmin/) ─────────────────────────────────────
     # Match both /pgadmin and /pgadmin/* to avoid fallback to landing page
     # when a client drops the trailing slash.

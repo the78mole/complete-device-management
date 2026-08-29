@@ -42,7 +42,7 @@
       "realmRoles": ["cdm-admin", "pgadmin-users", "matrix-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
-        { "type": "password", "value": "changeme", "temporary": true }
+        { "type": "password", "value": "changeme", "temporary": false }
       ]
     },
     {
@@ -56,7 +56,7 @@
       "realmRoles": ["cdm-operator"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
-        { "type": "password", "value": "changeme", "temporary": true }
+        { "type": "password", "value": "changeme", "temporary": false }
       ]
     },
     {
@@ -82,7 +82,7 @@
       "realmRoles": ["platform-operator", "pgadmin-users", "matrix-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
-        { "type": "password", "value": "${PROVIDER_OPERATOR_PASSWORD}", "temporary": true }
+        { "type": "password", "value": "${PROVIDER_OPERATOR_PASSWORD}", "temporary": false }
       ]
     }
   ],

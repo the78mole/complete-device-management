@@ -45,6 +45,7 @@ running as Docker Compose stacks.
 | `/rabbitmq/` | RabbitMQ Management 15672 | `management.path_prefix=/rabbitmq` |
 | `/pki/` | step-ca 9000 | HTTPS upstream, `tls_insecure_skip_verify` |
 | `/pgadmin/` | pgAdmin 80 | OIDC via Keycloak `cdm` realm |
+| `/vault/` | OpenBao 8200 | Transit engine + KV-v2; UI at `/vault/ui` |
 
 ## Tenant-Stack routing table
 
@@ -56,6 +57,7 @@ running as Docker Compose stacks.
 | `/hawkbit/` | hawkBit 8070 | `SERVER_SERVLET_CONTEXT_PATH=/hawkbit` |
 | `/pki/` | step-ca Sub-CA 9000 | HTTPS upstream, `tls_insecure_skip_verify` |
 | `/terminal/` | Terminal Proxy 8090 | WebSocket, JWT validated against tenant Keycloak |
+| `/vault/` | OpenBao 8200 | Code-signing vault, optional (`code-signing` profile) |
 | `:9090` | ThingsBoard | Direct port (SPA limitation) |
 | `:8086` | InfluxDB / oauth2-proxy | Direct port (SPA limitation) |
 | `:8883` | ThingsBoard MQTT TLS | Direct, device connections |

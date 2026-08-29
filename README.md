@@ -71,29 +71,34 @@ flowchart RL
 ```mermaid
 flowchart BT
     subgraph provider[Provider-Stack]
+        GRF_P[Grafana]
+        RMQ[RabbitMQ]
         KC[Keycloak IAM<br>cdm realm]
         SCA[step-ca Root CA]
-        RMQ[RabbitMQ]
+        OB_P[OpenBao]
         TSDB_P[(TimescaleDB<br>+ pgAdmin)]
-        GRF_P[Grafana]
         IBA_P[IoT Bridge API]
 
-        SCA <-->|Sign Sub-CA| IBA_P
         RMQ --> TSDB_P --> GRF_P
+        SCA <-->|Sign Sub-CA| IBA_P
+        OB_P -->|Transit sign| SCA
     end
 
     subgraph tenant[Tenant-Stack]
+        IBA_T[IoT Bridge API]
+        TXP[Terminal Proxy]
+        WGS[WireGuard Server]
+        HB[hawkBit OTA]
         KC_T[Keycloak<br>tenant realm]
         TB[ThingsBoard MQTT]
-        HB[hawkBit OTA]
         SCA_T[step-ca Sub-CA]
-        WGS[WireGuard Server]
-        TXP[Terminal Proxy]
+        OB_T[OpenBao<br>code-signing key]
         TSDB_T[(TimescaleDB)]
         GRF_T[Grafana]
 
         KC_T -->|federation| KC
-        TB -->|Rule Engine| IBA_T[IoT Bridge API]
+        TB -->|Rule Engine| IBA_T
+        OB_T -->|Transit sign| IBA_T
         SCA_T <-->|Sign| IBA_T
         TB -->|Rule Engine| TSDB_T
         TB -->|AMQP| RMQ
@@ -101,18 +106,19 @@ flowchart BT
     end
 
     subgraph edge[Edge Device]
-        BST[Bootstrap enroll.sh]
-        UPD[SWupdate / RAUC]
-        MQC[MQTT Client]
         TTD[ttyd]
         WGC[WireGuard Client]
+        UPD[SWupdate / RAUC]
+        BST[Bootstrap enroll.sh]
+        MQC[MQTT Client]
     end
 
     MQC -->|MQTTS mTLS| TB
+    WGC <-->|WireGuard VPN| WGS
     UPD -->|DDI poll| HB
     TTD <-->|WebSocket WireGuard| TXP
-    WGC <-->|WireGuard VPN| WGS
     BST -->|enroll CSR| IBA_T
+
 ```
 
 ---
@@ -127,6 +133,7 @@ flowchart BT
 | IoT Platform | [ThingsBoard CE](https://thingsboard.io/) | Tenant | Device registry,<br>MQTT broker, Rule Engine, UI |
 | OTA Backend | [Eclipse hawkBit](https://eclipse.dev/hawkbit/) | Tenant | Software campaign management |
 | PKI | [smallstep step-ca](https://smallstep.com/docs/step-ca/) | Both | Provider: Root+ICA;<br>Tenant: Sub-CA for device certs |
+| Key Management | [OpenBao](https://openbao.org/) | Both | Secrets store & Transit crypto engine;<br>Provider: Root CA key (step-kms-plugin);<br>Tenant: OTA code-signing key;<br>Modes: `embedded` (dev) / `agent` (HA Hub) |
 | Time-Series DB | [TimescaleDB](https://www.timescale.com/) | Both | Provider: platform metrics;<br>Tenant: device telemetry<br>(PostgreSQL extension) |
 | Visualization | [Grafana](https://grafana.com/) | Both | Fleet dashboards (Provider)<br>device dashboards (Tenant) |
 | VPN | [WireGuard](https://www.wireguard.com/) | Tenant | Zero-trust device tunnel |
@@ -145,13 +152,21 @@ flowchart BT
 │   ├── workflows/          # CI (tests, lint, docs build) + gh-pages deploy
 │   ├── skills/             # Keycloak runbook scripts + SKILL.md
 │   └── ISSUE_TEMPLATE/     # Bug report & feature request forms
-├── provider-stack/         # Provider-Stack: Caddy, Keycloak, RabbitMQ, TimescaleDB, Grafana, step-ca
+├── provider-stack/         # Provider-Stack: Caddy, Keycloak, RabbitMQ, TimescaleDB, Grafana, step-ca, OpenBao
 │   ├── docker-compose.yml
 │   ├── caddy/              # Caddyfile, landing page
 │   ├── keycloak/           # Realm templates (cdm + provider), init scripts
 │   ├── monitoring/         # TimescaleDB init, Grafana provisioning
+│   ├── openbao/            # Secrets & Transit engine (embedded or agent mode)
 │   ├── rabbitmq/           # RabbitMQ config, vHost definitions
 │   └── step-ca/            # Root CA + ICA Dockerfile, cert templates
+├── tenant-stack/           # Tenant-Stack: Caddy, Keycloak, ThingsBoard, hawkBit, step-ca, OpenBao, WireGuard
+│   ├── docker-compose.yml
+│   ├── caddy/              # Caddyfile, landing page
+│   ├── keycloak/           # Tenant realm template, init scripts
+│   ├── openbao/            # Code-signing key (embedded or agent mode)
+│   ├── step-ca/            # Sub-CA Dockerfile, cert templates
+│   └── thingsboard/        # ThingsBoard provisioning, OIDC config
 ├── glue-services/
 │   ├── iot-bridge-api/     # FastAPI: PKI enrollment, TB webhook, WireGuard alloc
 │   └── terminal-proxy/     # Node.js/TS: JWT-validated WebSocket → ttyd proxy

@@ -28,7 +28,7 @@
       "realmRoles": ["cdm-admin"],
       "clientRoles": { "realm-management": ["realm-admin"], "account": ["manage-account", "view-profile"] },
       "credentials": [
-        { "type": "password", "value": "${TENANT_ADMIN_PASSWORD}", "temporary": true }
+        { "type": "password", "value": "${TENANT_ADMIN_PASSWORD}", "temporary": false }
       ]
     },
     {
@@ -41,7 +41,7 @@
       "realmRoles": ["cdm-operator"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
-        { "type": "password", "value": "${TENANT_OPERATOR_PASSWORD}", "temporary": true }
+        { "type": "password", "value": "${TENANT_OPERATOR_PASSWORD}", "temporary": false }
       ]
     },
     {
@@ -54,7 +54,7 @@
       "realmRoles": ["cdm-viewer"],
       "clientRoles": { "account": ["manage-account", "view-profile"] },
       "credentials": [
-        { "type": "password", "value": "${TENANT_VIEWER_PASSWORD}", "temporary": true }
+        { "type": "password", "value": "${TENANT_VIEWER_PASSWORD}", "temporary": false }
       ]
     }
   ],

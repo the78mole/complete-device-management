@@ -79,8 +79,12 @@ while True:
             )
             params = []
             if "shared" in server_cols:
-                sql += ", shared=1, shared_username=?"
-                params.append(EMAIL)
+                # shared_username controls the PostgreSQL username that
+                # pgAdmin uses when auto-creating a SharedServer entry for
+                # a new OIDC user.  Must be 'postgres', NOT the pgAdmin
+                # admin email, otherwise every shared-server entry gets the
+                # email as the PG username → auth failure.
+                sql += ", shared=1, shared_username='postgres'"
             sql += " WHERE id=?"
             params.append(sid)
             cur.execute(sql, params)

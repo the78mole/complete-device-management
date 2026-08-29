@@ -199,3 +199,46 @@ step ca revoke <sub-ca-serial> \
 !!! tip "Sub-CA Independence"
     Each Tenant-Stack Sub-CA can be independently rotated by generating a new CSR and going
     through the JOIN signing flow again — without affecting other tenants or the Provider-Stack.
+
+---
+
+## Code-Signing Certificates (Tenant-Stack, optional)
+
+When the `code-signing` Docker Compose profile is active, the Tenant-Stack adds an
+[OpenBao](key-management.md) instance that holds an asymmetric signing key for
+OTA bundle signing (RAUC).
+
+```mermaid
+graph LR
+    TSCA["Tenant Sub-CA<br>(step-ca)"]
+    OB["OpenBao<br>(code-signing profile)"]
+    CI["CI/CD Pipeline<br>(hawkBit upload hook)"]
+    DEV["Device<br>(RAUC verifier)"]
+
+    TSCA -->|"issues code-signing cert\n(codeSigning EKU)"| OB
+    CI -->|"AppRole auth →\nTransit /sign"| OB
+    OB -->|"signed artefact\n+ cert"| CI
+    CI -->|"uploads signed bundle"| DEV
+    DEV -->|"verifies against\nSub-CA trust chain"| TSCA
+```
+
+The certificate template (`templates/code-signing.tpl`) sets:
+
+- Key Usage: `digitalSignature`
+- Extended Key Usage: `codeSigning`
+- No CA flag, no SAN
+
+See [Key Management](key-management.md) for the full setup and workflow.
+
+## Provider-Stack Key Management (OpenBao)
+
+The Provider-Stack includes an OpenBao instance that acts as the key management
+backend for platform-level operations:
+
+- **Transit secrets engine**: provides wrapping / signing operations for the Root CA key
+  migration path (via `step-kms-plugin`).
+- **KV-v2 secrets engine**: stores platform secrets centrally, replacing per-service
+  environment variable secrets in high-security deployments.
+- **AppRole authentication**: machine-to-machine access for other Provider-Stack services.
+
+See [Key Management](key-management.md) for configuration details.

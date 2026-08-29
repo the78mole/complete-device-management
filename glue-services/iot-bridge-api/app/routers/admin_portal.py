@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import secrets
 import string
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import httpx
@@ -31,6 +32,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+import app.clients.join_key_store as jks
 from app.clients.join_store import load_store
 from app.clients.rabbitmq import RabbitMQClient, RabbitMQError
 from app.clients.step_ca import StepCAAdminClient, StepCAError
@@ -64,13 +66,23 @@ async def _require_cdm_admin(request: Request) -> dict:
 
     Checks the Starlette session first (portal login).  If no session is
     present, falls back to validating an ``Authorization: Bearer <token>``
-    header against the Keycloak userinfo endpoint.
+    header via JWKS signature verification against the internal Keycloak URL.
+
+    Using JWKS-based validation (instead of the /userinfo endpoint) avoids the
+    Keycloak 26 breaking change where /userinfo requires an ``aud`` claim in the
+    token that matches the calling client — a requirement that breaks tokens
+    issued against an external URL (e.g. GitHub Codespaces) when the API calls
+    the internal Docker hostname.
 
     Raises:
-        HTTPException(401): No credentials provided.
+        HTTPException(401): No credentials provided or token invalid/expired.
         HTTPException(403): Credentials valid but role insufficient.
     """
+    import json as _json
+
     from fastapi import HTTPException as _HTTPException  # local import to avoid circular
+    from jwcrypto import jwk as _jwk
+    from jwcrypto import jwt as _jwcjwt
 
     # 1. Portal session (server-side, most trusted)
     user = _get_cdm_admin(request)
@@ -83,30 +95,32 @@ async def _require_cdm_admin(request: Request) -> dict:
         raise _HTTPException(status_code=401, detail="Authentication required")
 
     token = auth[7:]
-    from app.deps import get_settings as _get_settings
+    settings = get_settings()
 
-    settings = _get_settings()
-
-    async with httpx.AsyncClient(verify=False) as http:
-        r = await http.get(
-            f"{settings.keycloak_url}/realms/cdm/protocol/openid-connect/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-    if not r.is_success:
-        raise _HTTPException(status_code=401, detail="Invalid or expired token")
-
-    # Keycloak userinfo does NOT include realm_access.roles by default –
-    # extract them directly from the JWT payload (token already validated above).
-    import base64 as _b64
-    import json as _json
-
+    # Fetch JWKS from the internal Keycloak URL.
+    # The JWKS public key is realm-specific but not URL-specific, so signature
+    # verification succeeds even if the token's ``iss`` contains the external
+    # Codespaces hostname rather than the internal Docker hostname.
     try:
-        payload_b64 = token.split(".")[1]
-        payload_b64 += "=" * (4 - len(payload_b64) % 4)
-        claims = _json.loads(_b64.b64decode(payload_b64))
+        async with httpx.AsyncClient(verify=False) as http:
+            resp = await http.get(
+                f"{settings.keycloak_url}/realms/cdm/protocol/openid-connect/certs",
+                timeout=10,
+            )
+        resp.raise_for_status()
+        jwks_bytes = resp.content
     except Exception as err:
-        raise _HTTPException(status_code=401, detail="Malformed token") from err
+        logger.warning("Failed to fetch JWKS from Keycloak: %s", err)
+        raise _HTTPException(status_code=401, detail="Unable to validate token") from err
+
+    # Verify JWT signature using jwcrypto (checks signature + exp/nbf claims).
+    try:
+        key_set = _jwk.JWKSet()
+        key_set.import_keyset(jwks_bytes)
+        tok_obj = _jwcjwt.JWT(key=key_set, jwt=token)
+        claims = _json.loads(tok_obj.claims)
+    except Exception as err:
+        raise _HTTPException(status_code=401, detail="Invalid or expired token") from err
 
     # KC 26: roles in realm_access.roles; some mappers also put them in flat "roles" claim
     roles: list[str] = claims.get("realm_access", {}).get("roles", []) or claims.get("roles", [])
@@ -428,6 +442,23 @@ async def admin_dashboard(
         logger.exception("Could not load JOIN requests: %s", exc)
         join_requests = []
 
+    # Load prepared (but not yet joined) tenant slots from join_key_store
+    try:
+        all_keys = await jks.load_keys(settings)
+        now = datetime.now(UTC)
+        prepared_tenants = sorted(
+            [
+                e
+                for e in all_keys.values()
+                if e.get("status") == "open" and datetime.fromisoformat(e["expires_at"]) > now
+            ],
+            key=lambda e: e.get("created_at", ""),
+            reverse=True,
+        )
+    except Exception as exc:
+        logger.exception("Could not load JOIN keys: %s", exc)
+        prepared_tenants = []
+
     return templates.TemplateResponse(
         request,
         "portal/admin_dashboard.html",
@@ -441,6 +472,7 @@ async def admin_dashboard(
                 "http://keycloak:8080", settings.external_url
             ),
             "join_requests": join_requests,
+            "prepared_tenants": prepared_tenants,
         },
     )
 
@@ -617,3 +649,46 @@ async def add_oidc_provisioner(
     except StepCAError as exc:
         logger.exception("step-ca provisioner creation failed: %s", exc)
         return JSONResponse({"error": str(exc)}, status_code=502)
+
+
+# ── Prepared tenant slot management ─────────────────────────────────────────
+
+
+@router.delete("/tenants/prepared/{tenant_id}", name="admin_revoke_prepared")
+async def revoke_prepared(
+    tenant_id: str,
+    request: Request,
+    settings: Settings = Depends(get_settings),
+):
+    """Revoke all open JOIN keys for a prepared (not yet joined) tenant slot.
+
+    Returns JSON::
+
+        {"revoked": <count>, "tenant_id": "<id>"}
+    """
+    user = _get_cdm_admin(request)
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=403)
+
+    all_keys = await jks.load_keys(settings)
+    revoked: list[str] = []
+    for key, entry in all_keys.items():
+        if entry.get("tenant_id") == tenant_id and entry.get("status") == "open":
+            entry["status"] = "revoked"
+            all_keys[key] = entry
+            revoked.append(key)
+
+    if not revoked:
+        return JSONResponse(
+            {"error": f"No open JOIN key found for tenant {tenant_id!r}"},
+            status_code=404,
+        )
+
+    await jks.save_keys(all_keys, settings)
+    logger.info(
+        "Revoked %d JOIN key(s) for tenant '%s' (by %s).",
+        len(revoked),
+        tenant_id,
+        user.get("preferred_username", "unknown"),
+    )
+    return JSONResponse({"revoked": len(revoked), "tenant_id": tenant_id})

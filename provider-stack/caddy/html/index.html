@@ -190,7 +190,7 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">📊</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>Grafana</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <div class="card-title-row"><h5>Grafana</h5></div>
               <p class="mb-2">Platform metrics, service health dashboards &amp; alerting</p>
               <span class="btn btn-warning btn-service text-dark">Open UI →</span>
             </div>
@@ -202,7 +202,7 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">🔑</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>Keycloak</h5><span class="realm-tag realm-cdm">CDM</span><span class="realm-tag realm-prov">PROV</span></div>
+              <div class="card-title-row"><h5>Keycloak</h5></div>
               <p class="mb-2">Identity &amp; access management, SSO, OIDC clients</p>
               <span class="btn btn-danger btn-service">Admin Console →</span>
             </div>
@@ -215,7 +215,7 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">👥</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>User × Role Matrix</h5><span class="realm-tag realm-cdm">CDM</span><span class="realm-tag realm-prov">PROV</span></div>
+              <div class="card-title-row"><h5>User × Role Matrix</h5></div>
               <p class="mb-2">Live Keycloak user list with role assignments across both realms</p>
               <span class="btn btn-outline-light btn-service">Open Matrix →</span>
             </div>
@@ -228,9 +228,38 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">🐇</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>RabbitMQ</h5><span class="realm-tag realm-prov">PROV</span></div>
+              <div class="card-title-row"><h5>RabbitMQ</h5></div>
               <p class="mb-2">AMQP broker — vHost-per-tenant, queues &amp; consumer stats</p>
               <span class="btn btn-outline-warning btn-service">Management UI →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/pgadmin/">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🐘</div>
+            <div class="flex-grow-1">
+              <div class="card-title-row"><h5>pgAdmin</h5></div>
+              <p class="mb-2">TimescaleDB (PostgreSQL 17) admin UI — provider &amp; platform metrics</p>
+              <span class="btn btn-outline-info btn-service">Open UI →</span>
+            </div>
+          </div>
+        </a>
+      </div>
+
+      <div class="col-12 col-sm-6 col-lg-4">
+        <a class="service-link" href="/pki/health">
+          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
+            <div class="icon">🔐</div>
+            <div class="flex-grow-1">
+                <div class="card-title-row w-100" style="justify-content: space-between; align-items: flex-start;">
+                <h5>step-ca</h5>
+                <span class="realm-tag realm-pki">PKI</span>
+                </div>
+              <p class="mb-2">X.509 Root CA — health, certificate signing &amp; ACME endpoint</p>
+              <span class="btn btn-outline-secondary btn-service">API Health →</span>
             </div>
           </div>
         </a>
@@ -247,7 +276,7 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">🏠</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>Tenant Portal</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <div class="card-title-row"><h5>Tenant Portal</h5></div>
               <p class="mb-2">Platform login &amp; role-based service dashboard</p>
               <span class="btn btn-primary btn-service">Portal öffnen →</span>
             </div>
@@ -260,7 +289,7 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">🔌</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>IoT Bridge API</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <div class="card-title-row"><h5>IoT Bridge API</h5></div>
               <p class="mb-2">Device enrollment, provisioning &amp; platform management</p>
               <span class="btn btn-info btn-service text-dark">Swagger UI →</span>
             </div>
@@ -273,41 +302,9 @@
           <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
             <div class="icon">📄</div>
             <div class="flex-grow-1">
-              <div class="card-title-row"><h5>IoT Bridge API – ReDoc</h5><span class="realm-tag realm-cdm">CDM</span></div>
+              <div class="card-title-row"><h5>IoT Bridge API – ReDoc</h5></div>
               <p class="mb-2">Rendered API reference with request/response schemas</p>
               <span class="btn btn-secondary btn-service">ReDoc →</span>
-            </div>
-          </div>
-        </a>
-      </div>
-
-    </div>
-
-    <!-- Infrastructure & Ops -->
-    <div class="section-label">Infrastructure &amp; Ops</div>
-    <div class="row g-3 mb-4">
-
-      <div class="col-12 col-sm-6 col-lg-4">
-        <a class="service-link" href="/pgadmin/">
-          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
-            <div class="icon">🐘</div>
-            <div class="flex-grow-1">
-              <div class="card-title-row"><h5>pgAdmin</h5><span class="realm-tag realm-cdm">CDM</span></div>
-              <p class="mb-2">TimescaleDB (PostgreSQL 17) admin UI — provider &amp; platform metrics</p>
-              <span class="btn btn-outline-info btn-service">Open UI →</span>
-            </div>
-          </div>
-        </a>
-      </div>
-
-      <div class="col-12 col-sm-6 col-lg-4">
-        <a class="service-link" href="/pki/health">
-          <div class="service-card p-3 h-100 d-flex align-items-start gap-3">
-            <div class="icon">🔐</div>
-            <div class="flex-grow-1">
-              <div class="card-title-row"><h5>step-ca</h5><span class="realm-tag realm-pki">PKI</span></div>
-              <p class="mb-2">X.509 Root CA — health, certificate signing &amp; ACME endpoint</p>
-              <span class="btn btn-outline-secondary btn-service">API Health →</span>
             </div>
           </div>
         </a>

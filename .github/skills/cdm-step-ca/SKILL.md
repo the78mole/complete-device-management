@@ -170,23 +170,30 @@ further intermediate CAs.
 
 ## 6. First-boot initialisation
 
-### Provider-Stack — automatic + manual
+### Provider-Stack — fully automatic
 
-**Automatic (every container start):** When `step-ca-data` volume is empty, the
-`DOCKER_STEPCA_INIT_*` environment variables trigger automatic generation of:
+**Every container start** (including the first): when `step-ca-data` volume is empty,
+the `DOCKER_STEPCA_INIT_*` environment variables trigger automatic generation of:
+
 - Root CA key + self-signed certificate
 - Intermediate CA key + certificate signed by Root CA
 - Initial bootstrap `cdm-admin@cdm.local` JWK provisioner
 - ACME provisioner
 
-**Manual (run once after first healthy start):** Add the IoT Bridge and Sub-CA provisioners:
+**After `step-ca` is healthy**, the entrypoint automatically runs `init-provisioners.sh`
+in the background.  The script adds the `iot-bridge` (leaf-cert) and
+`tenant-sub-ca-signer` JWK provisioners if they do not already exist.  The operation
+is idempotent — calling it repeatedly is safe.
+
+To trigger manually (e.g. after changing provisioner settings):
 
 ```bash
 cd provider-stack
 docker compose exec step-ca /usr/local/bin/init-provisioners.sh
 ```
 
-The script outputs the Root CA fingerprint — save it as `STEP_CA_FINGERPRINT` in `.env`.
+The script outputs the Root CA fingerprint at the end — save it as
+`STEP_CA_FINGERPRINT` in `.env`.
 
 ### Tenant-Stack — manual JOIN workflow
 
@@ -356,8 +363,11 @@ step ca bootstrap --ca-url https://localhost:9000 --fingerprint "$FP" --force
 
 ### `init-provisioners.sh` fails — "provisioner already exists"
 
-The script is idempotent for most operations but may error if a provisioner with the
-same name already exists.  Check current provisioners:
+The script is idempotent: it treats `already exists` as a successful no-op.  If you
+see an unexpected error, check the output carefully — the script exits non-zero only
+for genuine failures (e.g. admin credentials wrong).
+
+List current provisioners:
 
 ```bash
 docker compose exec step-ca step ca provisioner list \
@@ -365,8 +375,6 @@ docker compose exec step-ca step ca provisioner list \
   --admin-provisioner "${STEP_CA_ADMIN_PROVISIONER:-cdm-admin@cdm.local}" \
   --admin-password-file /run/secrets/step-ca-password
 ```
-
-If the provisioner already exists with correct settings, the error can be ignored.
 
 ### Tenant Sub-CA has wrong issuer after JOIN workflow
 
