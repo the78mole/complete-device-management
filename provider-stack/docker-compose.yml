@@ -325,7 +325,7 @@ services:
 
   # ── Grafana ──────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana-oss:12.4.0
+    image: grafana/grafana-oss:13.0.2
     container_name: provider-grafana
     restart: unless-stopped
     environment:
