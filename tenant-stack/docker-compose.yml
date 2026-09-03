@@ -371,7 +371,7 @@ services:
 
   # ── Grafana (tenant device dashboards) ──────────────────────────
   grafana:
-    image: grafana/grafana-oss:12.4.0
+    image: grafana/grafana-oss:13.0.2
     container_name: ${TENANT_ID:-tenant}-grafana
     restart: unless-stopped
     environment:
