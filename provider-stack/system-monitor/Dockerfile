@@ -1,4 +1,4 @@
-FROM python:3.14-alpine
+FROM python:3.15-alpine
 
 # paho-mqtt 2.x – pure Python, no C deps required
 RUN pip install --no-cache-dir "paho-mqtt==2.1.0"
