@@ -1,9 +1,9 @@
-FROM quay.io/keycloak/keycloak:26.5 AS builder
+FROM quay.io/keycloak/keycloak:26.8 AS builder
 
 # Build with custom providers if needed in the future
 RUN /opt/keycloak/bin/kc.sh build
 
-FROM quay.io/keycloak/keycloak:26.5
+FROM quay.io/keycloak/keycloak:26.8
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 
 # Store all realm templates in a staging location.
