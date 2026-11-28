@@ -272,7 +272,7 @@ services:
   # real discovery doc returns an external Codespaces URL which is behind a
   # GitHub auth wall and unreachable from Docker containers.
   pgadmin-oidc-proxy:
-    image: python:3.14-alpine
+    image: python:3.15-alpine
     container_name: provider-pgadmin-oidc-proxy
     restart: unless-stopped
     command: python3 /app/oidc-proxy.py
@@ -325,7 +325,7 @@ services:
 
   # ── Grafana ──────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana-oss:12.4.0
+    image: grafana/grafana-oss:12.4.3
     container_name: provider-grafana
     restart: unless-stopped
     environment:
@@ -369,7 +369,7 @@ services:
 
   # ── Telegraf (provider metrics aggregator) ───────────────────────
   telegraf:
-    image: telegraf:1.37-alpine
+    image: telegraf:1.40-alpine
     container_name: provider-telegraf
     restart: unless-stopped
     # Suppress "strict env handling" deprecation warning – all env vars are
